@@ -1,0 +1,88 @@
+{
+  "name": "onemcp-router",
+  "version": "0.1.0",
+  "description": "MCP Router System - Intelligent routing layer between MCP clients and multiple backend MCP servers",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "onemcp": "./dist/cli.js",
+    "onemcp-tui": "./dist/tui.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest --run --coverage",
+    "test:property": "vitest --run property",
+    "lint": "eslint src tests --ext .ts",
+    "lint:fix": "eslint src tests --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "router",
+    "middleware",
+    "ai",
+    "llm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "ajv": "^8.12.0",
+    "conf": "^12.0.0",
+    "dotenv": "^16.3.1",
+    "eventemitter3": "^5.0.1",
+    "eventsource": "^2.0.2",
+    "execa": "^8.0.1",
+    "fastify": "^4.25.2",
+    "fs-extra": "^11.2.0",
+    "ink": "^4.4.1",
+    "ink-select-input": "^5.0.0",
+    "ink-table": "^3.1.0",
+    "ink-text-input": "^5.0.1",
+    "node-fetch": "^3.3.2",
+    "p-queue": "^8.0.1",
+    "p-retry": "^6.2.0",
+    "pino": "^8.17.2",
+    "pino-pretty": "^10.3.1",
+    "react": "^18.2.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/eventsource": "^1.1.15",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.10.6",
+    "@types/react": "^18.2.46",
+    "@typescript-eslint/eslint-plugin": "^6.17.0",
+    "@typescript-eslint/parser": "^6.17.0",
+    "@vitest/coverage-v8": "^1.1.0",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.2",
+    "fast-check": "^3.15.0",
+    "node-pty": "^1.1.0",
+    "nodemon": "^3.0.2",
+    "prettier": "^3.1.1",
+    "tsup": "^8.0.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0"
+  }
+}

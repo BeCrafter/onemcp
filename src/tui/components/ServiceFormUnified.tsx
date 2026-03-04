@@ -1,0 +1,585 @@
+/**
+ * Unified Service Form Component
+ * 
+ * Single-page progressive form for adding and editing services.
+ * Shows all fields on one page with progressive disclosure for optional fields.
+ * Provides inline validation and real-time preview.
+ */
+
+import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput } from 'ink';
+import TextInput from 'ink-text-input';
+import SelectInput from 'ink-select-input';
+import type { ServiceDefinition, TransportType } from '../../types/service.js';
+
+export interface ServiceFormUnifiedProps {
+  /** Existing service to edit (undefined for new service) */
+  service?: ServiceDefinition | undefined;
+  /** Callback when form is submitted */
+  onSubmit: (service: ServiceDefinition) => void;
+  /** Callback when form is cancelled */
+  onCancel: () => void;
+}
+
+/**
+ * Form field type
+ */
+type FormField = 
+  | 'name'
+  | 'transport'
+  | 'command'
+  | 'url'
+  | 'args'
+  | 'env'
+  | 'tags'
+  | 'enabled'
+  | 'maxConnections'
+  | 'idleTimeout'
+  | 'connectionTimeout';
+
+/**
+ * Field configuration
+ */
+interface FieldConfig {
+  field: FormField;
+  label: string;
+  help: string;
+  required: boolean;
+  type: 'text' | 'select';
+  dependsOn?: { field: FormField; value: any };
+}
+
+/**
+ * Form data structure
+ */
+interface FormData {
+  name: string;
+  transport: TransportType;
+  command: string;
+  url: string;
+  args: string;
+  env: string;
+  tags: string;
+  enabled: boolean;
+  maxConnections: string;
+  idleTimeout: string;
+  connectionTimeout: string;
+}
+
+/**
+ * Validation error
+ */
+interface ValidationError {
+  field: FormField;
+  message: string;
+}
+
+/**
+ * Get field configurations
+ */
+function getFieldConfigs(transport: TransportType): FieldConfig[] {
+  const configs: FieldConfig[] = [
+    {
+      field: 'name',
+      label: 'Service Name',
+      help: 'Unique identifier (letters, numbers, hyphens, underscores)',
+      required: true,
+      type: 'text',
+    },
+    {
+      field: 'transport',
+      label: 'Transport Type',
+      help: 'Protocol for communication',
+      required: true,
+      type: 'select',
+    },
+  ];
+
+  if (transport === 'stdio') {
+    configs.push({
+      field: 'command',
+      label: 'Command',
+      help: 'Command to start the MCP server (e.g., npx, node, python)',
+      required: true,
+      type: 'text',
+      dependsOn: { field: 'transport', value: 'stdio' },
+    });
+    configs.push({
+      field: 'args',
+      label: 'Arguments',
+      help: 'Command-line arguments (comma-separated, optional)',
+      required: false,
+      type: 'text',
+      dependsOn: { field: 'transport', value: 'stdio' },
+    });
+    configs.push({
+      field: 'env',
+      label: 'Environment Variables',
+      help: 'KEY=VALUE pairs (comma-separated, optional)',
+      required: false,
+      type: 'text',
+      dependsOn: { field: 'transport', value: 'stdio' },
+    });
+  } else {
+    configs.push({
+      field: 'url',
+      label: 'URL',
+      help: 'HTTP(S) URL of the MCP server',
+      required: true,
+      type: 'text',
+      dependsOn: { field: 'transport', value: transport },
+    });
+  }
+
+  configs.push(
+    {
+      field: 'tags',
+      label: 'Tags',
+      help: 'Labels for categorization (comma-separated, optional)',
+      required: false,
+      type: 'text',
+    },
+    {
+      field: 'enabled',
+      label: 'Enabled',
+      help: 'Whether this service should be active',
+      required: false,
+      type: 'select',
+    },
+    {
+      field: 'maxConnections',
+      label: 'Max Connections',
+      help: 'Maximum concurrent connections (1-100, default: 5)',
+      required: false,
+      type: 'text',
+    },
+    {
+      field: 'idleTimeout',
+      label: 'Idle Timeout',
+      help: 'Time before idle connections close in ms (min: 1000, default: 60000)',
+      required: false,
+      type: 'text',
+    },
+    {
+      field: 'connectionTimeout',
+      label: 'Connection Timeout',
+      help: 'Maximum time to wait for connection in ms (min: 1000, default: 30000)',
+      required: false,
+      type: 'text',
+    }
+  );
+
+  return configs;
+}
+
+/**
+ * Validate single field
+ */
+function validateField(field: FormField, value: any, transport: TransportType): string | null {
+  switch (field) {
+    case 'name':
+      if (!value.trim()) {
+        return 'Service name is required';
+      }
+      if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
+        return 'Only letters, numbers, hyphens, and underscores allowed';
+      }
+      return null;
+
+    case 'command':
+      if (transport === 'stdio' && !value.trim()) {
+        return 'Command is required for stdio transport';
+      }
+      return null;
+
+    case 'url':
+      if (transport !== 'stdio' && !value.trim()) {
+        return 'URL is required for HTTP/SSE transport';
+      }
+      if (value.trim() && !/^https?:\/\/.+/.test(value)) {
+        return 'URL must start with http:// or https://';
+      }
+      return null;
+
+    case 'maxConnections':
+      if (value.trim()) {
+        const num = parseInt(value, 10);
+        if (isNaN(num) || num < 1 || num > 100) {
+          return 'Must be between 1 and 100';
+        }
+      }
+      return null;
+
+    case 'idleTimeout':
+    case 'connectionTimeout':
+      if (value.trim()) {
+        const num = parseInt(value, 10);
+        if (isNaN(num) || num < 1000) {
+          return 'Must be at least 1000ms';
+        }
+      }
+      return null;
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * Convert form data to service definition
+ */
+function formDataToService(data: FormData): ServiceDefinition {
+  const service: ServiceDefinition = {
+    name: data.name.trim(),
+    transport: data.transport,
+    enabled: data.enabled,
+    tags: data.tags.split(',').map(t => t.trim()).filter(t => t.length > 0),
+    connectionPool: {
+      maxConnections: parseInt(data.maxConnections || '5', 10),
+      idleTimeout: parseInt(data.idleTimeout || '60000', 10),
+      connectionTimeout: parseInt(data.connectionTimeout || '30000', 10),
+    },
+  };
+
+  if (data.transport === 'stdio') {
+    service.command = data.command.trim();
+    
+    if (data.args.trim()) {
+      service.args = data.args.split(',').map(a => a.trim()).filter(a => a.length > 0);
+    }
+    
+    if (data.env.trim()) {
+      service.env = {};
+      const envPairs = data.env.split(',').map(e => e.trim()).filter(e => e.length > 0);
+      for (const pair of envPairs) {
+        const [key, ...valueParts] = pair.split('=');
+        if (key && valueParts.length > 0) {
+          service.env[key.trim()] = valueParts.join('=').trim();
+        }
+      }
+    }
+  } else {
+    service.url = data.url.trim();
+  }
+
+  return service;
+}
+
+/**
+ * Unified Service Form Component
+ */
+export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
+  service,
+  onSubmit,
+  onCancel,
+}) => {
+  // Initialize form data
+  const [formData, setFormData] = useState<FormData>(() => {
+    if (service) {
+      return {
+        name: service.name,
+        transport: service.transport,
+        command: service.command || '',
+        url: service.url || '',
+        args: service.args?.join(', ') || '',
+        env: service.env ? Object.entries(service.env).map(([k, v]) => `${k}=${v}`).join(', ') : '',
+        tags: service.tags.join(', '),
+        enabled: service.enabled,
+        maxConnections: service.connectionPool.maxConnections.toString(),
+        idleTimeout: service.connectionPool.idleTimeout.toString(),
+        connectionTimeout: service.connectionPool.connectionTimeout.toString(),
+      };
+    } else {
+      return {
+        name: '',
+        transport: 'stdio',
+        command: '',
+        url: '',
+        args: '',
+        env: '',
+        tags: '',
+        enabled: true,
+        maxConnections: '5',
+        idleTimeout: '60000',
+        connectionTimeout: '30000',
+      };
+    }
+  });
+
+  const [currentField, setCurrentField] = useState<FormField>('name');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Map<FormField, string>>(new Map());
+  const [touched, setTouched] = useState<Set<FormField>>(new Set());
+
+  // Get field configurations based on transport type
+  const fieldConfigs = getFieldConfigs(formData.transport);
+  const requiredFields = fieldConfigs.filter(c => c.required).map(c => c.field);
+  const optionalFields = fieldConfigs.filter(c => !c.required).map(c => c.field);
+
+  // Validate current field when it changes
+  useEffect(() => {
+    if (touched.has(currentField)) {
+      const value = formData[currentField as keyof FormData];
+      const error = validateField(currentField, value, formData.transport);
+      
+      setFieldErrors(prev => {
+        const next = new Map(prev);
+        if (error) {
+          next.set(currentField, error);
+        } else {
+          next.delete(currentField);
+        }
+        return next;
+      });
+    }
+  }, [formData, currentField, touched, formData.transport]);
+
+  // Check if form is valid
+  const isFormValid = (): boolean => {
+    const errors: ValidationError[] = [];
+    
+    for (const config of fieldConfigs) {
+      if (config.required) {
+        const value = formData[config.field as keyof FormData];
+        const error = validateField(config.field, value, formData.transport);
+        if (error) {
+          errors.push({ field: config.field, message: error });
+        }
+      }
+    }
+
+    return errors.length === 0;
+  };
+
+  // Handle field navigation
+  const goToNextField = () => {
+    const currentIndex = fieldConfigs.findIndex(c => c.field === currentField);
+    if (currentIndex < fieldConfigs.length - 1) {
+      // Mark current field as touched
+      setTouched(prev => new Set(prev).add(currentField));
+      
+      // Find next visible field
+      for (let i = currentIndex + 1; i < fieldConfigs.length; i++) {
+        const nextConfig = fieldConfigs[i];
+        if (nextConfig && (nextConfig.required || showAdvanced)) {
+          setCurrentField(nextConfig.field);
+          return;
+        }
+      }
+    }
+  };
+
+  const goToPrevField = () => {
+    const currentIndex = fieldConfigs.findIndex(c => c.field === currentField);
+    if (currentIndex > 0) {
+      // Find previous visible field
+      for (let i = currentIndex - 1; i >= 0; i--) {
+        const prevConfig = fieldConfigs[i];
+        if (prevConfig && (prevConfig.required || showAdvanced)) {
+          setCurrentField(prevConfig.field);
+          return;
+        }
+      }
+    }
+  };
+
+  // Handle form submission
+  const handleSubmit = () => {
+    // Mark all required fields as touched
+    const allTouched = new Set(touched);
+    requiredFields.forEach(f => allTouched.add(f));
+    setTouched(allTouched);
+
+    if (!isFormValid()) {
+      // Jump to first error field
+      for (const config of fieldConfigs) {
+        const value = formData[config.field as keyof FormData];
+        const error = validateField(config.field, value, formData.transport);
+        if (error) {
+          setCurrentField(config.field);
+          return;
+        }
+      }
+      return;
+    }
+
+    const serviceDefinition = formDataToService(formData);
+    onSubmit(serviceDefinition);
+  };
+
+  // Handle keyboard input
+  useInput((input, key) => {
+    if (key.escape) {
+      onCancel();
+      return;
+    }
+
+    // Toggle advanced options (Ctrl+A)
+    if (input === 'a' && key.ctrl) {
+      setShowAdvanced(!showAdvanced);
+      return;
+    }
+
+    // Submit form (Ctrl+S)
+    if (input === 's' && key.ctrl) {
+      handleSubmit();
+      return;
+    }
+
+    // Navigate fields (Tab / Shift+Tab)
+    if (key.tab) {
+      if (key.shift) {
+        goToPrevField();
+      } else {
+        goToNextField();
+      }
+      return;
+    }
+
+    // Handle select fields
+    if (currentField === 'transport' || currentField === 'enabled') {
+      if (key.return) {
+        goToNextField();
+      }
+    }
+  });
+
+  // Render transport selector
+  const renderTransportSelector = () => {
+    const items = [
+      { label: 'stdio', value: 'stdio' },
+      { label: 'sse', value: 'sse' },
+      { label: 'http', value: 'http' },
+    ];
+
+    return (
+      <SelectInput
+        items={items}
+        initialIndex={items.findIndex(i => i.value === formData.transport)}
+        onSelect={(item) => {
+          setFormData({ ...formData, transport: item.value as TransportType });
+          setTouched(prev => new Set(prev).add('transport'));
+        }}
+      />
+    );
+  };
+
+  // Render enabled selector
+  const renderEnabledSelector = () => {
+    const items = [
+      { label: 'Yes', value: true },
+      { label: 'No', value: false },
+    ];
+
+    return (
+      <SelectInput
+        items={items}
+        initialIndex={formData.enabled ? 0 : 1}
+        onSelect={(item) => {
+          setFormData({ ...formData, enabled: item.value as boolean });
+          setTouched(prev => new Set(prev).add('enabled'));
+        }}
+      />
+    );
+  };
+
+  // Render text input
+  const renderTextInput = (field: FormField) => {
+    return (
+      <TextInput
+        value={formData[field as keyof FormData] as string}
+        onChange={(value) => {
+          setFormData({ ...formData, [field]: value });
+        }}
+        onSubmit={() => {
+          setTouched(prev => new Set(prev).add(field));
+          goToNextField();
+        }}
+      />
+    );
+  };
+
+  // Render field
+  const renderField = (config: FieldConfig, isCurrent: boolean) => {
+    const error = fieldErrors.get(config.field);
+    const hasError = touched.has(config.field) && error;
+    const isVisible = config.required || showAdvanced;
+
+    if (!isVisible) {
+      return null;
+    }
+
+    return (
+      <Box key={config.field} flexDirection="column" marginBottom={1}>
+        <Box>
+          <Text bold color={isCurrent ? 'cyan' : 'white'}>
+            {isCurrent ? '▶ ' : '  '}
+            {config.label}
+            {config.required && <Text color="red">*</Text>}
+          </Text>
+        </Box>
+        
+        <Box marginLeft={2}>
+          <Text dimColor>{config.help}</Text>
+        </Box>
+
+        <Box marginLeft={2} marginTop={0}>
+          {isCurrent ? (
+            <>
+              {config.type === 'select' ? (
+                config.field === 'transport' ? renderTransportSelector() :
+                config.field === 'enabled' ? renderEnabledSelector() : null
+              ) : (
+                renderTextInput(config.field)
+              )}
+            </>
+          ) : (
+            <Text color={hasError ? 'red' : 'green'}>
+              {formData[config.field as keyof FormData]?.toString() || <Text dimColor>(empty)</Text>}
+            </Text>
+          )}
+        </Box>
+
+        {hasError && (
+          <Box marginLeft={2}>
+            <Text color="red">✗ {error}</Text>
+          </Box>
+        )}
+      </Box>
+    );
+  };
+
+  return (
+    <Box flexDirection="column" padding={1}>
+      {/* Header */}
+      <Box borderStyle="round" borderColor="cyan" padding={1} marginBottom={1}>
+        <Text bold color="cyan">
+          {service ? 'Edit Service' : 'Add New Service'}
+        </Text>
+      </Box>
+
+      {/* Form fields */}
+      <Box flexDirection="column" borderStyle="single" padding={1} marginBottom={1}>
+        {fieldConfigs.map(config => 
+          renderField(config, config.field === currentField)
+        )}
+
+        {/* Advanced options toggle */}
+        {!showAdvanced && optionalFields.length > 0 && (
+          <Box marginTop={1}>
+            <Text dimColor>
+              Press Ctrl+A to show {optionalFields.length} advanced option(s)
+            </Text>
+          </Box>
+        )}
+      </Box>
+
+      {/* Navigation help */}
+      <Box borderStyle="single" borderColor="gray" paddingX={1}>
+        <Text dimColor>
+          Tab/Shift+Tab: Navigate | Enter: Next | Ctrl+A: Advanced | Ctrl+S: Save | Esc: Cancel
+        </Text>
+      </Box>
+    </Box>
+  );
+};

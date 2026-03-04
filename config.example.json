@@ -1,0 +1,80 @@
+{
+  "mode": "server",
+  "logLevel": "INFO",
+  "services": [
+    {
+      "name": "example-http",
+      "transport": "http",
+      "enabled": true,
+      "tags": ["example"],
+      "url": "http://127.0.0.1:5000/mcp",
+      "headers": {
+        "X-Session-ID": "your-session-id-here",
+        "Authorization": "Bearer your-token-here",
+        "X-Custom-Header": "custom-value"
+      },
+      "connectionPool": {
+        "maxConnections": 5,
+        "idleTimeout": 60000,
+        "connectionTimeout": 30000
+      }
+    },
+    {
+      "name": "example-stdio",
+      "transport": "stdio",
+      "enabled": true,
+      "tags": ["example"],
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-example"],
+      "connectionPool": {
+        "maxConnections": 5,
+        "idleTimeout": 60000,
+        "connectionTimeout": 30000
+      }
+    }
+  ],
+  "connectionPool": {
+    "maxConnections": 10,
+    "idleTimeout": 60000,
+    "connectionTimeout": 30000
+  },
+  "healthCheck": {
+    "enabled": true,
+    "interval": 30000,
+    "failureThreshold": 3,
+    "autoUnload": true
+  },
+  "audit": {
+    "enabled": true,
+    "level": "standard",
+    "logInput": false,
+    "logOutput": false,
+    "retention": {
+      "days": 30,
+      "maxSize": "1GB"
+    }
+  },
+  "security": {
+    "dataMasking": {
+      "enabled": true,
+      "patterns": [
+        "password",
+        "token",
+        "secret",
+        "key",
+        "apiKey",
+        "api_key"
+      ]
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "outputs": ["console"],
+    "format": "pretty"
+  },
+  "metrics": {
+    "enabled": true,
+    "collectionInterval": 60000,
+    "retentionPeriod": 86400000
+  }
+}
