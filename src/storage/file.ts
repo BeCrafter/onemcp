@@ -63,34 +63,49 @@ export class FileStorageAdapter implements StorageAdapter {
     }
   }
 
-  /**
-   * Write data with key using atomic write operation
-   * Uses a temporary file and move to ensure atomicity
-   */
   async write(key: string, value: string): Promise<void> {
     const filePath = this.getFilePath(key);
     const tempPath = `${filePath}.tmp`;
+    const maxRetries = 3;
+    const baseDelay = 50;
     
-    try {
-      // Ensure parent directory exists
-      await fs.ensureDir(path.dirname(filePath));
-      
-      // Write to temporary file
-      await fs.writeFile(tempPath, value, 'utf-8');
-      
-      // Atomic move (overwrites if exists)
-      await fs.move(tempPath, filePath, { overwrite: true });
-    } catch (error) {
-      // Clean up temp file if it exists
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        await fs.remove(tempPath);
-      } catch {
-        // Ignore cleanup errors
+        const parentDir = path.dirname(filePath);
+        try {
+          await fs.promises.mkdir(parentDir, { recursive: true });
+        } catch (mkdirError) {
+          if ((mkdirError as NodeJS.ErrnoException).code !== 'EEXIST') {
+            throw mkdirError;
+          }
+        }
+        
+        await fs.writeFile(tempPath, value, 'utf-8');
+        await fs.move(tempPath, filePath, { overwrite: true });
+        return;
+      } catch (error) {
+        try {
+          await fs.remove(tempPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+        
+        const errCode = (error as NodeJS.ErrnoException).code;
+        const isTransientError = 
+          errCode === 'ENOENT' ||
+          errCode === 'EBUSY' ||
+          errCode === 'EAGAIN' ||
+          errCode === 'EACCES';
+        
+        if (attempt === maxRetries - 1 || !isTransientError) {
+          throw new Error(
+            `Failed to write file ${key}: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+        
+        const delay = baseDelay * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
-      
-      throw new Error(
-        `Failed to write file ${key}: ${error instanceof Error ? error.message : String(error)}`
-      );
     }
   }
 

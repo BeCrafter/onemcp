@@ -246,6 +246,46 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
     }
   };
 
+  const handleBatchToggleTools = async (toolStates: Record<string, boolean>) => {
+    if (!config || !configProvider || !editingService) return;
+
+    try {
+      const currentToolStates = editingService.toolStates || {};
+      const newToolStates = { ...currentToolStates, ...toolStates };
+      
+      const updatedService = { ...editingService, toolStates: newToolStates };
+      
+      if (serviceRegistry) {
+        await serviceRegistry.register(updatedService);
+      } else {
+        const services = config.services.map(s => 
+          s.name === editingService.name ? updatedService : s
+        );
+        const newConfig = { ...config, services };
+        await configProvider.save(newConfig);
+      }
+      
+      setEditingService(updatedService);
+      setServices(prevServices => 
+        prevServices.map(s => 
+          s.name === editingService.name ? updatedService : s
+        )
+      );
+      
+      setStatusMessage({
+        type: 'success',
+        message: `Updated ${Object.keys(toolStates).length} tool(s)`,
+        duration: 2000,
+      });
+    } catch (err) {
+      setStatusMessage({
+        type: 'error',
+        message: `Failed to update tools: ${err instanceof Error ? err.message : String(err)}`,
+        duration: 3000,
+      });
+    }
+  };
+
   // Handle tools discovered
   const handleToolsDiscovered = async (toolCount: number) => {
     if (!config || !configProvider || !editingService) return;
@@ -528,6 +568,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
             service={editingService}
             onBack={() => setView('list')}
             onToggleTool={handleToggleTool}
+            onBatchToggleTools={handleBatchToggleTools}
             toolStates={editingService.toolStates || {}}
             onToolsDiscovered={handleToolsDiscovered}
           />

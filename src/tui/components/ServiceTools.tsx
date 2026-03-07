@@ -7,17 +7,29 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import { StdioTransport } from '../../transport/stdio.js';
-import type { ServiceDefinition, Tool } from '../../types/service.js';
+import type { ServiceDefinition } from '../../types/service.js';
+import type { Tool } from '../../types/tool.js';
 
 export interface ServiceToolsProps {
   service: ServiceDefinition;
   onBack: () => void;
   onToggleTool: (toolName: string, enabled: boolean) => void;
+  onBatchToggleTools?: (toolStates: Record<string, boolean>) => void;
   toolStates?: Record<string, boolean>;
   onToolsDiscovered?: (toolCount: number) => void;
 }
 
-interface ToolWithState extends Tool {
+interface BasicTool {
+  name: string;
+  description: string;
+  inputSchema: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+interface ToolWithState extends BasicTool {
   enabled: boolean;
 }
 
@@ -26,14 +38,14 @@ async function fetchToolsViaStdio(service: ServiceDefinition): Promise<Tool[]> {
     return [];
   }
 
-  let transport: StdioTransport | null = null;
-  
-  try {
-    transport = new StdioTransport({
-      command: service.command,
-      args: service.args || [],
-      env: service.env,
-    });
+    let transport: StdioTransport | null = null;
+    
+    try {
+      transport = new StdioTransport({
+        command: service.command,
+        args: service.args || [],
+        env: service.env || {},
+      });
 
     // Wait for connection
     await new Promise<void>((resolve, reject) => {
@@ -260,6 +272,7 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
   service,
   onBack,
   onToggleTool,
+  onBatchToggleTools,
   toolStates = {},
   onToolsDiscovered,
 }) => {
@@ -344,15 +357,35 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
         ));
       }
     } else if (input === 'a') {
-      tools.forEach(t => {
-        if (!t.enabled) onToggleTool(t.name, true);
-      });
-      setTools(prev => prev.map(t => ({ ...t, enabled: true })));
+      const toolsToEnable = tools.filter(t => !t.enabled).map(t => t.name);
+      if (toolsToEnable.length > 0) {
+        if (onBatchToggleTools) {
+          const batchToolStates: Record<string, boolean> = {};
+          toolsToEnable.forEach(toolName => {
+            batchToolStates[toolName] = true;
+          });
+          onBatchToggleTools(batchToolStates);
+          setTools(prev => prev.map(t => ({ ...t, enabled: true })));
+        } else {
+          setTools(prev => prev.map(t => ({ ...t, enabled: true })));
+          toolsToEnable.forEach(toolName => onToggleTool(toolName, true));
+        }
+      }
     } else if (input === 'A') {
-      tools.forEach(t => {
-        if (t.enabled) onToggleTool(t.name, false);
-      });
-      setTools(prev => prev.map(t => ({ ...t, enabled: false })));
+      const toolsToDisable = tools.filter(t => t.enabled).map(t => t.name);
+      if (toolsToDisable.length > 0) {
+        if (onBatchToggleTools) {
+          const batchToolStates: Record<string, boolean> = {};
+          toolsToDisable.forEach(toolName => {
+            batchToolStates[toolName] = false;
+          });
+          onBatchToggleTools(batchToolStates);
+          setTools(prev => prev.map(t => ({ ...t, enabled: false })));
+        } else {
+          setTools(prev => prev.map(t => ({ ...t, enabled: false })));
+          toolsToDisable.forEach(toolName => onToggleTool(toolName, false));
+        }
+      }
     } else if (key.escape) {
       onBack();
     }
