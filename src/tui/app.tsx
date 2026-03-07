@@ -42,6 +42,7 @@ type ViewState = 'list' | 'add' | 'edit' | 'delete' | 'test' | 'tools';
 interface StatusMessage {
   type: 'success' | 'error' | 'info';
   message: string;
+  duration?: number;
 }
 
 /**
@@ -253,12 +254,13 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
       setStatusMessage({
         type: 'success',
         message: `Updated ${Object.keys(toolStates).length} tool(s)`,
+        duration: 3000
       });
-      setTimeout(() => setStatusMessage(null), 2000);
     } catch (err) {
       setStatusMessage({
         type: 'error',
         message: `Failed to update tools: ${err instanceof Error ? err.message : String(err)}`,
+        duration: 5000
       });
     }
   };
@@ -316,12 +318,13 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
       setStatusMessage({
         type: 'success',
         message: `Service '${serviceName}' ${enabled ? 'enabled' : 'disabled'}`,
+        duration: 3000
       });
-      setTimeout(() => setStatusMessage(null), 2000);
     } catch (err) {
       setStatusMessage({
         type: 'error',
         message: `Failed to toggle service: ${err instanceof Error ? err.message : String(err)}`,
+        duration: 5000
       });
     }
   };
@@ -349,12 +352,13 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
       setStatusMessage({
         type: 'success',
         message: `Service '${serviceName}' deleted`,
+        duration: 3000
       });
-      setTimeout(() => setStatusMessage(null), 2000);
     } catch (err) {
       setStatusMessage({
         type: 'error',
         message: `Failed to delete service: ${err instanceof Error ? err.message : String(err)}`,
+        duration: 5000
       });
     }
   };
@@ -366,6 +370,15 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
     // Global shortcuts
     if (input === 'q' && view === 'list') {
       process.exit(0);
+    }
+    
+    if (input === '?') {
+      setStatusMessage({
+        type: 'info',
+        message: 'Help: ?=help, q=quit, ↑↓=navigate, Enter=edit, Space=toggle, T=tools, D=delete',
+        duration: 5000
+      });
+      return;
     }
 
     // Tools view - handle back
@@ -383,8 +396,22 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
         setSelectedIndex(prev => Math.max(0, prev - 1));
       } else if (key.downArrow) {
         setSelectedIndex(prev => Math.min(services.length - 1, prev + 1));
+      } else if (input === ' ') {
+        if (services[selectedIndex]) {
+          const service = services[selectedIndex];
+          handleToggleService(service.name, !service.enabled);
+        }
+      } else if (input === 't' || input === 'T') {
+        if (services[selectedIndex]) {
+          setEditingService(services[selectedIndex]);
+          setView('tools');
+        }
+      } else if (input === 'd' || input === 'D') {
+        if (services[selectedIndex]) {
+          const service = services[selectedIndex];
+          handleDeleteService(service.name);
+        }
       } else if (key.return) {
-        // Enter key - edit selected service
         if (services[selectedIndex]) {
           setEditingService(services[selectedIndex]);
           setView('edit');
@@ -482,8 +509,6 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
             services={services}
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
-            onToggleService={handleToggleService}
-            onDeleteService={handleDeleteService}
             globalToolStats={globalToolStats}
           />
         )}

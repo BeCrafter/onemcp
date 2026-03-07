@@ -13,8 +13,6 @@ export interface ServiceListProps {
   services: ServiceDefinition[];
   selectedIndex: number;
   onSelect: (index: number) => void;
-  onToggleService?: (serviceName: string, enabled: boolean) => void;
-  onDeleteService?: (serviceName: string) => void;
   showDetails?: boolean;
   globalToolStats?: { enabled: number; total: number };
 }
@@ -54,7 +52,6 @@ const ServiceListItem: React.FC<{
 }> = ({ service, isSelected, showDetails = true }) => {
   const transport = formatTransport(service.transport);
   const status = formatEnabled(service.enabled);
-  const tags = service.tags && service.tags.length > 0 ? service.tags.join(', ') : 'none';
   
   // Calculate tool statistics
   const hasTools = service.toolStates && Object.keys(service.toolStates).length > 0;
@@ -74,7 +71,7 @@ const ServiceListItem: React.FC<{
     <Box
       flexDirection="column"
       borderStyle={isSelected ? 'double' : 'single'}
-      borderColor={isSelected ? 'cyan' : 'gray'}
+      borderColor={isSelected ? 'cyan' : service.enabled ? 'green' : 'red'}
       paddingX={1}
       marginBottom={1}
     >
@@ -88,42 +85,44 @@ const ServiceListItem: React.FC<{
             </Text>
             {' '}{service.name}
           </Text>
+          <Text dimColor> ({transport.text})</Text>
         </Box>
         <Box>
-          <Text color={status.color}>{status.text}</Text>
           {totalTools > 0 && (
-            <>
-              <Text dimColor> • </Text>
-              <Text color="magenta">{enabledTools}/{totalTools} tools</Text>
-            </>
+            <Text color="magenta" bold>
+              {enabledTools}/{totalTools}
+            </Text>
           )}
+          <Text dimColor> {totalTools > 0 ? 'tools' : ''}</Text>
+          <Text dimColor> • </Text>
+          <Text color={status.color} bold>
+            {status.text}
+          </Text>
         </Box>
       </Box>
       
-      {/* Transport and endpoint */}
       <Box marginLeft={2}>
-        <Text dimColor>Transport: </Text>
-        <Text color={transport.color} bold>{transport.text}</Text>
-        
         {service.transport === 'stdio' && service.command && (
           <>
-            <Text dimColor> • Command: </Text>
+            <Text color={transport.color} bold>{transport.text}</Text>
+            <Text dimColor>: </Text>
             <Text color="yellow">{service.command}</Text>
             {service.args && service.args.length > 0 && (
-              <>
-                <Text dimColor> </Text>
-                <Text dimColor>{service.args.slice(0, 2).join(' ')}</Text>
-                {service.args.length > 2 && <Text dimColor>...</Text>}
-              </>
+              <Text dimColor> {service.args.slice(0, 2).join(' ')}{service.args.length > 2 ? '...' : ''}</Text>
             )}
           </>
         )}
         
         {(service.transport === 'sse' || service.transport === 'http') && service.url && (
           <>
-            <Text dimColor> • URL: </Text>
+            <Text color={transport.color} bold>{transport.text}</Text>
+            <Text dimColor>: </Text>
             <Text color="blue">{service.url}</Text>
           </>
+        )}
+        
+        {service.transport !== 'stdio' && !service.url && (
+          <Text color={transport.color} bold>{transport.text}</Text>
         )}
       </Box>
       
@@ -166,8 +165,6 @@ const ServiceListItem: React.FC<{
 export const ServiceList: React.FC<ServiceListProps> = ({
   services,
   selectedIndex,
-  onToggleService,
-  onDeleteService,
   showDetails = true,
   globalToolStats,
 }) => {

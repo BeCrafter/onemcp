@@ -40,21 +40,27 @@ export const StatusBar: React.FC<StatusBarProps> = ({ message, onClear }) => {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+    
     if (message) {
       setVisible(true);
       const duration = message.duration || 3000;
       
       if (duration > 0) {
-        const timer = setTimeout(() => {
+        timer = setTimeout(() => {
           setVisible(false);
           onClear?.();
         }, duration);
-        
-        return () => clearTimeout(timer);
       }
     } else {
       setVisible(false);
     }
+    
+    return () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
   }, [message, onClear]);
 
   if (!visible || !message) {

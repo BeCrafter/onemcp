@@ -412,11 +412,14 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
           </Box>
           {totalToolsCount > 0 && (
             <Box>
-              <Text dimColor>Tools: </Text>
-              <Text color="magenta" bold>
-                {enabledToolsCount}/{totalToolsCount}
+              <Text color="green" bold>
+                {enabledToolsCount}✓
               </Text>
-              <Text dimColor> enabled</Text>
+              <Text dimColor>/</Text>
+              <Text color="red" bold>
+                {totalToolsCount - enabledToolsCount}✗
+              </Text>
+              <Text dimColor> of {totalToolsCount}</Text>
             </Box>
           )}
         </Box>
@@ -457,15 +460,15 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
         <Box flexDirection="row" flexGrow={1}>
           <Box flexDirection="column" width={TOOLS_LIST_WIDTH}>
             {tools.slice(0, VISIBLE_TOOLS).map((tool, index) => (
-              <Box key={tool.name} flexDirection="row">
-                <Text>
-                  {index === selectedIndex ? '▶ ' : '  '}
-                  <Text color={tool.enabled ? 'green' : 'red'}>
-                    {tool.enabled ? '+' : '-'}
-                  </Text>
-                  {' '}{tool.name}
-                </Text>
-              </Box>
+               <Box key={tool.name} flexDirection="row">
+                 <Text>
+                   {index === selectedIndex ? '▶ ' : '  '}
+                   <Text color={tool.enabled ? 'green' : 'red'} bold>
+                     {tool.enabled ? '✓' : '✗'}
+                   </Text>
+                   {' '}{tool.name}
+                 </Text>
+               </Box>
             ))}
             {tools.length > VISIBLE_TOOLS && (
               <Text dimColor>  ... +{tools.length - VISIBLE_TOOLS} more</Text>
@@ -493,9 +496,10 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
       )}
 
       <Box flexDirection="column">
-        <Text bold>Actions:</Text>
-        <Text dimColor>  [↑/↓] Select | [Space/T] Toggle | [a] Enable all | [A] Disable all</Text>
-        <Text dimColor>  [←/→] Scroll description | [Esc] Back</Text>
+        <Text bold color="cyan">Quick Actions:</Text>
+        <Text dimColor>  ↑/↓: Navigate tools • Space/T: Toggle tool</Text>
+        <Text dimColor>  A: Disable all tools • a: Enable all tools</Text>
+        <Text dimColor>  ←/→: Scroll description • Esc: Return to service list</Text>
       </Box>
     </Box>
   );
