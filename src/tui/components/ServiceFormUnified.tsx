@@ -422,7 +422,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
       // Reset after a short delay to handle any potential race conditions
       setTimeout(() => {
         isCtrlAActive.current = false;
-      }, 10);
+      }, 2);
       return;
     }
 

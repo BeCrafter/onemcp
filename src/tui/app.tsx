@@ -93,6 +93,8 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
 
   // Load configuration on mount
   useEffect(() => {
+    let unwatch: (() => void) | null = null;
+    
     const loadConfig = async () => {
       try {
         let loadedConfig = config;
@@ -120,7 +122,22 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
         await registry.initialize();
         
         const serviceList = await registry.list();
-
+        
+        unwatch = provider.watch((newConfig) => {
+          const updatedServices = newConfig.mcpServers;
+          setServices(updatedServices);
+          
+          if (serviceRegistry) {
+            serviceRegistry.initialize().catch(console.error);
+          }
+          
+          setStatusMessage({
+            type: 'info',
+            message: 'Configuration updated from external changes',
+            duration: 3000,
+          });
+        });
+        
         setServiceRegistry(registry);
         if (!config) setConfig(loadedConfig);
         setServices(serviceList);
@@ -132,6 +149,12 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
     };
 
     loadConfig();
+    
+    return () => {
+      if (unwatch) {
+        unwatch();
+      }
+    };
   }, [configDir, propConfig, propConfigProvider]);
 
   // Reload services when registry changes
@@ -446,6 +469,32 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
         // Toggle form mode
         setUseUnifiedForm(!useUnifiedForm);
       }
+    }
+    
+    if (view === 'add' || view === 'edit') {
+      // Allow help shortcut from forms
+      if (input === '?') {
+        setStatusMessage({
+          type: 'info',
+          message: 'Help: ?=help, q=quit, ↑↓=navigate, Enter=edit, Space=toggle, T=tools, D=delete',
+          duration: 5000
+        });
+        return;
+      }
+      
+      // Allow quit shortcut from forms
+      if (input === 'q') {
+        process.exit(0);
+      }
+      
+      // Allow refresh shortcut from forms
+      if (input === 'r') {
+        reloadServices();
+        return;
+      }
+      
+      // Forms handle other input
+      return;
     }
   });
 

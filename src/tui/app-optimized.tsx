@@ -91,6 +91,8 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
   // Load configuration on mount
   useEffect(() => {
+    let unwatch: (() => void) | null = null;
+    
     const loadConfig = async () => {
       try {
         let loadedConfig = config;
@@ -118,7 +120,25 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
         await registry.initialize();
         
         const serviceList = await registry.list();
-
+        
+        // Set up configuration watch to handle external changes
+        unwatch = provider.watch((newConfig) => {
+          // Update services when config changes externally
+          const updatedServices = newConfig.mcpServers;
+          setServices(updatedServices);
+          
+          // Also update the service registry in memory to match the external config
+          if (serviceRegistry) {
+            serviceRegistry.initialize().catch(console.error);
+          }
+          
+          setStatusMessage({
+            type: 'info',
+            message: 'Configuration updated from external changes',
+            duration: 3000,
+          });
+        });
+        
         setServiceRegistry(registry);
         if (!config) setConfig(loadedConfig);
         setServices(serviceList);
@@ -131,6 +151,12 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
     };
 
     loadConfig();
+    
+    return () => {
+      if (unwatch) {
+        unwatch();
+      }
+    };
   }, [configDir, propConfig, propConfigProvider]);
 
   // Reload services
