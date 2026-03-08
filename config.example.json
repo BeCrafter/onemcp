@@ -1,7 +1,7 @@
 {
   "mode": "server",
   "logLevel": "INFO",
-  "services": [
+  "mcpServers": [
     {
       "name": "example-http",
       "transport": "http",

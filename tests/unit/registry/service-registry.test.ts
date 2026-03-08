@@ -15,7 +15,7 @@ function createMockConfigProvider(): ConfigProvider {
     mode: 'cli' as const,
     logLevel: 'INFO' as const,
     configDir: '/test/config',
-    services: [],
+    mcpServers: [],
     connectionPool: {
       maxConnections: 5,
       idleTimeout: 60000,
@@ -659,7 +659,7 @@ describe('ServiceRegistry', () => {
         mode: 'cli' as const,
         logLevel: 'INFO' as const,
         configDir: '/test',
-        services: [service1, service2],
+        mcpServers: [service1, service2],
         connectionPool: {
           maxConnections: 5,
           idleTimeout: 60000,
@@ -705,7 +705,7 @@ describe('ServiceRegistry', () => {
         mode: 'cli' as const,
         logLevel: 'INFO' as const,
         configDir: '/test',
-        services: [], // Empty services array
+        mcpServers: [], // Empty services array
         connectionPool: {
           maxConnections: 5,
           idleTimeout: 60000,

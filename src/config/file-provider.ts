@@ -83,7 +83,7 @@ export class FileConfigProvider implements ConfigProvider {
         'mode',
         'logLevel',
         'configDir',
-        'services',
+        'mcpServers',
         'connectionPool',
         'healthCheck',
         'audit',
@@ -107,7 +107,7 @@ export class FileConfigProvider implements ConfigProvider {
           type: 'string',
           minLength: 1,
         },
-        services: {
+        mcpServers: {
           type: 'array',
           items: {
             type: 'object',
@@ -314,14 +314,23 @@ export class FileConfigProvider implements ConfigProvider {
         throw new Error(`Configuration file not found: ${configPath}`);
       }
 
-      // Parse JSON
       let config: SystemConfig;
       try {
         const parsed = JSON.parse(configData);
         if (typeof parsed !== 'object' || parsed === null) {
           throw new Error('Configuration JSON is not an object');
         }
-        config = parsed as SystemConfig;
+        
+        const processed = {
+          ...parsed,
+          mcpServers: parsed.mcpServers || parsed.services || []
+        };
+        
+        if ('services' in processed) {
+          delete (processed as any).services;
+        }
+        
+        config = processed as SystemConfig;
       } catch (error) {
         throw new Error(
           `Failed to parse configuration JSON: ${error instanceof Error ? error.message : String(error)}`
@@ -408,9 +417,9 @@ export class FileConfigProvider implements ConfigProvider {
     }
 
     // Validate service transport-specific requirements
-    if (config.services && Array.isArray(config.services)) {
-      for (let i = 0; i < config.services.length; i++) {
-        const service = config.services[i];
+    if (config.mcpServers && Array.isArray(config.mcpServers)) {
+      for (let i = 0; i < config.mcpServers.length; i++) {
+        const service = config.mcpServers[i];
         if (!service) continue;
 
         if (service.transport === 'stdio' && !service.command) {
@@ -665,7 +674,7 @@ export class FileConfigProvider implements ConfigProvider {
       mode: 'cli',
       logLevel: 'INFO',
       configDir: this.configDir,
-      services: [],
+      mcpServers: [],
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,
@@ -732,7 +741,7 @@ The main configuration file defines the system behavior and registered services.
   "port": 3000,               // Server port (required for server mode)
   "logLevel": "INFO",         // Log level: DEBUG, INFO, WARN, ERROR
   "configDir": "~/.onemcp",   // Configuration directory path
-  "services": [],             // Array of service definitions
+  "mcpServers": [],             // Array of service definitions
   "connectionPool": {         // Default connection pool settings
     "maxConnections": 5,
     "idleTimeout": 60000,

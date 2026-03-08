@@ -1,17 +1,16 @@
 # OneMCP
 
-<div align="center">
+
 
 **智能 MCP 路由系统 - 统一管理多个 MCP 服务器的路由层**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue)](https://www.typescriptlang.org/)
-
+[License: MIT](https://opensource.org/licenses/MIT)
+[Node Version](https://nodejs.org)
+[TypeScript](https://www.typescriptlang.org/)
 
 📚 **[快速开始指南](./QUICKSTART.md)** - 5 分钟快速上手
 
-</div>
+
 
 ## 📖 简介
 
@@ -140,7 +139,7 @@ onemcp --version
   "port": 3000,
   "logLevel": "INFO",
   "configDir": "~/.onemcp",
-  "services": [
+  "mcpServers": [
     {
       "name": "filesystem",
       "transport": "stdio",
@@ -281,6 +280,7 @@ interface TagFilter {
 #### 使用方式
 
 **CLI 模式 (stdio)**: 使用 `--tag` 或 `-t` 命令行参数
+
 ```bash
 # 过滤具有 production 或 api 标签的服务
 onemcp --tag production,api
@@ -290,6 +290,7 @@ onemcp -t production,database
 ```
 
 **Server 模式 (HTTP)**: 使用 `X-MCP-Tags` HTTP 头
+
 ```bash
 # 过滤具有 production 或 api 标签的服务
 curl -H "X-MCP-Tags: production,api" http://localhost:3000/mcp \
@@ -297,6 +298,7 @@ curl -H "X-MCP-Tags: production,api" http://localhost:3000/mcp \
 ```
 
 > **注意**: 
+>
 > - CLI 模式使用 `--tag` 参数，Server 模式使用 HTTP 头
 > - 多个标签使用逗号分隔，采用 OR 逻辑（匹配任一标签即可）
 > - 此功能适用于**每个独立客户端连接**，不同的客户端可以指定不同的标签过滤器
@@ -458,17 +460,12 @@ npm run dev
 
 ```bash
 # CLI 模式
-node dist/cli.js
+npx tsx src/cli.ts
 
 # Server 模式
-node dist/cli.js --mode server --port 3000
+npx tsx src/cli.ts --mode server --port 3000
 
 # TUI 模式
-node dist/tui.js
-
-# 或使用 tsx 直接运行 TypeScript
-npx tsx src/cli.ts
-npx tsx src/cli.ts --mode server --port 3000
 npx tsx src/tui.ts
 ```
 
@@ -539,8 +536,7 @@ npm run test:property
 
 ---
 
-<div align="center">
+
 
 **用 ❤️ 构建，为 MCP 生态系统服务**
 
-</div>

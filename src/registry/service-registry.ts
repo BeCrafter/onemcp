@@ -36,7 +36,7 @@ export class ServiceRegistry extends EventEmitter {
     const config = await this.configProvider.load();
     this.services.clear();
 
-    for (const service of config.services) {
+    for (const service of config.mcpServers) {
       this.services.set(service.name, service);
     }
   }
@@ -265,7 +265,7 @@ export class ServiceRegistry extends EventEmitter {
     const config = await this.configProvider.load();
 
     // Update services in configuration
-    config.services = Array.from(this.services.values());
+    config.mcpServers = Array.from(this.services.values());
 
     // Save configuration
     await this.configProvider.save(config);

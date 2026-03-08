@@ -115,8 +115,8 @@ export interface SystemConfig {
   logLevel: LogLevel;
   /** Configuration directory path */
   configDir: string;
-  /** Registered services */
-  services: ServiceDefinition[];
+  /** Registered MCP servers */
+  mcpServers: ServiceDefinition[];
   /** Default connection pool configuration */
   connectionPool: ConnectionPoolConfig;
   /** Health check configuration */

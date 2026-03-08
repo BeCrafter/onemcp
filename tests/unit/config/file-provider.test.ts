@@ -15,7 +15,7 @@ describe('FileConfigProvider', () => {
     mode: 'cli',
     logLevel: 'INFO',
     configDir: '/test/config',
-    services: [
+    mcpServers: [
       {
         name: 'test-service',
         transport: 'stdio',
@@ -106,7 +106,7 @@ describe('FileConfigProvider', () => {
       // Arrange
       const httpConfig: SystemConfig = {
         ...validConfig,
-        services: [
+        mcpServers: [
           {
             name: 'http-service',
             transport: 'http',
@@ -127,16 +127,16 @@ describe('FileConfigProvider', () => {
       const config = await provider.load();
 
       // Assert
-      expect(config.services[0]).toBeDefined();
-      expect(config.services[0]?.transport).toBe('http');
-      expect(config.services[0]?.url).toBe('https://example.com/mcp');
+      expect(config.mcpServers[0]).toBeDefined();
+      expect(config.mcpServers[0]?.transport).toBe('http');
+      expect(config.mcpServers[0]?.url).toBe('https://example.com/mcp');
     });
 
     it('should load config with SSE service', async () => {
       // Arrange
       const sseConfig: SystemConfig = {
         ...validConfig,
-        services: [
+        mcpServers: [
           {
             name: 'sse-service',
             transport: 'sse',
@@ -157,9 +157,9 @@ describe('FileConfigProvider', () => {
       const config = await provider.load();
 
       // Assert
-      expect(config.services[0]).toBeDefined();
-      expect(config.services[0]?.transport).toBe('sse');
-      expect(config.services[0]?.url).toBe('https://example.com/events');
+      expect(config.mcpServers[0]).toBeDefined();
+      expect(config.mcpServers[0]?.transport).toBe('sse');
+      expect(config.mcpServers[0]?.url).toBe('https://example.com/events');
     });
   });
 
@@ -199,7 +199,7 @@ describe('FileConfigProvider', () => {
 
     it('should validate before saving', async () => {
       // Arrange
-      const invalidConfig = { ...validConfig, services: [] as any };
+      const invalidConfig = { ...validConfig, mcpServers: [] as any };
       delete (invalidConfig as any).connectionPool;
 
       // Act & Assert
@@ -295,7 +295,7 @@ describe('FileConfigProvider', () => {
       // Arrange
       const invalidConfig: SystemConfig = {
         ...validConfig,
-        services: [
+        mcpServers: [
           {
             name: 'test',
             transport: 'stdio',
@@ -322,7 +322,7 @@ describe('FileConfigProvider', () => {
       // Arrange
       const invalidConfig: SystemConfig = {
         ...validConfig,
-        services: [
+        mcpServers: [
           {
             name: 'test',
             transport: 'http',
@@ -349,7 +349,7 @@ describe('FileConfigProvider', () => {
       // Arrange
       const invalidConfig: SystemConfig = {
         ...validConfig,
-        services: [
+        mcpServers: [
           {
             name: 'test',
             transport: 'sse',
@@ -376,7 +376,7 @@ describe('FileConfigProvider', () => {
       // Arrange
       const invalidConfig: SystemConfig = {
         ...validConfig,
-        services: [
+        mcpServers: [
           {
             name: 'test',
             transport: 'http',
@@ -406,7 +406,7 @@ describe('FileConfigProvider', () => {
       // Arrange
       const validHttpConfig: SystemConfig = {
         ...validConfig,
-        services: [
+        mcpServers: [
           {
             name: 'test',
             transport: 'http',
@@ -433,7 +433,7 @@ describe('FileConfigProvider', () => {
       // Arrange
       const invalidConfig: SystemConfig = {
         ...validConfig,
-        services: [
+        mcpServers: [
           {
             name: 'test',
             transport: 'websocket' as any,
@@ -532,7 +532,7 @@ describe('FileConfigProvider', () => {
       // Arrange
       const configWithToolStates: SystemConfig = {
         ...validConfig,
-        services: [
+        mcpServers: [
           {
             name: 'test-service',
             transport: 'stdio',
@@ -791,7 +791,7 @@ describe('FileConfigProvider', () => {
   describe('edge cases', () => {
     it('should handle empty services array', () => {
       // Arrange
-      const emptyServicesConfig = { ...validConfig, services: [] };
+      const emptyServicesConfig = { ...validConfig, mcpServers: [] };
 
       // Act
       const result = provider.validate(emptyServicesConfig);
@@ -804,7 +804,7 @@ describe('FileConfigProvider', () => {
       // Arrange
       const minimalConfig: SystemConfig = {
         ...validConfig,
-        services: [
+        mcpServers: [
           {
             name: 'minimal',
             transport: 'stdio',
@@ -831,7 +831,7 @@ describe('FileConfigProvider', () => {
       // Arrange
       const fullConfig: SystemConfig = {
         ...validConfig,
-        services: [
+        mcpServers: [
           {
             name: 'full',
             transport: 'stdio',
@@ -884,7 +884,7 @@ describe('FileConfigProvider', () => {
         const config = JSON.parse(configData);
         expect(config.mode).toBe('cli');
         expect(config.logLevel).toBe('INFO');
-        expect(config.services).toEqual([]);
+        expect(config.mcpServers).toEqual([]);
         expect(config.connectionPool).toBeDefined();
         expect(config.connectionPool.maxConnections).toBe(5);
         expect(config.healthCheck).toBeDefined();

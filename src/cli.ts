@@ -214,7 +214,7 @@ function initializeConfigDir(configDir: string): void {
       mode: 'cli',
       logLevel: 'INFO',
       configDir,
-      services: [],
+      mcpServers: [],
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,
@@ -322,7 +322,7 @@ async function validateConfiguration(configDir: string): Promise<boolean> {
     if (validation.valid) {
       console.log('✓ Configuration is valid');
       console.log(`  Mode: ${config.mode}`);
-      console.log(`  Services: ${config.services.length}`);
+      console.log(`  Services: ${config.mcpServers.length}`);
       console.log(`  Log level: ${config.logLevel}`);
       if (config.mode === 'server' && config.port) {
         console.log(`  Server port: ${config.port}`);
@@ -384,7 +384,7 @@ function displayEffectiveConfig(config: SystemConfig, configDir: string): void {
   if (config.mode === 'server') {
     console.log(`  Server port: ${config.port || 3000}`);
   }
-  console.log(`  Services: ${config.services.length}`);
+  console.log(`  Services: ${config.mcpServers.length}`);
   console.log(`  Health checks: ${config.healthCheck.enabled ? 'enabled' : 'disabled'}`);
   console.log(`  Audit logging: ${config.audit.enabled ? 'enabled' : 'disabled'}`);
   console.log(`  Metrics: ${config.metrics?.enabled ? 'enabled' : 'disabled'}`);

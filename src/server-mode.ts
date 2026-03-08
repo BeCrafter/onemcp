@@ -395,7 +395,7 @@ export class ServerModeRunner {
     try {
       // Initialize service registry
       await this.serviceRegistry.initialize();
-      console.error(`Loaded ${this.config.services.length} service(s)`);
+      console.error(`Loaded ${this.config.mcpServers.length} service(s)`);
 
       // Create connection pools for all enabled services
       await this.initializeConnectionPools();
@@ -475,11 +475,11 @@ export class ServerModeRunner {
     const oldConfig = this.config;
     this.config = newConfig;
 
-    const oldServices = oldConfig.services;
-    const newServices = newConfig.services;
+    const oldServices = oldConfig.mcpServers;
+    const newServices = newConfig.mcpServers;
 
-    const oldServiceNames = new Set(oldServices.map((s) => s.name));
-    const newServiceNames = new Set(newServices.map((s) => s.name));
+    const oldServiceNames = new Set(oldServices.map((s: any) => s.name));
+    const newServiceNames = new Set(newServices.map((s: any) => s.name));
 
     for (const serviceName of oldServiceNames) {
       if (!newServiceNames.has(serviceName)) {
@@ -494,7 +494,7 @@ export class ServerModeRunner {
     }
 
     for (const newService of newServices) {
-      const oldService = oldServices.find((s) => s.name === newService.name);
+      const oldService = oldServices.find((s: any) => s.name === newService.name);
       if (!oldService) {
         if (newService.enabled) {
           try {

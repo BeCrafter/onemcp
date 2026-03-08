@@ -215,10 +215,10 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       if (serviceRegistry) {
         await serviceRegistry.register(updatedService);
       } else {
-        const services = config.services.map(s => 
+        const services = config.mcpServers.map(s => 
           s.name === editingService.name ? updatedService : s
         );
-        const newConfig = { ...config, services };
+        const newConfig = { ...config, mcpServers: services };
         await configProvider.save(newConfig);
       }
       
@@ -258,10 +258,10 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       if (serviceRegistry) {
         await serviceRegistry.register(updatedService);
       } else {
-        const services = config.services.map(s => 
+        const services = config.mcpServers.map((s: any) => 
           s.name === editingService.name ? updatedService : s
         );
-        const newConfig = { ...config, services };
+        const newConfig = { ...config, mcpServers: services };
         await configProvider.save(newConfig);
       }
       
@@ -299,10 +299,10 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       if (serviceRegistry) {
         await serviceRegistry.register(updatedService);
       } else {
-        const services = config.services.map(s => 
+        const services = config.mcpServers.map((s: any) => 
           s.name === editingService.name ? updatedService : s
         );
-        const newConfig = { ...config, services };
+        const newConfig = { ...config, mcpServers: services };
         await configProvider.save(newConfig);
       }
       
