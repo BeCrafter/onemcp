@@ -77,9 +77,13 @@ export class McpProtocolHandler {
     private readonly toolRouter: ToolRouter,
     options?: {
       maxBatchSize?: number;
+      tagFilter?: TagFilter;
     }
   ) {
     this.maxBatchSize = options?.maxBatchSize ?? 100;
+    if (options?.tagFilter) {
+      this.tagFilter = options.tagFilter;
+    }
   }
 
   /**
@@ -139,8 +143,8 @@ export class McpProtocolHandler {
       throw new Error('Protocol not initialized');
     }
 
-    // Use tag filter from params or from initialization
-    const tagFilter = params?.tagFilter ?? this.tagFilter;
+    // Use tag filter from params > context > initialization
+    const tagFilter = params?.tagFilter ?? _context.tagFilter ?? this.tagFilter;
 
     // Discover tools with tag filter
     const tools = await this.toolRouter.discoverTools(tagFilter);

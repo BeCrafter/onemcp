@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply }
 import { randomUUID } from 'node:crypto';
 import type { SystemConfig } from './types/config.js';
 import type { JsonRpcRequest } from './types/jsonrpc.js';
+import type { TagFilter } from './types/tool.js';
 import { JsonRpcParser } from './protocol/parser.js';
 import { McpProtocolHandler } from './protocol/mcp-handler.js';
 import { ServiceRegistry } from './registry/service-registry.js';
@@ -138,7 +139,23 @@ export class ServerModeRunner {
       if (!session) {
         // Create new session for this client
         const agentId = this.getAgentId(request);
-        session = this.sessionManager.createSession(agentId, {});
+        
+        // Parse tag filter from HTTP header (X-MCP-Tags: "tag1,tag2,tag3")
+        let tagFilter: TagFilter | undefined;
+        const tagsHeader = request.headers['x-mcp-tags'];
+        if (tagsHeader && typeof tagsHeader === 'string') {
+          const tags = tagsHeader.split(',').map(t => t.trim()).filter(t => t.length > 0);
+          if (tags.length > 0) {
+            tagFilter = { tags, logic: 'OR' };
+            console.error(`Tag filter from header: ${tags.join(', ')} (OR logic)`);
+          }
+        }
+        
+        const sessionContext: { tagFilter?: TagFilter } = {};
+        if (tagFilter) {
+          sessionContext.tagFilter = tagFilter;
+        }
+        session = this.sessionManager.createSession(agentId, sessionContext);
       }
 
       // Parse request body
@@ -169,6 +186,7 @@ export class ServerModeRunner {
         const jsonRpcRequest = message as JsonRpcRequest;
 
         // Create request context with session info
+        const sessionTagFilter = session.context.tagFilter;
         const context: RequestContext = {
           requestId: String(jsonRpcRequest.id),
           correlationId: randomUUID(),
@@ -176,6 +194,9 @@ export class ServerModeRunner {
           agentId: session.agentId,
           timestamp: new Date(),
         };
+        if (sessionTagFilter) {
+          context.tagFilter = sessionTagFilter;
+        }
 
         // Track active request
         this.sessionManager.incrementActiveRequests(session.id);

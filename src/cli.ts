@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { FileConfigProvider } from './config/file-provider.js';
 import { FileStorageAdapter } from './storage/file.js';
 import type { SystemConfig } from './types/config.js';
+import type { TagFilter } from './types/tool.js';
 
 /**
  * CLI argument definitions
@@ -23,6 +24,7 @@ interface CliArgs {
   configDir?: string | undefined;
   port?: string | undefined;
   logLevel?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | undefined;
+  tag?: string | undefined;
   help?: boolean | undefined;
   version?: boolean | undefined;
   validate?: boolean | undefined;
@@ -44,7 +46,8 @@ OPTIONS:
   -m, --mode <mode>           Deployment mode: cli, server, or tui (default: cli)
   -c, --config-dir <path>     Configuration directory (default: ~/.onemcp)
   -p, --port <port>           Server port for server mode (default: 3000)
-  -l, --log-level <level>     Log level: DEBUG, INFO, WARN, ERROR (default: INFO)
+  -l, --log-level <level>    Log level: DEBUG, INFO, WARN, ERROR (default: INFO)
+  -t, --tag <tags>            Tag filter for service/tool filtering (comma-separated, OR logic)
   -h, --help                  Display this help message
   -v, --version               Display version information
   --validate                  Validate configuration without starting
@@ -56,18 +59,32 @@ MODES:
   server                      HTTP server mode
   tui                         Interactive terminal UI for configuration management
 
+TAG FILTERING:
+  -t, --tag                   Filter services by tags (CLI mode only)
+                              Multiple tags are separated by commas (OR logic)
+                              Example: onemcp --tag production,api
+                              Services without tags are always available
+
+HEADER FILTERING (Server mode):
+  X-MCP-Tags: "tag1,tag2"      HTTP header to filter services by tags (OR logic)
+                              Example: curl -H "X-MCP-Tags: production,api" http://localhost:3000/mcp
+
 ENVIRONMENT VARIABLES:
-  ONEMCP_CONFIG_DIR          Override configuration directory location
+  ONEMCP_CONFIG_DIR           Override configuration directory location
   ONEMCP_MODE                Override deployment mode
   ONEMCP_PORT                Override server port
   ONEMCP_LOG_LEVEL           Override log level
 
 EXAMPLES:
-  # Start in CLI mode (default)
-  onemcp
+  # Start in CLI mode with tag filter
+  onemcp --tag production,api
 
-  # Start in server mode on port 8080
+  # Start in server mode
   onemcp --mode server --port 8080
+
+  # Start in server mode with HTTP header tag filter
+  onemcp --mode server
+  curl -H "X-MCP-Tags: production" http://localhost:3000/mcp -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 
   # Start in TUI mode for interactive configuration
   onemcp --mode tui
@@ -84,7 +101,7 @@ EXAMPLES:
   # Dry run to check configuration
   onemcp --dry-run
 
-For more information, visit: https://github.com/yourusername/onemcp-router
+For more information, visit: https://github.com/BeCrafter/onemcp
 `);
 }
 
@@ -120,6 +137,10 @@ function parseCliArgs(): CliArgs {
           type: 'string',
           short: 'l',
         },
+        tag: {
+          type: 'string',
+          short: 't',
+        },
         help: {
           type: 'boolean',
           short: 'h',
@@ -147,6 +168,7 @@ function parseCliArgs(): CliArgs {
       configDir: values['config-dir'],
       port: values.port,
       logLevel: values['log-level'] as 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | undefined,
+      tag: values.tag,
       help: values.help,
       version: values.version,
       validate: values.validate,
@@ -440,7 +462,18 @@ async function main(): Promise<void> {
     // Start the router based on mode
     if (config.mode === 'cli') {
       const { CliModeRunner } = await import('./cli-mode.js');
-      const runner = new CliModeRunner(config, configProvider);
+      
+      // Parse tag filter from CLI argument (--tag or -t)
+      let tagFilter: TagFilter | undefined;
+      if (args.tag) {
+        const tags = args.tag.split(',').map(t => t.trim()).filter(t => t.length > 0);
+        if (tags.length > 0) {
+          tagFilter = { tags, logic: 'OR' };
+          console.error(`Tag filter: ${tags.join(', ')} (OR logic)`);
+        }
+      }
+      
+      const runner = new CliModeRunner(config, configProvider, tagFilter);
       
       // Set up graceful shutdown handlers
       const shutdown = async (signal: string) => {

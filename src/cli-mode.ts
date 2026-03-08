@@ -19,6 +19,7 @@ import { ToolRouter } from './routing/tool-router.js';
 import { ConnectionPool } from './pool/connection-pool.js';
 import type { ConfigProvider } from './types/config.js';
 import type { RequestContext } from './types/context.js';
+import type { TagFilter } from './types/tool.js';
 import { randomUUID } from 'node:crypto';
 
 /**
@@ -45,7 +46,8 @@ export class CliModeRunner {
 
   constructor(
     private config: SystemConfig,
-    configProvider: ConfigProvider
+    configProvider: ConfigProvider,
+    tagFilter?: TagFilter
   ) {
     this.parser = new JsonRpcParser();
     this.serializer = new JsonRpcSerializer();
@@ -57,6 +59,15 @@ export class CliModeRunner {
       this.namespaceManager,
       this.healthMonitor
     );
+    
+    // Initialize protocol handler with tag filter
+    const handlerOptions: { maxBatchSize: number; tagFilter?: TagFilter } = {
+      maxBatchSize: 100,
+    };
+    if (tagFilter) {
+      handlerOptions.tagFilter = tagFilter;
+    }
+    this.protocolHandler = new McpProtocolHandler(this.toolRouter, handlerOptions);
   }
 
   /**
@@ -76,10 +87,7 @@ export class CliModeRunner {
       // Create connection pools for all enabled services
       await this.initializeConnectionPools();
 
-      // Initialize protocol handler
-      this.protocolHandler = new McpProtocolHandler(this.toolRouter, {
-        maxBatchSize: 100,
-      });
+      // Protocol handler already initialized in constructor
 
       // Start health monitoring if enabled
       if (this.config.healthCheck.enabled) {

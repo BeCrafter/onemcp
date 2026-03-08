@@ -688,7 +688,7 @@ export class FileConfigProvider implements ConfigProvider {
   private createReadmeContent(): string {
     return `# OneMCP Configuration Directory
 
-This directory contains the configuration for the OneMCP Router System.
+This directory contains the configuration for the OneMCP System.
 
 ## Directory Structure
 
@@ -893,9 +893,9 @@ Invalid configurations are rejected and the previous valid configuration is main
 
 ## More Information
 
-For complete documentation, visit: https://github.com/yourusername/onemcp-router
+For complete documentation, visit: https://github.com/BeCrafter/onemcp
 
-For support, open an issue at: https://github.com/yourusername/onemcp-router/issues
+For support, open an issue at: https://github.com/BeCrafter/onemcp/issues
 `;
   }
 }

@@ -87,6 +87,17 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
         </Box>
       </Box>
 
+      <Box flexDirection="column" borderStyle="single" paddingX={1} marginBottom={1}>
+        <Text bold color="yellow">Client Tag Filtering</Text>
+        <Box flexDirection="column" marginLeft={2}>
+          <Text><Text color="cyan">tagFilter</Text> - Clients specify tags in initialize request params</Text>
+          <Text><Text color="cyan">tags</Text> - Array of tags to match (e.g., ["production", "api"])</Text>
+          <Text><Text color="cyan">logic</Text> - "AND" (all tags required) or "OR" (any tag matches)</Text>
+          <Text dimColor>Services without tags are always available to all clients</Text>
+          <Text dimColor>Works for both stdio and HTTP modes via JSON-RPC initialize</Text>
+        </Box>
+      </Box>
+
       <Box borderStyle="single" borderColor="cyan" paddingX={1}>
         <Text color="cyan">Press Esc, ?, or q to close this help</Text>
       </Box>

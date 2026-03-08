@@ -89,7 +89,7 @@ EXAMPLES:
   # Use custom configuration directory
   onemcp-tui --config-dir /etc/onemcp
 
-For more information, visit: https://github.com/yourusername/onemcp-router
+For more information, visit: https://github.com/BeCrafter/onemcp
 `);
 }
 

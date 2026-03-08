@@ -144,7 +144,10 @@ export class ToolRouter extends EventEmitter {
       try {
         // Query tools from the service
         const serviceTools = await this.queryServiceTools(service, pool);
-        allTools.push(...serviceTools);
+        
+        // Filter out disabled tools - only return enabled tools to external clients
+        const enabledTools = serviceTools.filter(tool => tool.enabled);
+        allTools.push(...enabledTools);
       } catch (error) {
         // Log error to console for debugging
         console.error(

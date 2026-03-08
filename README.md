@@ -1,4 +1,4 @@
-# OneMCP Router
+# OneMCP
 
 <div align="center">
 
@@ -16,7 +16,7 @@
 
 ## 📖 简介
 
-OneMCP Router 是一个基于 Node.js 的智能路由中间件，用于聚合和管理多个 MCP (Model Context Protocol) 服务器。它作为 MCP 客户端和后端服务器之间的统一路由层，提供服务发现、工具路由、连接池管理和灵活的配置管理功能。
+OneMCP 是一个基于 Node.js 的智能路由中间件，用于聚合和管理多个 MCP (Model Context Protocol) 服务器。它作为 MCP 客户端和后端服务器之间的统一路由层，提供服务发现、工具路由、连接池管理和灵活的配置管理功能。
 
 ### ✨ 核心特性
 
@@ -52,7 +52,7 @@ npm install onemcp-router
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/onemcp-router.git
+git clone https://github.com/BeCrafter/onemcp.git
 cd onemcp-router
 
 # 安装依赖
@@ -261,6 +261,48 @@ await cliRunner.stop();
 await serverRunner.stop();
 ```
 
+### 客户端标签过滤 (Client-Side Tag Filtering)
+
+OneMCP 支持**每个客户端连接**指定自己需要的标签过滤。
+
+#### 标签过滤参数
+
+```typescript
+interface TagFilter {
+  tags: string[];        // 要匹配的标签数组
+  logic: 'AND' | 'OR';  // 过滤逻辑：AND（所有标签都必须匹配）或 OR（任一标签匹配即可）
+}
+```
+
+#### 服务标签行为
+
+- **有标签的服务**: 只有当客户端的标签过滤器匹配时才会暴露
+- **无标签的服务**: 始终对所有客户端可用（默认全场景输出）
+
+#### 使用方式
+
+**CLI 模式 (stdio)**: 使用 `--tag` 或 `-t` 命令行参数
+```bash
+# 过滤具有 production 或 api 标签的服务
+onemcp --tag production,api
+
+# 简写形式
+onemcp -t production,database
+```
+
+**Server 模式 (HTTP)**: 使用 `X-MCP-Tags` HTTP 头
+```bash
+# 过滤具有 production 或 api 标签的服务
+curl -H "X-MCP-Tags: production,api" http://localhost:3000/mcp \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+```
+
+> **注意**: 
+> - CLI 模式使用 `--tag` 参数，Server 模式使用 HTTP 头
+> - 多个标签使用逗号分隔，采用 OR 逻辑（匹配任一标签即可）
+> - 此功能适用于**每个独立客户端连接**，不同的客户端可以指定不同的标签过滤器
+> - 如果不提供标签过滤，则返回所有服务工具（包括有标签和无标签的服务）
+
 ### 事件监听
 
 路由器会发出事件用于监控和调试：
@@ -299,7 +341,7 @@ router.on('error', (error) => {
                  │ JSON-RPC 2.0 (stdio/HTTP)
                  │
 ┌────────────────▼────────────────────────────────────────────┐
-│                     OneMCP Router                           │
+│                     OneMCP                           │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │              传输层 (Transport Layer)                │  │
 │  │  (CLI: stdio | Server: HTTP)                         │  │
