@@ -285,16 +285,23 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
 
   const terminalHeight = stdout?.rows || 24;
   const terminalWidth = stdout?.columns || 80;
-  const HEADER_LINES = 3;
-  const FOOTER_LINES = 2;
-  const AVAILABLE_LINES = terminalHeight - HEADER_LINES - FOOTER_LINES;
-  const VISIBLE_TOOLS = Math.max(5, Math.floor(AVAILABLE_LINES * 0.5));
-  const TOOLS_LIST_WIDTH = Math.floor(terminalWidth * 0.3);
-  const DESC_WIDTH = Math.floor(terminalWidth * 0.7) - 1;
+  const HEADER_LINES = 4;
+  const FOOTER_LINES = 4; // Increased from 3 to 4 to account for quick actions section
+  const AVAILABLE_LINES = Math.max(1, terminalHeight - HEADER_LINES - FOOTER_LINES);
+  const VISIBLE_TOOLS = Math.min(tools.length, Math.max(3, AVAILABLE_LINES));
+  
+  // Calculate available lines for description content (accounting for description header and scroll indicators)
+  const DESCRIPTION_CONTENT_LINES = Math.max(1, AVAILABLE_LINES - 2);
+  
+  const BORDER_PADDING = 4;
+  const effectiveWidth = Math.max(terminalWidth - BORDER_PADDING, 50);
+  const TOOL_WIDTH_RATIO = Math.min(0.5, Math.max(0.3, 40 / effectiveWidth));
+  const TOOLS_LIST_WIDTH = Math.floor(effectiveWidth * TOOL_WIDTH_RATIO);
+  const DESC_WIDTH = effectiveWidth - TOOLS_LIST_WIDTH;
 
   const currentTool = tools[selectedIndex];
   const descriptionLines = currentTool?.description?.split('\n') || [];
-  const maxDescScroll = Math.max(0, descriptionLines.length - VISIBLE_TOOLS);
+  const maxDescScroll = Math.max(0, descriptionLines.length - DESCRIPTION_CONTENT_LINES);
 
   // Calculate tool statistics
   const enabledToolsCount = tools.filter(t => t.enabled).length;
@@ -479,7 +486,7 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
             <Text bold>Description:</Text>
             {descriptionLines.length > 0 ? (
               <>
-                {descriptionLines.slice(scrollOffset, scrollOffset + VISIBLE_TOOLS - 1).map((line, i) => (
+                {descriptionLines.slice(scrollOffset, scrollOffset + DESCRIPTION_CONTENT_LINES).map((line, i) => (
                   <Text key={i}>{line}</Text>
                 ))}
                 <Text dimColor>

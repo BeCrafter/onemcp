@@ -6,7 +6,7 @@
  * Provides inline validation and real-time preview.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import SelectInput from 'ink-select-input';
@@ -310,6 +310,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Map<FormField, string>>(new Map());
   const [touched, setTouched] = useState<Set<FormField>>(new Set());
+  const isCtrlAActive = useRef(false);
 
   // Get field configurations based on transport type
   const fieldConfigs = getFieldConfigs(formData.transport);
@@ -416,7 +417,12 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
 
     // Toggle advanced options (Ctrl+A)
     if (input === 'a' && key.ctrl) {
+      isCtrlAActive.current = true;
       setShowAdvanced(!showAdvanced);
+      // Reset after a short delay to handle any potential race conditions
+      setTimeout(() => {
+        isCtrlAActive.current = false;
+      }, 10);
       return;
     }
 
@@ -489,6 +495,10 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
       <TextInput
         value={formData[field as keyof FormData] as string}
         onChange={(value) => {
+          // Ignore changes when Ctrl+A is being processed
+          if (isCtrlAActive.current) {
+            return;
+          }
           setFormData({ ...formData, [field]: value });
         }}
         onSubmit={() => {

@@ -510,6 +510,7 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
             globalToolStats={globalToolStats}
+            terminalHeight={terminalHeight}
           />
         )}
 

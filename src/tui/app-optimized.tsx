@@ -540,10 +540,9 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
             services={services}
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
-            onToggleService={handleToggleService}
-            onDeleteService={handleDeleteService}
             showDetails={true}
             globalToolStats={globalToolStats}
+            terminalHeight={terminalHeight}
           />
         )}
 
