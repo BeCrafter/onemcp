@@ -1,6 +1,6 @@
 /**
  * Unit Tests for MCP Protocol Handler
- * 
+ *
  * Tests specific examples and edge cases for MCP protocol methods.
  */
 
@@ -23,7 +23,7 @@ import { ErrorCode } from '../../../src/types/jsonrpc.js';
  */
 async function createTestConfigProvider(): Promise<FileConfigProvider> {
   const storage = new MemoryStorageAdapter();
-  
+
   const defaultConfig: SystemConfig = {
     mode: 'cli',
     logLevel: 'INFO',
@@ -57,9 +57,9 @@ async function createTestConfigProvider(): Promise<FileConfigProvider> {
       },
     },
   };
-  
+
   await storage.write('/test/config.json', JSON.stringify(defaultConfig));
-  
+
   return new FileConfigProvider({
     storageAdapter: storage,
     configDir: '/test',
@@ -131,7 +131,7 @@ describe('McpProtocolHandler', () => {
           tools: {},
         },
         serverInfo: {
-          name: 'onemcp-router',
+          name: 'onemcp',
           version: '1.0.0',
         },
       });
@@ -196,9 +196,9 @@ describe('McpProtocolHandler', () => {
     it('should throw error if not initialized', async () => {
       const uninitializedHandler = new McpProtocolHandler(toolRouter);
 
-      await expect(
-        uninitializedHandler.toolsList(undefined, context)
-      ).rejects.toThrow('not initialized');
+      await expect(uninitializedHandler.toolsList(undefined, context)).rejects.toThrow(
+        'not initialized'
+      );
     });
 
     it('should apply tag filter from params', async () => {
@@ -289,17 +289,14 @@ describe('McpProtocolHandler', () => {
       const uninitializedHandler = new McpProtocolHandler(toolRouter);
 
       await expect(
-        uninitializedHandler.toolsCall(
-          { name: 'test-tool', arguments: {} },
-          context
-        )
+        uninitializedHandler.toolsCall({ name: 'test-tool', arguments: {} }, context)
       ).rejects.toThrow('not initialized');
     });
 
     it('should throw error if tool name is missing', async () => {
-      await expect(
-        mcpHandler.toolsCall({ name: '', arguments: {} }, context)
-      ).rejects.toThrow('Tool name is required');
+      await expect(mcpHandler.toolsCall({ name: '', arguments: {} }, context)).rejects.toThrow(
+        'Tool name is required'
+      );
     });
 
     it('should call tool via router', async () => {
@@ -315,11 +312,7 @@ describe('McpProtocolHandler', () => {
         context
       );
 
-      expect(callToolSpy).toHaveBeenCalledWith(
-        'service__test-tool',
-        { param1: 'value1' },
-        context
-      );
+      expect(callToolSpy).toHaveBeenCalledWith('service__test-tool', { param1: 'value1' }, context);
       expect(result).toEqual(mockResult);
     });
 
@@ -327,16 +320,9 @@ describe('McpProtocolHandler', () => {
       const callToolSpy = vi.spyOn(toolRouter, 'callTool');
       callToolSpy.mockResolvedValue({ success: true });
 
-      await mcpHandler.toolsCall(
-        { name: 'service__test-tool' },
-        context
-      );
+      await mcpHandler.toolsCall({ name: 'service__test-tool' }, context);
 
-      expect(callToolSpy).toHaveBeenCalledWith(
-        'service__test-tool',
-        {},
-        context
-      );
+      expect(callToolSpy).toHaveBeenCalledWith('service__test-tool', {}, context);
     });
   });
 
@@ -419,16 +405,16 @@ describe('McpProtocolHandler', () => {
       const responses = await mcpHandler.handleBatch(requests, context);
 
       expect(responses).toHaveLength(3);
-      
+
       // First request should succeed
       expect('result' in responses[0]).toBe(true);
-      
+
       // Second request should fail
       expect('error' in responses[1]).toBe(true);
       if ('error' in responses[1]) {
         expect(responses[1].error.code).toBe(ErrorCode.METHOD_NOT_FOUND);
       }
-      
+
       // Third request should still succeed despite second failure
       expect('result' in responses[2]).toBe(true);
     });
@@ -441,9 +427,7 @@ describe('McpProtocolHandler', () => {
         params: {},
       }));
 
-      await expect(
-        mcpHandler.handleBatch(requests, context)
-      ).rejects.toThrow('exceeds maximum');
+      await expect(mcpHandler.handleBatch(requests, context)).rejects.toThrow('exceeds maximum');
     });
 
     it('should create unique correlation IDs for each request', async () => {
@@ -465,16 +449,16 @@ describe('McpProtocolHandler', () => {
       const responses = await mcpHandler.handleBatch(requests, context);
 
       expect(responses).toHaveLength(2);
-      
+
       // Both should be errors
       expect('error' in responses[0]).toBe(true);
       expect('error' in responses[1]).toBe(true);
-      
+
       // Check correlation IDs are different
       if ('error' in responses[0] && 'error' in responses[1]) {
         const corr1 = responses[0].error.data?.correlationId;
         const corr2 = responses[1].error.data?.correlationId;
-        
+
         expect(corr1).toBeDefined();
         expect(corr2).toBeDefined();
         expect(corr1).not.toBe(corr2);

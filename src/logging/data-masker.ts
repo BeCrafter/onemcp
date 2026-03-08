@@ -134,7 +134,7 @@ export class DataMasker {
       // Match patterns like "password=value" or "password: value"
       const regex1 = new RegExp(`(${pattern})\\s*[:=]\\s*([^\\s,}\\]]+)`, 'gi');
       masked = masked.replace(regex1, `$1=${this.maskValue('')}`);
-      
+
       // Also mask the word itself when it appears in error messages
       const regex2 = new RegExp(`\\b${pattern}\\b`, 'gi');
       masked = masked.replace(regex2, this.maskValue(''));

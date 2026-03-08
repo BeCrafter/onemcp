@@ -1,6 +1,6 @@
 /**
  * Unit tests for MetricsCollector
- * 
+ *
  * Requirements:
  * - 34.1: Track tool call counts and execution times
  * - 34.2: Track connection pool statistics
@@ -297,24 +297,24 @@ describe('MetricsCollector', () => {
     it('should query metrics by time range', async () => {
       // Create a fresh collector for this test
       const freshCollector = new MetricsCollector(config);
-      
+
       // Record initial data
       freshCollector.recordToolCall('read_file', 'filesystem', 100, true);
-      
+
       // Wait a bit to ensure time difference
       await new Promise((resolve) => setTimeout(resolve, 100));
-      
+
       const startTime = new Date();
-      
+
       // Wait a bit more
       await new Promise((resolve) => setTimeout(resolve, 100));
-      
+
       freshCollector.recordToolCall('delete_file', 'filesystem', 120, true);
 
       const metrics = freshCollector.queryMetrics({ startTime });
       // Should only include the new call (after startTime)
       expect(metrics.totalRequests).toBe(1);
-      
+
       freshCollector.stop();
     });
 
@@ -399,7 +399,7 @@ describe('MetricsCollector', () => {
       });
 
       shortRetentionCollector.recordToolCall('read_file', 'filesystem', 100, true);
-      
+
       // Wait for retention period to pass
       await new Promise((resolve) => setTimeout(resolve, 150));
 

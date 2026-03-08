@@ -1134,7 +1134,7 @@ graph TD
 - **目的**：验证在所有输入下保持的通用属性
 - **工具**：fast-check
 - **配置**：每个属性测试至少运行 100 次迭代
-- **标签格式**：`Feature: onemcp-router-system, Property {number}: {property_text}`
+- **标签格式**：`Feature: onemcp-system, Property {number}: {property_text}`
 - **覆盖范围**：
   - 往返属性（服务注册、配置持久化、命名空间、JSON-RPC 消息）
   - 完整性保证（工具发现、错误响应格式）
@@ -1186,7 +1186,7 @@ tests/
 ### 属性测试示例
 
 ```typescript
-// Feature: onemcp-router-system, Property 1: 服务注册往返
+// Feature: onemcp-system, Property 1: 服务注册往返
 describe('Property 1: Service Registration Round Trip', () => {
   it('should preserve service definition after register and retrieve', async () => {
     await fc.assert(
@@ -1210,7 +1210,7 @@ describe('Property 1: Service Registration Round Trip', () => {
   });
 });
 
-// Feature: onemcp-router-system, Property 6: 命名空间往返
+// Feature: onemcp-system, Property 6: 命名空间往返
 describe('Property 6: Namespace Round Trip', () => {
   it('should preserve service and tool names through namespace generation and parsing', () => {
     fc.assert(
@@ -1236,7 +1236,7 @@ describe('Property 6: Namespace Round Trip', () => {
   });
 });
 
-// Feature: onemcp-router-system, Property 19: 会话完全隔离
+// Feature: onemcp-system, Property 19: 会话完全隔离
 describe('Property 19: Session Complete Isolation', () => {
   it('should isolate operations between different sessions', async () => {
     await fc.assert(

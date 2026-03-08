@@ -270,11 +270,11 @@ export class ErrorRecovery {
         if (!healthy) {
           // Try to recover
           await operation();
-          
+
           // Wait a bit and check health again
           await this.sleep(delayMs);
           const nowHealthy = await healthCheck();
-          
+
           if (nowHealthy) {
             console.log(`Service recovered after ${attempt} attempts`);
             return;

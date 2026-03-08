@@ -198,7 +198,7 @@ See `.env.example` for available environment variables:
 
 ## Next Steps
 
-After project setup, the implementation will proceed according to the tasks defined in `.kiro/specs/onemcp-router-system/tasks.md`:
+After project setup, the implementation will proceed according to the tasks defined in `.kiro/specs/onemcp-system/tasks.md`:
 
 1. Implement core data models and types
 2. Implement Transport Layer

@@ -1,6 +1,6 @@
 /**
  * JSON-RPC 2.0 Parser
- * 
+ *
  * Parses and validates JSON-RPC 2.0 messages according to the specification.
  */
 
@@ -16,7 +16,7 @@ import {
 
 /**
  * JSON-RPC 2.0 Parser class
- * 
+ *
  * Provides methods to parse and validate JSON-RPC 2.0 messages.
  */
 export class JsonRpcParser {
@@ -27,7 +27,7 @@ export class JsonRpcParser {
 
   constructor() {
     this.ajv = new Ajv({ allErrors: true });
-    
+
     // Define JSON-RPC 2.0 request schema
     const requestSchema = {
       type: 'object',
@@ -98,7 +98,7 @@ export class JsonRpcParser {
 
   /**
    * Parse a JSON-RPC 2.0 message from a string
-   * 
+   *
    * @param raw - Raw JSON string to parse
    * @returns Parsed JSON-RPC message
    * @throws Error if the JSON is malformed or invalid
@@ -133,7 +133,7 @@ export class JsonRpcParser {
 
   /**
    * Validate a JSON-RPC 2.0 message
-   * 
+   *
    * @param message - Message to validate
    * @returns Validation result with errors if any
    */

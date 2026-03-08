@@ -18,7 +18,7 @@ describe('HealthMonitor', () => {
 
   beforeEach(async () => {
     storage = new MemoryStorageAdapter();
-    
+
     // Initialize storage with default config
     const defaultConfig = {
       mode: 'cli' as const,
@@ -53,10 +53,10 @@ describe('HealthMonitor', () => {
         },
       },
     };
-    
+
     // Write to the full path that FileConfigProvider expects
     await storage.write('/test/config/config.json', JSON.stringify(defaultConfig));
-    
+
     configProvider = new FileConfigProvider({
       storageAdapter: storage,
       configDir: '/test/config',
@@ -145,7 +145,7 @@ describe('HealthMonitor', () => {
 
       // Verify that health check was performed during registration
       expect(acquireSpy).toHaveBeenCalled();
-      
+
       // Verify health status is available immediately
       const status = healthMonitor.getHealthStatus('test-service');
       expect(status).toBeDefined();
@@ -191,10 +191,13 @@ describe('HealthMonitor', () => {
       await healthMonitor.registerConnectionPool('test-service', pool);
 
       expect(serviceHealthySpy).toHaveBeenCalledTimes(1);
-      expect(serviceHealthySpy).toHaveBeenCalledWith('test-service', expect.objectContaining({
-        serviceName: 'test-service',
-        healthy: true,
-      }));
+      expect(serviceHealthySpy).toHaveBeenCalledWith(
+        'test-service',
+        expect.objectContaining({
+          serviceName: 'test-service',
+          healthy: true,
+        })
+      );
     });
 
     it('should emit serviceUnhealthy event when initial health check fails', async () => {
@@ -222,10 +225,13 @@ describe('HealthMonitor', () => {
 
       expect(status.healthy).toBe(false);
       expect(serviceUnhealthySpy).toHaveBeenCalledTimes(1);
-      expect(serviceUnhealthySpy).toHaveBeenCalledWith('test-service', expect.objectContaining({
-        serviceName: 'test-service',
-        healthy: false,
-      }));
+      expect(serviceUnhealthySpy).toHaveBeenCalledWith(
+        'test-service',
+        expect.objectContaining({
+          serviceName: 'test-service',
+          healthy: false,
+        })
+      );
     });
 
     it('should return unhealthy status when initial health check fails', async () => {
@@ -315,7 +321,7 @@ describe('HealthMonitor', () => {
 
       // Create a mock pool
       const pool = new ConnectionPool(service, service.connectionPool);
-      
+
       // Mock acquire to return a healthy connection
       const mockConnection: Connection = {
         id: 'test-conn-1',
@@ -361,7 +367,7 @@ describe('HealthMonitor', () => {
       };
 
       const pool = new ConnectionPool(service, service.connectionPool);
-      
+
       // Mock acquire to fail
       vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
 
@@ -442,7 +448,7 @@ describe('HealthMonitor', () => {
       // First fail during registration
       vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
       await healthMonitor.registerConnectionPool('test-service', pool);
-      
+
       // Verify initial failure
       const status1 = healthMonitor.getHealthStatus('test-service');
       expect(status1?.consecutiveFailures).toBe(1);
@@ -657,7 +663,7 @@ describe('HealthMonitor', () => {
 
       const statuses = await healthMonitor.getAllHealthStatus();
       expect(statuses).toHaveLength(2);
-      expect(statuses.map(s => s.serviceName).sort()).toEqual(['service-1', 'service-2']);
+      expect(statuses.map((s) => s.serviceName).sort()).toEqual(['service-1', 'service-2']);
     });
   });
 
@@ -816,7 +822,7 @@ describe('HealthMonitor', () => {
       healthMonitor.startHeartbeat(100, 3);
 
       // Wait for at least one heartbeat cycle
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
       // Check that health was checked
       const status = healthMonitor.getHealthStatus('test-service');
@@ -851,8 +857,8 @@ describe('HealthMonitor', () => {
       healthMonitor.startHeartbeat(10000, 3);
 
       // Status should be available immediately (no need to wait for interval)
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
       const status = healthMonitor.getHealthStatus('test-service');
       expect(status).toBeDefined();
 
@@ -887,7 +893,7 @@ describe('HealthMonitor', () => {
       healthMonitor.startHeartbeat(50, 2);
 
       // Wait for enough cycles to exceed threshold (need at least 1 more failure)
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Should have emitted serviceUnhealthy event
       expect(serviceUnhealthySpy).toHaveBeenCalled();
@@ -942,7 +948,7 @@ describe('HealthMonitor', () => {
       healthMonitor.startHeartbeat(100, 3);
 
       // Wait for at least one cycle
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
       // Both services should have been checked
       const status1 = healthMonitor.getHealthStatus('service-1');
@@ -983,16 +989,16 @@ describe('HealthMonitor', () => {
 
       // Start heartbeat with short interval
       healthMonitor.startHeartbeat(50, 3);
-      
+
       // Wait for initial check
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
       const initialCheckCount = checkCount;
-      
+
       // Stop heartbeat
       healthMonitor.stopHeartbeat();
 
       // Wait to ensure no more checks happen
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
       // Check count should not have increased significantly after stop
       // (allow for 1 extra check that might have been in progress)
@@ -1034,7 +1040,7 @@ describe('HealthMonitor', () => {
       healthMonitor.startHeartbeat(50, 3);
 
       // Wait for one cycle of the second heartbeat
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Should have status from second heartbeat
       const status = healthMonitor.getHealthStatus('test-service');
@@ -1194,7 +1200,7 @@ describe('HealthMonitor', () => {
       const callback1 = vi.fn();
       const callback2 = vi.fn();
       const callback3 = vi.fn();
-      
+
       const unsubscribe1 = healthMonitor.onHealthChange(callback1);
       const unsubscribe2 = healthMonitor.onHealthChange(callback2);
       const unsubscribe3 = healthMonitor.onHealthChange(callback3);

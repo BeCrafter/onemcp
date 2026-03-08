@@ -1,6 +1,6 @@
 /**
  * Service Rename Integration Test
- * 
+ *
  * Verifies that renaming a service properly replaces the old service
  * instead of creating a duplicate
  */
@@ -24,14 +24,14 @@ describe('Service Rename Integration', () => {
   beforeEach(async () => {
     // Create temporary directory
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'onemcp-rename-test-'));
-    
+
     // Initialize components
     storage = new FileStorageAdapter(tempDir);
     provider = new FileConfigProvider({
       storageAdapter: storage,
       configDir: tempDir,
     });
-    
+
     // Define original service
     originalService = {
       name: 'original-service',
@@ -46,12 +46,12 @@ describe('Service Rename Integration', () => {
         connectionTimeout: 30000,
       },
       toolStates: {
-        'tool1': true,
-        'tool2': false,
+        tool1: true,
+        tool2: false,
       },
       discoveredToolsCount: 2,
     };
-    
+
     // Create initial configuration with one service
     const config: SystemConfig = {
       mode: 'server',
@@ -97,9 +97,9 @@ describe('Service Rename Integration', () => {
         retentionPeriod: 86400000,
       },
     };
-    
+
     await provider.save(config);
-    
+
     // Initialize registry
     registry = new ServiceRegistry(provider);
     await registry.initialize();
@@ -224,13 +224,13 @@ describe('Service Rename Integration', () => {
     expect(services).toHaveLength(2);
 
     // Verify service names
-    const serviceNames = services.map(s => s.name).sort();
+    const serviceNames = services.map((s) => s.name).sort();
     expect(serviceNames).toEqual(['another-service', 'renamed-service']);
 
     // Verify config file
     const savedConfig = await provider.load();
     expect(savedConfig.services).toHaveLength(2);
-    const configNames = savedConfig.services.map(s => s.name).sort();
+    const configNames = savedConfig.services.map((s) => s.name).sort();
     expect(configNames).toEqual(['another-service', 'renamed-service']);
   });
 
@@ -255,9 +255,6 @@ describe('Service Rename Integration', () => {
     await registry.register(renamedService);
 
     // Verify events were emitted in correct order
-    expect(events).toEqual([
-      'unregistered:original-service',
-      'registered:renamed-service',
-    ]);
+    expect(events).toEqual(['unregistered:original-service', 'registered:renamed-service']);
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Tool Router for MCP Router System
- * 
+ *
  * This module implements tool discovery, caching, and routing functionality.
  * It discovers tools from all enabled services, applies namespacing to avoid
  * conflicts, caches results for performance, and routes tool calls to the
@@ -14,7 +14,11 @@ import type { NamespaceManager } from '../namespace/manager.js';
 import type { ConnectionPool } from '../pool/connection-pool.js';
 import type { HealthMonitor } from '../health/health-monitor.js';
 import type { RequestContext } from '../types/context.js';
-import type { JsonRpcRequest, JsonRpcSuccessResponse, JsonRpcErrorResponse } from '../types/jsonrpc.js';
+import type {
+  JsonRpcRequest,
+  JsonRpcSuccessResponse,
+  JsonRpcErrorResponse,
+} from '../types/jsonrpc.js';
 import { ErrorCode } from '../types/jsonrpc.js';
 import Ajv from 'ajv';
 import { EventEmitter } from 'events';
@@ -29,7 +33,7 @@ interface ToolCacheEntry {
 
 /**
  * Tool Router class
- * 
+ *
  * Manages tool discovery, caching, and routing. Integrates with ServiceRegistry,
  * NamespaceManager, ConnectionPool, and HealthMonitor to provide a complete
  * tool routing solution.
@@ -44,21 +48,21 @@ export class ToolRouter extends EventEmitter {
     private readonly healthMonitor: HealthMonitor
   ) {
     super();
-    
+
     // Subscribe to health status changes to auto-unload/load tools
     this.healthMonitor.on('serviceUnhealthy', (serviceName: string) => {
       this.handleServiceUnhealthy(serviceName);
     });
-    
+
     this.healthMonitor.on('serviceRecovered', (serviceName: string) => {
       this.handleServiceRecovered(serviceName);
     });
-    
+
     // Subscribe to service registration/unregistration events for cache invalidation (Requirement 2.4)
     this.serviceRegistry.on('serviceRegistered', () => {
       this.invalidateCache();
     });
-    
+
     this.serviceRegistry.on('serviceUnregistered', () => {
       this.invalidateCache();
     });
@@ -66,9 +70,9 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Register a connection pool for a service
-   * 
+   *
    * This allows the tool router to route tool calls to the service.
-   * 
+   *
    * @param serviceName - Name of the service
    * @param pool - Connection pool for the service
    */
@@ -78,7 +82,7 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Unregister a connection pool for a service
-   * 
+   *
    * @param serviceName - Name of the service
    */
   public unregisterConnectionPool(serviceName: string): void {
@@ -87,17 +91,17 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Discover all tools from enabled services
-   * 
+   *
    * Queries all enabled services (optionally filtered by tags) and returns
    * an aggregated list of tools with namespaced names. Results are cached
    * for performance.
-   * 
+   *
    * Requirements:
    * - 2.1: Query all enabled services and return aggregated tool list
    * - 2.2: Provide name, namespaced name, description, input schema, source service
    * - 2.3: Cache tool definitions for performance
    * - 14.1-14.5: Support tag filtering during discovery
-   * 
+   *
    * @param tagFilter - Optional tag filter to apply
    * @returns Promise resolving to array of discovered tools
    */
@@ -109,7 +113,7 @@ export class ToolRouter extends EventEmitter {
 
     // Get all services (Requirement 2.1)
     let services: ServiceDefinition[];
-    
+
     if (tagFilter) {
       // Apply tag filter (Requirements 14.1-14.5)
       const matchAll = tagFilter.logic === 'AND';
@@ -119,10 +123,10 @@ export class ToolRouter extends EventEmitter {
     }
 
     // Filter to only enabled services
-    const enabledServices = services.filter(service => service.enabled);
+    const enabledServices = services.filter((service) => service.enabled);
 
     // Filter to only healthy services
-    const healthyServices = enabledServices.filter(service => {
+    const healthyServices = enabledServices.filter((service) => {
       const healthStatus = this.healthMonitor.getHealthStatus(service.name);
       // Include service if:
       // 1. No health status yet (not checked), or
@@ -132,10 +136,10 @@ export class ToolRouter extends EventEmitter {
 
     // Discover tools from all healthy enabled services
     const allTools: Tool[] = [];
-    
+
     for (const service of healthyServices) {
       const pool = this.connectionPools.get(service.name);
-      
+
       if (!pool) {
         // No connection pool registered for this service, skip
         continue;
@@ -144,9 +148,9 @@ export class ToolRouter extends EventEmitter {
       try {
         // Query tools from the service
         const serviceTools = await this.queryServiceTools(service, pool);
-        
+
         // Filter out disabled tools - only return enabled tools to external clients
-        const enabledTools = serviceTools.filter(tool => tool.enabled);
+        const enabledTools = serviceTools.filter((tool) => tool.enabled);
         allTools.push(...enabledTools);
       } catch (error) {
         // Log error to console for debugging
@@ -172,11 +176,11 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Invalidate the tool cache
-   * 
+   *
    * Forces the next discoverTools() call to re-query all services.
    * Should be called when services are registered/unregistered or when
    * health status changes.
-   * 
+   *
    * Requirement 2.4: Cache invalidation on service changes
    */
   public invalidateCache(): void {
@@ -186,16 +190,16 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Set the enabled/disabled state of a tool
-   * 
+   *
    * Updates the tool state in the service configuration and persists it.
    * Emits a toolStateChanged event when the state changes.
-   * 
+   *
    * Requirements:
    * - 3.2: Enable/disable individual tools by namespaced name
    * - 3.4: Persist tool states across restarts
    * - 3.8: Allow dynamic modification via API
    * - 3.9: Emit events when tool state changes
-   * 
+   *
    * @param namespacedName - Namespaced tool name (serviceName__toolName)
    * @param enabled - True to enable, false to disable
    * @throws Error if tool or service not found
@@ -242,13 +246,13 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Get the enabled/disabled state of a tool
-   * 
+   *
    * Queries the current state of a tool from the service configuration.
-   * 
+   *
    * Requirements:
    * - 3.3: Query tool enabled/disabled status
    * - 3.11: Default to enabled when not specified
-   * 
+   *
    * @param namespacedName - Namespaced tool name (serviceName__toolName)
    * @returns True if tool is enabled, false if disabled
    * @throws Error if tool or service not found
@@ -269,10 +273,10 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Query tools from a specific service
-   * 
+   *
    * Acquires a connection from the pool, queries the service's tools,
    * applies namespacing, and returns the tool list.
-   * 
+   *
    * @param service - Service definition
    * @param pool - Connection pool for the service
    * @returns Promise resolving to array of tools from the service
@@ -292,7 +296,7 @@ export class ToolRouter extends EventEmitter {
       const rawTools = await this.queryToolsViaMCP(connection);
 
       // Apply namespacing and create Tool objects (Requirement 2.2)
-      const tools: Tool[] = rawTools.map(rawTool => {
+      const tools: Tool[] = rawTools.map((rawTool) => {
         const namespacedName = this.namespaceManager.generateNamespacedName(
           service.name,
           rawTool.name
@@ -323,10 +327,10 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Query tools from a service via MCP protocol
-   * 
+   *
    * Sends a tools/list request to the service via the transport layer
    * and parses the response to extract tool definitions.
-   * 
+   *
    * @param connection - Connection to the service
    * @returns Promise resolving to raw tool definitions
    * @private
@@ -354,16 +358,14 @@ export class ToolRouter extends EventEmitter {
     // Check if it's an error response
     if ('error' in response) {
       const errorResponse = response as JsonRpcErrorResponse;
-      throw new Error(
-        `Failed to query tools from service: ${errorResponse.error.message}`
-      );
+      throw new Error(`Failed to query tools from service: ${errorResponse.error.message}`);
     }
 
     // Check if it's a success response
     if ('result' in response) {
       const successResponse = response as JsonRpcSuccessResponse;
       const result = successResponse.result as { tools?: any[] };
-      
+
       // Return the tools array from the result
       return result.tools || [];
     }
@@ -373,10 +375,10 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Determine if a tool is enabled based on service configuration
-   * 
+   *
    * Checks the service's toolStates configuration to determine if a tool
    * should be enabled. Supports pattern matching with wildcards.
-   * 
+   *
    * @param service - Service definition
    * @param toolName - Name of the tool
    * @returns True if tool is enabled, false otherwise
@@ -406,9 +408,9 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Check if a tool name matches a pattern
-   * 
+   *
    * Supports wildcard patterns (e.g., "read_*", "*_file")
-   * 
+   *
    * @param toolName - Tool name to check
    * @param pattern - Pattern to match against
    * @returns True if tool name matches pattern
@@ -417,20 +419,18 @@ export class ToolRouter extends EventEmitter {
   private matchesPattern(toolName: string, pattern: string): boolean {
     // Convert wildcard pattern to regex
     // Escape special regex characters except *
-    const regexPattern = pattern
-      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*');
-    
+    const regexPattern = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+
     const regex = new RegExp(`^${regexPattern}$`);
     return regex.test(toolName);
   }
 
   /**
    * Handle service becoming unhealthy
-   * 
+   *
    * Invalidates the cache to remove tools from the unhealthy service.
    * This implements auto-unload functionality (Requirement 20.6).
-   * 
+   *
    * @param serviceName - Name of the unhealthy service
    * @private
    */
@@ -441,10 +441,10 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Handle service recovering to healthy state
-   * 
+   *
    * Invalidates the cache to reload tools from the recovered service.
    * This implements auto-load functionality (Requirement 20.7).
-   * 
+   *
    * @param serviceName - Name of the recovered service
    * @private
    */
@@ -455,16 +455,16 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Call a tool by its namespaced name
-   * 
+   *
    * Routes the tool call to the correct service, validates parameters,
    * and maintains request context throughout the call.
-   * 
+   *
    * Requirements:
    * - 5.1: Route tool calls to correct service based on namespaced name
    * - 5.2: Validate tool parameters against input schema
    * - 5.3: Return results to client on success
    * - 5.4: Maintain request context and correlation ID
-   * 
+   *
    * @param namespacedName - Namespaced tool name (serviceName__toolName)
    * @param params - Tool parameters
    * @param context - Request context with correlation ID
@@ -563,12 +563,7 @@ export class ToolRouter extends EventEmitter {
 
     try {
       // Execute the tool call via MCP protocol (Requirement 5.3, 5.4)
-      const result = await this.executeToolCall(
-        connection,
-        toolName,
-        params,
-        context
-      );
+      const result = await this.executeToolCall(connection, toolName, params, context);
 
       // Emit success event
       this.emit('toolCallSuccess', {
@@ -609,9 +604,9 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Find a tool in a service
-   * 
+   *
    * Queries the service for its tools and finds the specified tool.
-   * 
+   *
    * @param serviceName - Name of the service
    * @param toolName - Name of the tool
    * @param pool - Connection pool for the service
@@ -632,7 +627,7 @@ export class ToolRouter extends EventEmitter {
     // Query tools from the service
     try {
       const tools = await this.queryServiceTools(service, pool);
-      return tools.find(t => t.name === toolName) || null;
+      return tools.find((t) => t.name === toolName) || null;
     } catch (error) {
       return null;
     }
@@ -640,20 +635,16 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Validate tool parameters against the tool's input schema
-   * 
+   *
    * Uses Ajv to validate parameters against the JSON schema.
-   * 
+   *
    * @param tool - Tool definition with input schema
    * @param params - Parameters to validate
    * @param context - Request context for error reporting
    * @throws Error if validation fails
    * @private
    */
-  private validateToolParameters(
-    tool: Tool,
-    params: unknown,
-    context: RequestContext
-  ): void {
+  private validateToolParameters(tool: Tool, params: unknown, context: RequestContext): void {
     // Create Ajv instance for schema validation
     const ajv = new Ajv({ allErrors: true });
 
@@ -664,10 +655,11 @@ export class ToolRouter extends EventEmitter {
     const valid = validate(params);
 
     if (!valid) {
-      const errors = validate.errors?.map(err => ({
-        path: err.instancePath || err.schemaPath,
-        message: err.message || 'Validation error',
-      })) || [];
+      const errors =
+        validate.errors?.map((err) => ({
+          path: err.instancePath || err.schemaPath,
+          message: err.message || 'Validation error',
+        })) || [];
 
       throw this.createToolError(
         ErrorCode.VALIDATION_ERROR,
@@ -684,10 +676,10 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Execute a tool call via MCP protocol
-   * 
+   *
    * Sends a tools/call request to the service and waits for the response.
    * Maintains request context and correlation ID throughout the call.
-   * 
+   *
    * @param connection - Connection to the service
    * @param toolName - Name of the tool to call
    * @param params - Tool parameters
@@ -747,9 +739,9 @@ export class ToolRouter extends EventEmitter {
 
   /**
    * Create a properly formatted tool error
-   * 
+   *
    * Creates an error with JSON-RPC error format including context information.
-   * 
+   *
    * @param code - Error code
    * @param message - Error message
    * @param context - Request context

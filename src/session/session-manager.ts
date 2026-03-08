@@ -1,6 +1,6 @@
 /**
  * Session Manager
- * 
+ *
  * Manages multiple AI Agent sessions in Server mode, ensuring complete isolation
  * between different clients.
  */
@@ -39,7 +39,7 @@ export interface Session {
 
 /**
  * Session Manager class
- * 
+ *
  * Manages the lifecycle of sessions in Server mode:
  * - Creates new sessions for connecting clients
  * - Tracks active sessions
@@ -52,7 +52,7 @@ export class SessionManager {
 
   /**
    * Create a new session for an AI Agent
-   * 
+   *
    * @param agentId - Identifier for the AI Agent
    * @param context - Session-specific context
    * @returns The created session
@@ -73,7 +73,7 @@ export class SessionManager {
 
   /**
    * Get a session by ID
-   * 
+   *
    * @param sessionId - Session ID
    * @returns The session if found, undefined otherwise
    */
@@ -88,7 +88,7 @@ export class SessionManager {
 
   /**
    * Close a session and clean up resources
-   * 
+   *
    * @param sessionId - Session ID to close
    */
   async closeSession(sessionId: string): Promise<void> {
@@ -101,7 +101,7 @@ export class SessionManager {
     const timeout = 5000; // 5 seconds
     const startTime = Date.now();
     while (session.activeRequests > 0 && Date.now() - startTime < timeout) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
     // Remove the session
@@ -110,7 +110,7 @@ export class SessionManager {
 
   /**
    * List all active sessions
-   * 
+   *
    * @returns Array of all active sessions
    */
   listActiveSessions(): Session[] {
@@ -119,7 +119,7 @@ export class SessionManager {
 
   /**
    * Clean up expired sessions
-   * 
+   *
    * @param timeout - Session timeout in milliseconds
    */
   cleanupExpiredSessions(timeout: number): void {
@@ -140,7 +140,7 @@ export class SessionManager {
 
   /**
    * Start automatic cleanup of expired sessions
-   * 
+   *
    * @param interval - Cleanup interval in milliseconds
    * @param timeout - Session timeout in milliseconds
    */
@@ -166,7 +166,7 @@ export class SessionManager {
 
   /**
    * Increment active request count for a session
-   * 
+   *
    * @param sessionId - Session ID
    */
   incrementActiveRequests(sessionId: string): void {
@@ -178,7 +178,7 @@ export class SessionManager {
 
   /**
    * Decrement active request count for a session
-   * 
+   *
    * @param sessionId - Session ID
    */
   decrementActiveRequests(sessionId: string): void {
@@ -200,6 +200,6 @@ export class SessionManager {
    */
   async closeAllSessions(): Promise<void> {
     const sessionIds = Array.from(this.sessions.keys());
-    await Promise.all(sessionIds.map(id => this.closeSession(id)));
+    await Promise.all(sessionIds.map((id) => this.closeSession(id)));
   }
 }

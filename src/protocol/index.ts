@@ -1,6 +1,6 @@
 /**
  * Protocol Layer
- * 
+ *
  * Handles JSON-RPC 2.0 protocol parsing, validation, and serialization.
  */
 

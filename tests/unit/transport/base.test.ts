@@ -86,10 +86,10 @@ describe('BaseTransport', () => {
     it('should transition to ERROR state when error occurs', () => {
       const errorSpy = vi.fn();
       transport.on('error', errorSpy);
-      
+
       const error = new Error('Test error');
       transport.triggerError(error);
-      
+
       expect(transport.getState()).toBe(TransportState.ERROR);
       expect(errorSpy).toHaveBeenCalledWith(error);
     });
@@ -124,9 +124,9 @@ describe('BaseTransport', () => {
     it('should throw error when transport is closing', async () => {
       // Start closing but don't await yet
       const closePromise = transport.close();
-      
+
       // Give it a moment to enter CLOSING state
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
       const message: JsonRpcMessage = {
         jsonrpc: '2.0',
@@ -146,7 +146,7 @@ describe('BaseTransport', () => {
     it('should throw error when transport is in error state', async () => {
       const errorSpy = vi.fn();
       transport.on('error', errorSpy);
-      
+
       transport.triggerError(new Error('Previous error'));
 
       const message: JsonRpcMessage = {
@@ -246,7 +246,7 @@ describe('BaseTransport', () => {
   describe('Events', () => {
     it('should emit "connected" event when setConnected is called', () => {
       const connectedSpy = vi.fn();
-      
+
       // Create a new mock transport class that doesn't call setConnected in constructor
       class TestTransport extends BaseTransport {
         public getType(): TransportType {
@@ -255,12 +255,12 @@ describe('BaseTransport', () => {
         protected async doSend(): Promise<void> {}
         protected async *doReceive(): AsyncIterator<JsonRpcMessage> {}
         protected async doClose(): Promise<void> {}
-        
+
         public callSetConnected(): void {
           this.setConnected();
         }
       }
-      
+
       const testTransport = new TestTransport();
       testTransport.on('connected', connectedSpy);
       testTransport.callSetConnected();

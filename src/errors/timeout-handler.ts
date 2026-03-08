@@ -23,37 +23,22 @@ export class TimeoutHandler {
   /**
    * Execute an async operation with timeout
    */
-  static async withTimeout<T>(
-    operation: Promise<T>,
-    options: TimeoutOptions
-  ): Promise<T> {
+  static async withTimeout<T>(operation: Promise<T>, options: TimeoutOptions): Promise<T> {
     const { timeoutMs, operationName = 'Operation', onTimeout } = options;
 
     return new Promise<T>((resolve, reject) => {
-      let timeoutId: NodeJS.Timeout | undefined;
       let isResolved = false;
-
-      // Set up timeout
-      timeoutId = setTimeout(async () => {
+      const timeoutId = setTimeout(() => {
         if (!isResolved) {
           isResolved = true;
-          
-          // Call cleanup function if provided
+
           if (onTimeout) {
-            try {
-              await onTimeout();
-            } catch (cleanupError) {
-              // Log cleanup error but don't fail the timeout
+            void Promise.resolve(onTimeout()).catch((cleanupError) => {
               console.error('Error during timeout cleanup:', cleanupError);
-            }
+            });
           }
 
-          reject(
-            new TimeoutError(
-              `${operationName} timed out after ${timeoutMs}ms`,
-              timeoutMs
-            )
-          );
+          reject(new TimeoutError(`${operationName} timed out after ${timeoutMs}ms`, timeoutMs));
         }
       }, timeoutMs);
 
@@ -82,12 +67,7 @@ export class TimeoutHandler {
   static createTimeoutPromise(timeoutMs: number, operationName = 'Operation'): Promise<never> {
     return new Promise((_, reject) => {
       setTimeout(() => {
-        reject(
-          new TimeoutError(
-            `${operationName} timed out after ${timeoutMs}ms`,
-            timeoutMs
-          )
-        );
+        reject(new TimeoutError(`${operationName} timed out after ${timeoutMs}ms`, timeoutMs));
       }, timeoutMs);
     });
   }
@@ -100,10 +80,7 @@ export class TimeoutHandler {
     timeoutMs: number,
     operationName = 'Operation'
   ): Promise<T> {
-    return Promise.race([
-      operation,
-      this.createTimeoutPromise(timeoutMs, operationName),
-    ]);
+    return Promise.race([operation, this.createTimeoutPromise(timeoutMs, operationName)]);
   }
 
   /**
@@ -132,10 +109,10 @@ export class TimeoutHandler {
 
     // Use allSettled to continue even if some operations fail
     const results = await Promise.allSettled(wrappedOperations);
-    
+
     const fulfilled: T[] = [];
     const rejected: unknown[] = [];
-    
+
     for (const r of results) {
       if (r.status === 'fulfilled') {
         fulfilled.push(r.value);

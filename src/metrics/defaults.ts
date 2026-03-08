@@ -6,7 +6,7 @@ import type { MetricsConfig } from '../types/config.js';
 
 /**
  * Default metrics configuration
- * 
+ *
  * Requirements:
  * - 34.5: Support configurable collection interval and retention period
  */
@@ -19,9 +19,7 @@ export const DEFAULT_METRICS_CONFIG: MetricsConfig = {
 /**
  * Create metrics configuration with defaults
  */
-export function createMetricsConfig(
-  partial?: Partial<MetricsConfig>
-): MetricsConfig {
+export function createMetricsConfig(partial?: Partial<MetricsConfig>): MetricsConfig {
   return {
     ...DEFAULT_METRICS_CONFIG,
     ...partial,

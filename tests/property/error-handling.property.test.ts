@@ -16,10 +16,10 @@ import { ErrorCode } from '../../src/types/jsonrpc.js';
 import type { RequestContext } from '../../src/types/context.js';
 
 /**
- * Feature: onemcp-router-system, Property 13: Error response format
- * 
+ * Feature: onemcp-system, Property 13: Error response format
+ *
  * **Validates: Requirements 9.1**
- * 
+ *
  * For any request that causes an error, the error response should contain
  * error code, message, and context details.
  */
@@ -78,16 +78,14 @@ const requestContextArbitrary = (): fc.Arbitrary<RequestContext> =>
 /**
  * Generate service names
  */
-const serviceNameArbitrary = (): fc.Arbitrary<string> =>
-  fc.string({ minLength: 1, maxLength: 50 });
+const serviceNameArbitrary = (): fc.Arbitrary<string> => fc.string({ minLength: 1, maxLength: 50 });
 
 /**
  * Generate tool names
  */
-const toolNameArbitrary = (): fc.Arbitrary<string> =>
-  fc.string({ minLength: 1, maxLength: 50 });
+const toolNameArbitrary = (): fc.Arbitrary<string> => fc.string({ minLength: 1, maxLength: 50 });
 
-describe('Feature: onemcp-router-system, Property 13: Error response format', () => {
+describe('Feature: onemcp-system, Property 13: Error response format', () => {
   it('should include error code, message, and context in all error responses', () => {
     fc.assert(
       fc.property(
@@ -135,11 +133,7 @@ describe('Feature: onemcp-router-system, Property 13: Error response format', ()
         requestIdArbitrary(),
         requestContextArbitrary(),
         (serviceName, requestId, context) => {
-          const errorResponse = ErrorBuilder.serviceUnavailable(
-            serviceName,
-            requestId,
-            context
-          );
+          const errorResponse = ErrorBuilder.serviceUnavailable(serviceName, requestId, context);
 
           expect(errorResponse.error.data?.serviceName).toBe(serviceName);
           expect(errorResponse.error.message).toContain(serviceName);
@@ -158,11 +152,7 @@ describe('Feature: onemcp-router-system, Property 13: Error response format', ()
         requestIdArbitrary(),
         requestContextArbitrary(),
         (toolName, requestId, context) => {
-          const errorResponse = ErrorBuilder.toolNotFound(
-            toolName,
-            requestId,
-            context
-          );
+          const errorResponse = ErrorBuilder.toolNotFound(toolName, requestId, context);
 
           expect(errorResponse.error.data?.toolName).toBe(toolName);
           expect(errorResponse.error.message).toContain(toolName);
@@ -183,7 +173,7 @@ describe('Feature: onemcp-router-system, Property 13: Error response format', ()
         serviceNameArbitrary(),
         (message, requestId, context, serviceName) => {
           const backendError = new Error(message);
-          
+
           const propagatedError = ErrorPropagation.propagateError({
             error: backendError,
             requestId,
@@ -193,7 +183,7 @@ describe('Feature: onemcp-router-system, Property 13: Error response format', ()
 
           // Verify error is propagated
           expect(propagatedError.error.message).toBe(message);
-          
+
           // Verify context is added
           if (propagatedError.error.data) {
             expect(propagatedError.error.data.serviceName).toBe(serviceName);
@@ -215,7 +205,7 @@ describe('Feature: onemcp-router-system, Property 13: Error response format', ()
         requestContextArbitrary(),
         (toolName, requestId, context) => {
           const customError = new ToolNotFoundError(toolName);
-          
+
           const errorResponse = ErrorPropagation.propagateError({
             error: customError,
             requestId,
@@ -234,15 +224,15 @@ describe('Feature: onemcp-router-system, Property 13: Error response format', ()
 });
 
 /**
- * Feature: onemcp-router-system, Property 23: Service crash auto-recovery
- * 
+ * Feature: onemcp-system, Property 23: Service crash auto-recovery
+ *
  * **Validates: Requirements 32.1**
- * 
+ *
  * For any crashed service, the next request to that service should trigger
  * service restart and succeed (or return appropriate error).
  */
 
-describe('Feature: onemcp-router-system, Property 23: Service crash auto-recovery', () => {
+describe('Feature: onemcp-system, Property 23: Service crash auto-recovery', () => {
   it('should retry operations with exponential backoff', async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -250,7 +240,7 @@ describe('Feature: onemcp-router-system, Property 23: Service crash auto-recover
         fc.integer({ min: 10, max: 50 }), // Reduced delays
         async (failuresBeforeSuccess, initialDelay) => {
           let attemptCount = 0;
-          
+
           const operation = async () => {
             attemptCount++;
             if (attemptCount < failuresBeforeSuccess) {
@@ -280,71 +270,65 @@ describe('Feature: onemcp-router-system, Property 23: Service crash auto-recover
 
   it('should stop retrying after max retries', async () => {
     await fc.assert(
-      fc.asyncProperty(
-        fc.integer({ min: 1, max: 3 }),
-        async (maxRetries) => {
-          let attemptCount = 0;
-          
-          const operation = async () => {
-            attemptCount++;
-            throw new ServiceUnavailableError('test-service', 'Always fails');
-          };
+      fc.asyncProperty(fc.integer({ min: 1, max: 3 }), async (maxRetries) => {
+        let attemptCount = 0;
 
-          try {
-            await ErrorRecovery.withRetry(operation, {
-              maxRetries,
-              initialDelayMs: 10,
-              maxDelayMs: 50,
-              backoffMultiplier: 2,
-              jitter: false,
-              isRetryable: ErrorRecovery.isRetryableError,
-            });
-            
-            // Should not reach here
-            return false;
-          } catch (error) {
-            // Should fail after maxRetries + 1 attempts (initial + retries)
-            expect(attemptCount).toBe(maxRetries + 1);
-            expect(error).toBeInstanceOf(ServiceUnavailableError);
-            return true;
-          }
+        const operation = async () => {
+          attemptCount++;
+          throw new ServiceUnavailableError('test-service', 'Always fails');
+        };
+
+        try {
+          await ErrorRecovery.withRetry(operation, {
+            maxRetries,
+            initialDelayMs: 10,
+            maxDelayMs: 50,
+            backoffMultiplier: 2,
+            jitter: false,
+            isRetryable: ErrorRecovery.isRetryableError,
+          });
+
+          // Should not reach here
+          return false;
+        } catch (error) {
+          // Should fail after maxRetries + 1 attempts (initial + retries)
+          expect(attemptCount).toBe(maxRetries + 1);
+          expect(error).toBeInstanceOf(ServiceUnavailableError);
+          return true;
         }
-      ),
+      }),
       { numRuns: 20 }
     );
   });
 
   it('should not retry non-retryable errors', async () => {
     await fc.assert(
-      fc.asyncProperty(
-        toolNameArbitrary(),
-        async (toolName) => {
-          let attemptCount = 0;
-          
-          const operation = async () => {
-            attemptCount++;
-            throw new ToolNotFoundError(toolName);
-          };
+      fc.asyncProperty(toolNameArbitrary(), async (toolName) => {
+        let attemptCount = 0;
 
-          try {
-            await ErrorRecovery.withRetry(operation, {
-              maxRetries: 3,
-              initialDelayMs: 10,
-              maxDelayMs: 50,
-              backoffMultiplier: 2,
-              jitter: false,
-              isRetryable: ErrorRecovery.isRetryableError,
-            });
-            
-            return false;
-          } catch (error) {
-            // Should fail immediately without retries
-            expect(attemptCount).toBe(1);
-            expect(error).toBeInstanceOf(ToolNotFoundError);
-            return true;
-          }
+        const operation = async () => {
+          attemptCount++;
+          throw new ToolNotFoundError(toolName);
+        };
+
+        try {
+          await ErrorRecovery.withRetry(operation, {
+            maxRetries: 3,
+            initialDelayMs: 10,
+            maxDelayMs: 50,
+            backoffMultiplier: 2,
+            jitter: false,
+            isRetryable: ErrorRecovery.isRetryableError,
+          });
+
+          return false;
+        } catch (error) {
+          // Should fail immediately without retries
+          expect(attemptCount).toBe(1);
+          expect(error).toBeInstanceOf(ToolNotFoundError);
+          return true;
         }
-      ),
+      }),
       { numRuns: 20 }
     );
   });
@@ -388,7 +372,7 @@ describe('Feature: onemcp-router-system, Property 23: Service crash auto-recover
 
   it('should call cleanup function on timeout', async () => {
     let cleanupCalled = false;
-    
+
     const operation = new Promise<string>((resolve) => {
       setTimeout(() => resolve('completed'), 1000);
     });

@@ -1,6 +1,6 @@
 /**
  * Property-Based Tests for MCP Protocol Methods
- * 
+ *
  * Tests universal properties of MCP protocol handling using fast-check.
  */
 
@@ -24,7 +24,7 @@ import { ErrorCode } from '../../src/types/jsonrpc.js';
  */
 async function createTestConfigProvider(): Promise<FileConfigProvider> {
   const storage = new MemoryStorageAdapter();
-  
+
   const defaultConfig: SystemConfig = {
     mode: 'cli',
     logLevel: 'INFO',
@@ -58,9 +58,9 @@ async function createTestConfigProvider(): Promise<FileConfigProvider> {
       },
     },
   };
-  
+
   await storage.write('/test/config.json', JSON.stringify(defaultConfig));
-  
+
   return new FileConfigProvider({
     storageAdapter: storage,
     configDir: '/test',
@@ -153,8 +153,8 @@ describe('Property 18: Batch Request Partial Failure Isolation', () => {
           }
 
           // Count successes and failures
-          const successes = responses.filter(r => 'result' in r);
-          const failures = responses.filter(r => 'error' in r);
+          const successes = responses.filter((r) => 'result' in r);
+          const failures = responses.filter((r) => 'error' in r);
 
           // Verify that we have both successes and failures OR all failures
           // (since tools don't exist, most will fail, but the batch should complete)
@@ -177,38 +177,35 @@ describe('Property 18: Batch Request Partial Failure Isolation', () => {
 
   it('should enforce batch size limits', async () => {
     await fc.assert(
-      fc.asyncProperty(
-        fc.integer({ min: 101, max: 200 }),
-        async (batchSize) => {
-          const context: RequestContext = {
-            requestId: 'test-request',
-            correlationId: 'test-correlation',
-            timestamp: new Date(),
-          };
+      fc.asyncProperty(fc.integer({ min: 101, max: 200 }), async (batchSize) => {
+        const context: RequestContext = {
+          requestId: 'test-request',
+          correlationId: 'test-correlation',
+          timestamp: new Date(),
+        };
 
-          await mcpHandler.initialize(
-            {
-              protocolVersion: '2024-11-05',
-              clientInfo: { name: 'test-client', version: '1.0.0' },
-            },
-            context
-          );
+        await mcpHandler.initialize(
+          {
+            protocolVersion: '2024-11-05',
+            clientInfo: { name: 'test-client', version: '1.0.0' },
+          },
+          context
+        );
 
-          // Create a batch larger than the limit
-          const requests: JsonRpcRequest[] = Array.from({ length: batchSize }, (_, i) => ({
-            jsonrpc: '2.0' as const,
-            id: i,
-            method: 'tools/call',
-            params: {
-              name: `tool-${i}`,
-              arguments: {},
-            },
-          }));
+        // Create a batch larger than the limit
+        const requests: JsonRpcRequest[] = Array.from({ length: batchSize }, (_, i) => ({
+          jsonrpc: '2.0' as const,
+          id: i,
+          method: 'tools/call',
+          params: {
+            name: `tool-${i}`,
+            arguments: {},
+          },
+        }));
 
-          // Verify that batch size limit is enforced (Requirement 21.5)
-          await expect(mcpHandler.handleBatch(requests, context)).rejects.toThrow();
-        }
-      ),
+        // Verify that batch size limit is enforced (Requirement 21.5)
+        await expect(mcpHandler.handleBatch(requests, context)).rejects.toThrow();
+      }),
       { numRuns: 50 }
     );
   });
@@ -268,32 +265,29 @@ describe('MCP Protocol Methods - Additional Properties', () => {
 
   it('should require initialization before handling requests', async () => {
     await fc.assert(
-      fc.asyncProperty(
-        fc.constantFrom('tools/list', 'tools/call'),
-        async (method) => {
-          const context: RequestContext = {
-            requestId: 'test-request',
-            correlationId: 'test-correlation',
-            timestamp: new Date(),
-          };
+      fc.asyncProperty(fc.constantFrom('tools/list', 'tools/call'), async (method) => {
+        const context: RequestContext = {
+          requestId: 'test-request',
+          correlationId: 'test-correlation',
+          timestamp: new Date(),
+        };
 
-          const request: JsonRpcRequest = {
-            jsonrpc: '2.0',
-            id: 1,
-            method,
-            params: method === 'tools/call' ? { name: 'test-tool' } : undefined,
-          };
+        const request: JsonRpcRequest = {
+          jsonrpc: '2.0',
+          id: 1,
+          method,
+          params: method === 'tools/call' ? { name: 'test-tool' } : undefined,
+        };
 
-          // Should fail before initialization
-          const response = await mcpHandler.handleRequest(request, context);
-          
-          expect('error' in response).toBe(true);
-          if ('error' in response) {
-            expect(response.error.code).toBe(ErrorCode.INTERNAL_ERROR);
-            expect(response.error.message).toContain('not initialized');
-          }
+        // Should fail before initialization
+        const response = await mcpHandler.handleRequest(request, context);
+
+        expect('error' in response).toBe(true);
+        if ('error' in response) {
+          expect(response.error.code).toBe(ErrorCode.INTERNAL_ERROR);
+          expect(response.error.message).toContain('not initialized');
         }
-      ),
+      }),
       { numRuns: 50 }
     );
   });
@@ -322,7 +316,7 @@ describe('MCP Protocol Methods - Additional Properties', () => {
           // Verify initialization succeeded
           expect(result).toHaveProperty('protocolVersion');
           expect(result).toHaveProperty('serverInfo');
-          
+
           // Verify tag filter was stored
           const storedFilter = mcpHandler.getTagFilter();
           expect(storedFilter).toBeDefined();
@@ -337,7 +331,9 @@ describe('MCP Protocol Methods - Additional Properties', () => {
   it('should return proper error for unknown methods', async () => {
     await fc.assert(
       fc.asyncProperty(
-        fc.string({ minLength: 1 }).filter(s => !['initialize', 'tools/list', 'tools/call'].includes(s)),
+        fc
+          .string({ minLength: 1 })
+          .filter((s) => !['initialize', 'tools/list', 'tools/call'].includes(s)),
         async (method) => {
           const context: RequestContext = {
             requestId: 'test-request',
@@ -362,7 +358,7 @@ describe('MCP Protocol Methods - Additional Properties', () => {
           };
 
           const response = await mcpHandler.handleRequest(request, context);
-          
+
           expect('error' in response).toBe(true);
           if ('error' in response) {
             expect(response.error.code).toBe(ErrorCode.METHOD_NOT_FOUND);

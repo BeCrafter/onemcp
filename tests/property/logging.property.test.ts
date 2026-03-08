@@ -1,6 +1,6 @@
 /**
  * Property-based tests for logging system
- * Feature: onemcp-router-system
+ * Feature: onemcp-system
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -293,9 +293,7 @@ describe('Audit Log Query Properties', () => {
           }
 
           // Count should match
-          const expectedCount = entries.filter(
-            (e) => e.sessionId === targetSessionId
-          ).length;
+          const expectedCount = entries.filter((e) => e.sessionId === targetSessionId).length;
           expect(results.length).toBe(expectedCount);
         }
       ),

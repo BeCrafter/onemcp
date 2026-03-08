@@ -1,6 +1,6 @@
 /**
  * CLI Mode Runner
- * 
+ *
  * Implements CLI mode functionality where the router communicates with a single
  * client via stdin/stdout using the stdio transport protocol.
  */
@@ -18,13 +18,14 @@ import { HealthMonitor } from './health/health-monitor.js';
 import { ToolRouter } from './routing/tool-router.js';
 import { ConnectionPool } from './pool/connection-pool.js';
 import type { ConfigProvider } from './types/config.js';
+import { ErrorCode } from './types/jsonrpc.js';
 import type { RequestContext } from './types/context.js';
 import type { TagFilter } from './types/tool.js';
 import { randomUUID } from 'node:crypto';
 
 /**
  * CLI Mode Runner class
- * 
+ *
  * Manages the lifecycle of the router in CLI mode:
  * - Initializes all components from configuration
  * - Sets up stdin/stdout communication
@@ -59,7 +60,7 @@ export class CliModeRunner {
       this.namespaceManager,
       this.healthMonitor
     );
-    
+
     // Initialize protocol handler with tag filter
     const handlerOptions: { maxBatchSize: number; tagFilter?: TagFilter } = {
       maxBatchSize: 100,
@@ -72,7 +73,7 @@ export class CliModeRunner {
 
   /**
    * Start the CLI mode runner
-   * 
+   *
    * Initializes the system, starts health monitoring, and begins processing
    * requests from stdin.
    */
@@ -101,7 +102,9 @@ export class CliModeRunner {
       this.running = true;
       console.error('MCP Router is ready and listening on stdin/stdout');
     } catch (error) {
-      console.error(`Failed to start CLI mode: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `Failed to start CLI mode: ${error instanceof Error ? error.message : String(error)}`
+      );
       throw error;
     }
   }
@@ -111,7 +114,7 @@ export class CliModeRunner {
    */
   private async initializeConnectionPools(): Promise<void> {
     const services = await this.serviceRegistry.list();
-    const enabledServices = services.filter(s => s.enabled);
+    const enabledServices = services.filter((s) => s.enabled);
 
     for (const service of enabledServices) {
       try {
@@ -136,7 +139,7 @@ export class CliModeRunner {
 
   /**
    * Set up stdin/stdout transport for client communication
-   * 
+   *
    * Reads JSON-RPC messages from stdin line by line and processes them.
    * Sends responses to stdout.
    */
@@ -149,40 +152,40 @@ export class CliModeRunner {
     });
 
     // Process each line as a JSON-RPC message
-    this.readline.on('line', async (line: string) => {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        return; // Skip empty lines
-      }
+    this.readline.on('line', (line: string) => {
+      void (async () => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return; // Skip empty lines
+        }
 
-      try {
-        // Parse the JSON-RPC message
-        const message = this.parser.parse(trimmed);
+        try {
+          // Parse the JSON-RPC message
+          const message = this.parser.parse(trimmed);
 
-        // Process the message
-        await this.processMessage(message);
-      } catch (error) {
-        // Send parse error response
-        const errorResponse = {
-          jsonrpc: '2.0' as const,
-          id: null,
-          error: {
-            code: -32700,
-            message: 'Parse error',
-            data: {
-              details: error instanceof Error ? error.message : String(error),
+          // Process the message
+          await this.processMessage(message);
+        } catch (error) {
+          // Send parse error response
+          const errorResponse = {
+            jsonrpc: '2.0' as const,
+            id: null, // Parse errors must have id set to null
+            error: {
+              code: ErrorCode.PARSE_ERROR,
+              message: `Parse error: ${error instanceof Error ? error.message : 'Unknown error'}`,
             },
-          },
-        };
+          };
 
-        this.sendResponse(errorResponse);
-      }
+          // Send error response to client
+          void this.sendResponse(errorResponse);
+        }
+      })();
     });
 
     // Handle stdin close
     this.readline.on('close', () => {
       console.error('stdin closed, shutting down...');
-      this.stop().catch(error => {
+      this.stop().catch((error) => {
         console.error(`Error during shutdown: ${error}`);
         process.exit(1);
       });
@@ -191,9 +194,9 @@ export class CliModeRunner {
 
   /**
    * Process a JSON-RPC message
-   * 
+   *
    * Routes the message to the protocol handler and sends the response.
-   * 
+   *
    * @param message - JSON-RPC message to process
    */
   private async processMessage(message: JsonRpcMessage): Promise<void> {
@@ -243,7 +246,7 @@ export class CliModeRunner {
 
   /**
    * Send a JSON-RPC response to stdout
-   * 
+   *
    * @param response - JSON-RPC response to send
    */
   private sendResponse(response: JsonRpcMessage): void {
@@ -251,13 +254,15 @@ export class CliModeRunner {
       const serialized = this.serializer.serialize(response);
       stdout.write(serialized + '\n');
     } catch (error) {
-      console.error(`Failed to send response: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `Failed to send response: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
   /**
    * Stop the CLI mode runner
-   * 
+   *
    * Performs graceful shutdown:
    * - Stops accepting new requests
    * - Stops health monitoring
@@ -299,7 +304,9 @@ export class CliModeRunner {
 
       console.error('MCP Router shutdown complete');
     } catch (error) {
-      console.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `Error during shutdown: ${error instanceof Error ? error.message : String(error)}`
+      );
       throw error;
     }
   }

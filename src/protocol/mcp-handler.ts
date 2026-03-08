@@ -1,11 +1,16 @@
 /**
  * MCP Protocol Handler
- * 
+ *
  * Implements MCP protocol methods (initialize, tools/list, tools/call)
  * and handles batch requests.
  */
 
-import type { JsonRpcError, JsonRpcRequest, JsonRpcSuccessResponse, JsonRpcErrorResponse } from '../types/jsonrpc.js';
+import type {
+  JsonRpcError,
+  JsonRpcRequest,
+  JsonRpcSuccessResponse,
+  JsonRpcErrorResponse,
+} from '../types/jsonrpc.js';
 import type { ToolRouter } from '../routing/tool-router.js';
 import type { RequestContext, TagFilter } from '../types/context.js';
 import { ErrorCode } from '../types/jsonrpc.js';
@@ -64,7 +69,7 @@ export interface BatchRequest {
 
 /**
  * MCP Protocol Handler class
- * 
+ *
  * Handles MCP protocol initialization, tool listing, tool calling,
  * and batch request processing.
  */
@@ -88,21 +93,18 @@ export class McpProtocolHandler {
 
   /**
    * Handle MCP protocol initialization
-   * 
+   *
    * Establishes client connection and applies tag filters from initialization parameters.
-   * 
+   *
    * Requirements:
    * - 12.1: Handle MCP protocol initialization handshake
    * - 14.5: Apply tag filters from initialization parameters
-   * 
+   *
    * @param params - Initialize parameters
    * @param context - Request context
    * @returns Initialize result
    */
-  async initialize(
-    params: InitializeParams,
-    _context: RequestContext
-  ): Promise<InitializeResult> {
+  async initialize(params: InitializeParams, _context: RequestContext): Promise<InitializeResult> {
     // Store tag filter if provided
     if (params.tagFilter) {
       this.tagFilter = params.tagFilter;
@@ -116,7 +118,7 @@ export class McpProtocolHandler {
         tools: {},
       },
       serverInfo: {
-        name: 'onemcp-router',
+        name: 'onemcp',
         version: '1.0.0',
       },
     };
@@ -124,13 +126,13 @@ export class McpProtocolHandler {
 
   /**
    * Handle tools/list request
-   * 
+   *
    * Returns all available tools with schemas, applying tag filters if specified.
-   * 
+   *
    * Requirements:
    * - 12.2: Return all available tools with schemas
    * - 3.10: Include tool enabled/disabled status
-   * 
+   *
    * @param params - Tools list parameters
    * @param context - Request context
    * @returns List of tools
@@ -138,7 +140,9 @@ export class McpProtocolHandler {
   async toolsList(
     params: ToolsListParams | undefined,
     _context: RequestContext
-  ): Promise<{ tools: Array<{ name: string; description: string; inputSchema: unknown; enabled: boolean }> }> {
+  ): Promise<{
+    tools: Array<{ name: string; description: string; inputSchema: unknown; enabled: boolean }>;
+  }> {
     if (!this.initialized) {
       throw new Error('Protocol not initialized');
     }
@@ -150,7 +154,7 @@ export class McpProtocolHandler {
     const tools = await this.toolRouter.discoverTools(tagFilter);
 
     return {
-      tools: tools.map(tool => ({
+      tools: tools.map((tool) => ({
         name: tool.namespacedName,
         description: tool.description,
         inputSchema: tool.inputSchema,
@@ -161,20 +165,17 @@ export class McpProtocolHandler {
 
   /**
    * Handle tools/call request
-   * 
+   *
    * Executes tool call via ToolRouter and handles errors.
-   * 
+   *
    * Requirements:
    * - 12.3: Execute tool calls via ToolRouter
-   * 
+   *
    * @param params - Tool call parameters
    * @param context - Request context
    * @returns Tool call result
    */
-  async toolsCall(
-    params: ToolCallParams,
-    context: RequestContext
-  ): Promise<unknown> {
+  async toolsCall(params: ToolCallParams, context: RequestContext): Promise<unknown> {
     if (!this.initialized) {
       throw new Error('Protocol not initialized');
     }
@@ -184,26 +185,22 @@ export class McpProtocolHandler {
     }
 
     // Call tool via router
-    const result = await this.toolRouter.callTool(
-      params.name,
-      params.arguments ?? {},
-      context
-    );
+    const result = await this.toolRouter.callTool(params.name, params.arguments ?? {}, context);
 
     return result;
   }
 
   /**
    * Handle batch request
-   * 
+   *
    * Executes multiple tool calls and collects results, handling partial failures.
-   * 
+   *
    * Requirements:
    * - 21.1: Accept batch requests with multiple tool calls
    * - 21.2: Execute all calls and collect results
    * - 21.4: Handle partial failures (continue on error)
    * - 21.5: Enforce batch size limits
-   * 
+   *
    * @param requests - Array of JSON-RPC requests
    * @param context - Request context
    * @returns Array of responses (success or error)
@@ -255,9 +252,9 @@ export class McpProtocolHandler {
 
   /**
    * Handle a single JSON-RPC request
-   * 
+   *
    * Routes the request to the appropriate handler based on the method.
-   * 
+   *
    * @param request - JSON-RPC request
    * @param context - Request context
    * @returns JSON-RPC response

@@ -43,7 +43,7 @@ describe('MemoryStorageAdapter', () => {
       await adapter.write('key1', 'value1');
       await adapter.write('key2', 'value2');
       await adapter.write('key3', 'value3');
-      
+
       expect(await adapter.read('key1')).toBe('value1');
       expect(await adapter.read('key2')).toBe('value2');
       expect(await adapter.read('key3')).toBe('value3');
@@ -81,7 +81,7 @@ describe('MemoryStorageAdapter', () => {
       await adapter.write('key1', 'value1');
       await adapter.write('key2', 'value2');
       await adapter.delete('key1');
-      
+
       expect(await adapter.read('key1')).toBeUndefined();
       expect(await adapter.read('key2')).toBe('value2');
     });
@@ -97,7 +97,7 @@ describe('MemoryStorageAdapter', () => {
       await adapter.write('key1', 'value1');
       await adapter.write('key2', 'value2');
       await adapter.write('key3', 'value3');
-      
+
       const keys = await adapter.listKeys();
       expect(keys).toHaveLength(3);
       expect(keys).toContain('key1');
@@ -109,7 +109,7 @@ describe('MemoryStorageAdapter', () => {
       await adapter.write('service/fs', 'value1');
       await adapter.write('service/github', 'value2');
       await adapter.write('config/main', 'value3');
-      
+
       const keys = await adapter.listKeys('service/');
       expect(keys).toHaveLength(2);
       expect(keys).toContain('service/fs');
@@ -120,7 +120,7 @@ describe('MemoryStorageAdapter', () => {
     it('should return empty array when no keys match prefix', async () => {
       await adapter.write('key1', 'value1');
       await adapter.write('key2', 'value2');
-      
+
       const keys = await adapter.listKeys('prefix/');
       expect(keys).toEqual([]);
     });
@@ -131,9 +131,9 @@ describe('MemoryStorageAdapter', () => {
       await adapter.write('key1', 'value1');
       await adapter.write('key2', 'value2');
       await adapter.write('key3', 'value3');
-      
+
       adapter.clear();
-      
+
       expect(await adapter.read('key1')).toBeUndefined();
       expect(await adapter.read('key2')).toBeUndefined();
       expect(await adapter.read('key3')).toBeUndefined();
@@ -149,10 +149,10 @@ describe('MemoryStorageAdapter', () => {
     it('should return correct count of stored items', async () => {
       await adapter.write('key1', 'value1');
       expect(adapter.size()).toBe(1);
-      
+
       await adapter.write('key2', 'value2');
       expect(adapter.size()).toBe(2);
-      
+
       await adapter.write('key3', 'value3');
       expect(adapter.size()).toBe(3);
     });
@@ -161,7 +161,7 @@ describe('MemoryStorageAdapter', () => {
       await adapter.write('key1', 'value1');
       await adapter.write('key2', 'value2');
       expect(adapter.size()).toBe(2);
-      
+
       await adapter.delete('key1');
       expect(adapter.size()).toBe(1);
     });
@@ -169,7 +169,7 @@ describe('MemoryStorageAdapter', () => {
     it('should not increase count when overwriting', async () => {
       await adapter.write('key1', 'value1');
       expect(adapter.size()).toBe(1);
-      
+
       await adapter.write('key1', 'value2');
       expect(adapter.size()).toBe(1);
     });

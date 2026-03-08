@@ -1,6 +1,6 @@
 /**
  * Integration tests for TUI JSON mode
- * 
+ *
  * Tests JSON editor, validation, file import, and bulk import functionality.
  */
 
@@ -25,7 +25,7 @@ describe('TUI JSON Mode', () => {
       });
 
       const parsed = JSON.parse(json) as ServiceDefinition;
-      
+
       expect(parsed.name).toBe('test-service');
       expect(parsed.transport).toBe('stdio');
       expect(parsed.command).toBe('node');
@@ -60,7 +60,7 @@ describe('TUI JSON Mode', () => {
       ]);
 
       const parsed = JSON.parse(json) as ServiceDefinition[];
-      
+
       expect(parsed).toHaveLength(2);
       expect(parsed[0]?.name).toBe('service1');
       expect(parsed[1]?.name).toBe('service2');
@@ -88,7 +88,7 @@ describe('TUI JSON Mode', () => {
       });
 
       const parsed = JSON.parse(json);
-      
+
       expect(parsed.filesystem).toBeDefined();
       expect(parsed.github).toBeDefined();
       expect(parsed.filesystem.command).toBe('npx');
@@ -97,7 +97,7 @@ describe('TUI JSON Mode', () => {
 
     it('should detect invalid JSON syntax', () => {
       const invalidJson = '{ "name": "test", invalid }';
-      
+
       expect(() => JSON.parse(invalidJson)).toThrow();
     });
 
@@ -109,7 +109,7 @@ describe('TUI JSON Mode', () => {
       });
 
       const parsed = JSON.parse(json);
-      
+
       expect(parsed.name).toBeUndefined();
     });
 
@@ -121,7 +121,7 @@ describe('TUI JSON Mode', () => {
       });
 
       const parsed = JSON.parse(json);
-      
+
       expect(parsed.transport).toBe('invalid');
       expect(['stdio', 'sse', 'http']).not.toContain(parsed.transport);
     });
@@ -134,7 +134,7 @@ describe('TUI JSON Mode', () => {
       });
 
       const parsed = JSON.parse(json);
-      
+
       expect(parsed.command).toBeUndefined();
     });
 
@@ -146,7 +146,7 @@ describe('TUI JSON Mode', () => {
       });
 
       const parsed = JSON.parse(json);
-      
+
       expect(parsed.url).toBeUndefined();
     });
 
@@ -158,7 +158,7 @@ describe('TUI JSON Mode', () => {
       });
 
       const parsed = JSON.parse(json);
-      
+
       expect(parsed.url).toBe('not-a-url');
       expect(/^https?:\/\/.+/.test(parsed.url)).toBe(false);
     });
@@ -176,7 +176,7 @@ describe('TUI JSON Mode', () => {
       });
 
       const parsed = JSON.parse(json);
-      
+
       expect(parsed.connectionPool.maxConnections).toBe(0);
       expect(parsed.connectionPool.idleTimeout).toBe(500);
       expect(parsed.connectionPool.connectionTimeout).toBe(500);
@@ -341,7 +341,7 @@ describe('TUI JSON Mode', () => {
       ];
 
       expect(services).toHaveLength(3);
-      expect(services.every(s => s.name && s.transport)).toBe(true);
+      expect(services.every((s) => s.name && s.transport)).toBe(true);
     });
 
     it('should import multiple services from mcpServers format', () => {
@@ -417,7 +417,7 @@ describe('TUI JSON Mode', () => {
       };
 
       const json = JSON.stringify(example, null, 2);
-      
+
       expect(json).toContain('filesystem');
       expect(json).toContain('github');
       expect(JSON.parse(json)).toEqual(example);
@@ -432,7 +432,7 @@ describe('TUI JSON Mode', () => {
 
       const formatted = JSON.stringify(service, null, 2);
       const lines = formatted.split('\n');
-      
+
       expect(lines.length).toBeGreaterThan(1);
       expect(lines[1]).toMatch(/^\s{2}/); // Check for 2-space indentation
     });

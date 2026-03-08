@@ -1,6 +1,6 @@
 /**
  * Integration tests for Server Mode
- * 
+ *
  * Tests the complete Server mode functionality including:
  * - HTTP server startup and shutdown
  * - Multi-client connection handling
@@ -71,7 +71,7 @@ describe('Server Mode Integration Tests', () => {
 
     // Create storage and config provider
     storage = new MemoryStorageAdapter();
-    
+
     // Store the config in memory storage with the full path that FileConfigProvider expects
     const configPath = `${config.configDir}/config.json`;
     await storage.write(configPath, JSON.stringify(config));
@@ -501,7 +501,7 @@ describe('Server Mode Integration Tests', () => {
       }
 
       // Verify all responses are valid
-      const data = await Promise.all(responses.map(r => r.json()));
+      const data = await Promise.all(responses.map((r) => r.json()));
       for (let i = 0; i < data.length; i++) {
         expect(data[i]).toHaveProperty('jsonrpc', '2.0');
         expect(data[i]).toHaveProperty('id', i);

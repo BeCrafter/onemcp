@@ -176,7 +176,9 @@ function parseCliArgs(): CliArgs {
       dryRun: values['dry-run'],
     };
   } catch (error) {
-    console.error(`Error parsing arguments: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error parsing arguments: ${error instanceof Error ? error.message : String(error)}`
+    );
     console.error('Use --help for usage information');
     process.exit(1);
   }
@@ -189,7 +191,8 @@ function parseCliArgs(): CliArgs {
  * 3. Default (~/.onemcp)
  */
 function resolveConfigDir(args: CliArgs): string {
-  const configDir = args.configDir || process.env['ONEMCP_CONFIG_DIR'] || resolve(homedir(), '.onemcp');
+  const configDir =
+    args.configDir || process.env['ONEMCP_CONFIG_DIR'] || resolve(homedir(), '.onemcp');
   return resolve(configDir);
 }
 
@@ -279,7 +282,7 @@ files in the \`services/\` directory.
 3. Start the router: \`onemcp --config-dir ${configDir}\`
 
 For more information, see the documentation at:
-https://github.com/yourusername/onemcp-router
+https://github.com/yourusername/onemcp
 `;
 
     writeFileSync(resolve(configDir, 'README.md'), readme, 'utf8');
@@ -290,7 +293,9 @@ https://github.com/yourusername/onemcp-router
     console.log(`  Logs directory: ${resolve(configDir, 'logs')}`);
     console.log(`  Backups directory: ${resolve(configDir, 'backups')}`);
   } catch (error) {
-    console.error(`Failed to initialize configuration directory: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Failed to initialize configuration directory: ${error instanceof Error ? error.message : String(error)}`
+    );
     process.exit(1);
   }
 }
@@ -331,7 +336,9 @@ async function validateConfiguration(configDir: string): Promise<boolean> {
       return false;
     }
   } catch (error) {
-    console.error(`Failed to validate configuration: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Failed to validate configuration: ${error instanceof Error ? error.message : String(error)}`
+    );
     return false;
   }
 }
@@ -415,7 +422,9 @@ async function main(): Promise<void> {
   // Check if configuration directory exists
   if (!existsSync(configDir)) {
     console.error(`Configuration directory does not exist: ${configDir}`);
-    console.error('Run with --init to create it, or specify a different directory with --config-dir');
+    console.error(
+      'Run with --init to create it, or specify a different directory with --config-dir'
+    );
     process.exit(1);
   }
 
@@ -427,19 +436,19 @@ async function main(): Promise<void> {
 
   // Load configuration
   console.log(`Loading configuration from: ${configDir}`);
-  
+
   try {
     const storage = new FileStorageAdapter(configDir);
     const configProvider = new FileConfigProvider({
       storageAdapter: storage,
       configDir,
     });
-    
+
     let config = await configProvider.load();
-    
+
     // Apply CLI and environment overrides
     config = applyConfigOverrides(config, args);
-    
+
     // Validate final configuration
     const validation = configProvider.validate(config);
     if (!validation.valid) {
@@ -449,32 +458,35 @@ async function main(): Promise<void> {
       }
       process.exit(1);
     }
-    
+
     // Display effective configuration
     displayEffectiveConfig(config, configDir);
-    
+
     // Handle dry-run flag
     if (args.dryRun) {
       console.log('Dry run complete. Configuration is valid.');
       process.exit(0);
     }
-    
+
     // Start the router based on mode
     if (config.mode === 'cli') {
       const { CliModeRunner } = await import('./cli-mode.js');
-      
+
       // Parse tag filter from CLI argument (--tag or -t)
       let tagFilter: TagFilter | undefined;
       if (args.tag) {
-        const tags = args.tag.split(',').map(t => t.trim()).filter(t => t.length > 0);
+        const tags = args.tag
+          .split(',')
+          .map((t) => t.trim())
+          .filter((t) => t.length > 0);
         if (tags.length > 0) {
           tagFilter = { tags, logic: 'OR' };
           console.error(`Tag filter: ${tags.join(', ')} (OR logic)`);
         }
       }
-      
+
       const runner = new CliModeRunner(config, configProvider, tagFilter);
-      
+
       // Set up graceful shutdown handlers
       const shutdown = async (signal: string) => {
         console.error(`\nReceived ${signal}, shutting down gracefully...`);
@@ -482,14 +494,16 @@ async function main(): Promise<void> {
           await runner.stop();
           process.exit(0);
         } catch (error) {
-          console.error(`Error during shutdown: ${error}`);
+          console.error(
+            `Error during shutdown: ${error instanceof Error ? error.message : String(error)}`
+          );
           process.exit(1);
         }
       };
-      
-      process.on('SIGINT', () => shutdown('SIGINT'));
-      process.on('SIGTERM', () => shutdown('SIGTERM'));
-      
+
+      process.on('SIGINT', () => void shutdown('SIGINT'));
+      process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
       // Start the runner
       await runner.start();
     } else if (config.mode === 'tui') {
@@ -498,7 +512,7 @@ async function main(): Promise<void> {
     } else {
       const { ServerModeRunner } = await import('./server-mode.js');
       const runner = new ServerModeRunner(config, configProvider);
-      
+
       // Set up graceful shutdown handlers
       const shutdown = async (signal: string) => {
         console.error(`\nReceived ${signal}, shutting down gracefully...`);
@@ -506,19 +520,23 @@ async function main(): Promise<void> {
           await runner.stop();
           process.exit(0);
         } catch (error) {
-          console.error(`Error during shutdown: ${error}`);
+          console.error(
+            `Error during shutdown: ${error instanceof Error ? error.message : String(error)}`
+          );
           process.exit(1);
         }
       };
-      
-      process.on('SIGINT', () => shutdown('SIGINT'));
-      process.on('SIGTERM', () => shutdown('SIGTERM'));
-      
+
+      process.on('SIGINT', () => void shutdown('SIGINT'));
+      process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
       // Start the runner
       await runner.start();
     }
   } catch (error) {
-    console.error(`Failed to start router: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Failed to start router: ${error instanceof Error ? error.message : String(error)}`
+    );
     if (error instanceof Error && error.stack) {
       console.error(error.stack);
     }

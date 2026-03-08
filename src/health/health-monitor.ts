@@ -1,6 +1,6 @@
 /**
  * Health Monitor for MCP Router System
- * 
+ *
  * This module implements health monitoring for backend MCP services.
  * It performs health checks, tracks service health status, and provides
  * methods to query health information.
@@ -13,7 +13,7 @@ import { EventEmitter } from 'events';
 
 /**
  * Health Monitor class
- * 
+ *
  * Monitors the health of registered services by performing connectivity checks.
  * Tracks consecutive failures and provides health status information.
  */
@@ -24,41 +24,42 @@ export class HealthMonitor extends EventEmitter {
   private heartbeatIntervalMs: number = 30000; // Default 30 seconds
   private failureThreshold: number = 3; // Default threshold
 
-  constructor(
-    _serviceRegistry: ServiceRegistry
-  ) {
+  constructor(_serviceRegistry: ServiceRegistry) {
     super();
   }
 
   /**
    * Register a connection pool for a service
-   * 
+   *
    * This allows the health monitor to perform health checks on the service.
    * Performs an initial health check before enabling the service's tools.
-   * 
+   *
    * @param serviceName - Name of the service
    * @param pool - Connection pool for the service
    * @returns Promise resolving to the initial health status
    */
-  public async registerConnectionPool(serviceName: string, pool: ConnectionPool): Promise<HealthStatus> {
+  public async registerConnectionPool(
+    serviceName: string,
+    pool: ConnectionPool
+  ): Promise<HealthStatus> {
     this.connectionPools.set(serviceName, pool);
-    
+
     // Perform initial health check (Requirement 20.9)
     const initialStatus = await this.checkHealth(serviceName);
-    
+
     // Emit event for initial health check result
     if (initialStatus.healthy) {
       this.emit('serviceHealthy', serviceName, initialStatus);
     } else {
       this.emit('serviceUnhealthy', serviceName, initialStatus);
     }
-    
+
     return initialStatus;
   }
 
   /**
    * Unregister a connection pool for a service
-   * 
+   *
    * @param serviceName - Name of the service
    */
   public unregisterConnectionPool(serviceName: string): void {
@@ -68,16 +69,16 @@ export class HealthMonitor extends EventEmitter {
 
   /**
    * Check health of a specific service
-   * 
+   *
    * Performs a connectivity test by attempting to acquire and release a connection.
    * Updates the health status and consecutive failure count.
-   * 
+   *
    * @param serviceName - Name of the service to check
    * @returns Promise resolving to health status
    */
   public async checkHealth(serviceName: string): Promise<HealthStatus> {
     const pool = this.connectionPools.get(serviceName);
-    
+
     if (!pool) {
       // Service not registered with health monitor
       const status: HealthStatus = {
@@ -101,10 +102,10 @@ export class HealthMonitor extends EventEmitter {
     try {
       // Attempt to acquire a connection
       connection = await pool.acquire();
-      
+
       // Check if connection is healthy
       const isHealthy = pool.isConnectionHealthy(connection);
-      
+
       if (!isHealthy) {
         throw new Error('Connection is not healthy');
       }
@@ -119,9 +120,9 @@ export class HealthMonitor extends EventEmitter {
 
       // Check if health status changed from unhealthy to healthy
       const wasUnhealthy = previousStatus && !previousStatus.healthy;
-      
+
       this.healthStatuses.set(serviceName, status);
-      
+
       if (wasUnhealthy) {
         this.emit('healthChanged', status);
         this.emit('serviceRecovered', serviceName);
@@ -131,7 +132,7 @@ export class HealthMonitor extends EventEmitter {
     } catch (error) {
       // Health check failed
       const consecutiveFailures = (previousStatus?.consecutiveFailures || 0) + 1;
-      
+
       const status: HealthStatus = {
         serviceName,
         healthy: false,
@@ -146,9 +147,9 @@ export class HealthMonitor extends EventEmitter {
 
       // Check if health status changed from healthy to unhealthy
       const wasHealthy = !previousStatus || previousStatus.healthy;
-      
+
       this.healthStatuses.set(serviceName, status);
-      
+
       if (wasHealthy) {
         this.emit('healthChanged', status);
         this.emit('serviceFailed', serviceName);
@@ -165,10 +166,10 @@ export class HealthMonitor extends EventEmitter {
 
   /**
    * Get all health statuses
-   * 
+   *
    * Returns health status for all services that have been checked.
    * Services that haven't been checked yet will not be included.
-   * 
+   *
    * @returns Promise resolving to array of health statuses
    */
   public async getAllHealthStatus(): Promise<HealthStatus[]> {
@@ -177,7 +178,7 @@ export class HealthMonitor extends EventEmitter {
 
   /**
    * Get health status for a specific service
-   * 
+   *
    * @param serviceName - Name of the service
    * @returns Health status or undefined if not checked yet
    */
@@ -187,7 +188,7 @@ export class HealthMonitor extends EventEmitter {
 
   /**
    * Clear health status for a service
-   * 
+   *
    * @param serviceName - Name of the service
    */
   public clearHealthStatus(serviceName: string): void {
@@ -203,10 +204,10 @@ export class HealthMonitor extends EventEmitter {
 
   /**
    * Start heartbeat monitoring
-   * 
+   *
    * Begins periodic health checks for all registered services at the configured interval.
    * Services that exceed the failure threshold will be marked as unhealthy.
-   * 
+   *
    * @param intervalMs - Interval in milliseconds between health checks (default: 30000)
    * @param failureThreshold - Number of consecutive failures before marking unhealthy (default: 3)
    */
@@ -228,7 +229,7 @@ export class HealthMonitor extends EventEmitter {
 
   /**
    * Stop heartbeat monitoring
-   * 
+   *
    * Stops the periodic health checks.
    */
   public stopHeartbeat(): void {
@@ -240,17 +241,17 @@ export class HealthMonitor extends EventEmitter {
 
   /**
    * Subscribe to health status changes
-   * 
+   *
    * Provides a convenient method to listen for health status changes.
    * The callback will be invoked whenever a service's health status changes
    * (from healthy to unhealthy or vice versa).
-   * 
+   *
    * @param callback - Function to call when health status changes
    * @returns Function to unsubscribe from the event
    */
   public onHealthChange(callback: (status: HealthStatus) => void): () => void {
     this.on('healthChanged', callback);
-    
+
     // Return unsubscribe function
     return () => {
       this.off('healthChanged', callback);
@@ -259,10 +260,10 @@ export class HealthMonitor extends EventEmitter {
 
   /**
    * Perform health checks on all registered services
-   * 
+   *
    * This is called periodically by the heartbeat mechanism.
    * Services that exceed the failure threshold will be marked as unhealthy.
-   * 
+   *
    * @private
    */
   private async performHeartbeatChecks(): Promise<void> {

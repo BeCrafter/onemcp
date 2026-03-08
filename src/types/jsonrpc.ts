@@ -12,7 +12,7 @@ export enum ErrorCode {
   METHOD_NOT_FOUND = -32601,
   INVALID_PARAMS = -32602,
   INTERNAL_ERROR = -32603,
-  
+
   // MCP Router System specific errors
   TOOL_NOT_FOUND = -32001,
   TOOL_DISABLED = -32002,

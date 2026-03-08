@@ -9,14 +9,14 @@ import path from 'node:path';
 import os from 'node:os';
 
 /**
- * Feature: onemcp-router-system
+ * Feature: onemcp-system
  * Property-based tests for Configuration Management
- * 
+ *
  * Tests:
  * - Property 2: Configuration persistence round-trip
  * - Property 14: Invalid configuration rejection
  * - Property 22: Configuration validation error completeness
- * 
+ *
  * **Validates: Requirements 11.10, 11.7, 30.9**
  */
 
@@ -46,15 +46,15 @@ const transportTypeArbitrary = (): fc.Arbitrary<'stdio' | 'sse' | 'http'> =>
  * Generate valid service names
  */
 const serviceNameArbitrary = (): fc.Arbitrary<string> =>
-  fc.string({ minLength: 1, maxLength: 50 })
-    .filter(s => s.trim().length > 0)
-    .map(s => s.trim());
+  fc
+    .string({ minLength: 1, maxLength: 50 })
+    .filter((s) => s.trim().length > 0)
+    .map((s) => s.trim());
 
 /**
  * Generate valid URLs
  */
-const urlArbitrary = (): fc.Arbitrary<string> =>
-  fc.webUrl({ validSchemes: ['http', 'https'] });
+const urlArbitrary = (): fc.Arbitrary<string> => fc.webUrl({ validSchemes: ['http', 'https'] });
 
 /**
  * Generate valid connection pool configuration
@@ -72,136 +72,143 @@ const connectionPoolConfigArbitrary = () =>
 const serviceDefinitionArbitrary = () =>
   fc.oneof(
     // Stdio transport service
-    fc.record({
-      name: serviceNameArbitrary(),
-      transport: fc.constant('stdio' as const),
-      command: fc.string({ minLength: 1, maxLength: 100 }),
-      args: fc.option(fc.array(fc.string(), { maxLength: 10 }), { nil: undefined }),
-      env: fc.option(
-        fc.dictionary(fc.string({ minLength: 1 }), fc.string(), { maxKeys: 10 }),
-        { nil: undefined }
-      ),
-      enabled: fc.boolean(),
-      tags: fc.array(fc.string(), { maxLength: 5 }),
-      connectionPool: connectionPoolConfigArbitrary(),
-      toolStates: fc.option(
-        fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 10 }),
-        { nil: undefined }
-      ),
-    }).map(service => {
-      // Remove undefined optional fields for exactOptionalPropertyTypes
-      const result: any = {
-        name: service.name,
-        transport: service.transport,
-        command: service.command,
-        enabled: service.enabled,
-        tags: service.tags,
-        connectionPool: service.connectionPool,
-      };
-      if (service.args !== undefined) result.args = service.args;
-      if (service.env !== undefined) result.env = service.env;
-      if (service.toolStates !== undefined) result.toolStates = service.toolStates;
-      return result;
-    }),
+    fc
+      .record({
+        name: serviceNameArbitrary(),
+        transport: fc.constant('stdio' as const),
+        command: fc.string({ minLength: 1, maxLength: 100 }),
+        args: fc.option(fc.array(fc.string(), { maxLength: 10 }), { nil: undefined }),
+        env: fc.option(fc.dictionary(fc.string({ minLength: 1 }), fc.string(), { maxKeys: 10 }), {
+          nil: undefined,
+        }),
+        enabled: fc.boolean(),
+        tags: fc.array(fc.string(), { maxLength: 5 }),
+        connectionPool: connectionPoolConfigArbitrary(),
+        toolStates: fc.option(
+          fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 10 }),
+          { nil: undefined }
+        ),
+      })
+      .map((service) => {
+        // Remove undefined optional fields for exactOptionalPropertyTypes
+        const result: any = {
+          name: service.name,
+          transport: service.transport,
+          command: service.command,
+          enabled: service.enabled,
+          tags: service.tags,
+          connectionPool: service.connectionPool,
+        };
+        if (service.args !== undefined) result.args = service.args;
+        if (service.env !== undefined) result.env = service.env;
+        if (service.toolStates !== undefined) result.toolStates = service.toolStates;
+        return result;
+      }),
     // SSE transport service
-    fc.record({
-      name: serviceNameArbitrary(),
-      transport: fc.constant('sse' as const),
-      url: urlArbitrary(),
-      enabled: fc.boolean(),
-      tags: fc.array(fc.string(), { maxLength: 5 }),
-      connectionPool: connectionPoolConfigArbitrary(),
-      toolStates: fc.option(
-        fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 10 }),
-        { nil: undefined }
-      ),
-    }).map(service => {
-      const result: any = {
-        name: service.name,
-        transport: service.transport,
-        url: service.url,
-        enabled: service.enabled,
-        tags: service.tags,
-        connectionPool: service.connectionPool,
-      };
-      if (service.toolStates !== undefined) result.toolStates = service.toolStates;
-      return result;
-    }),
+    fc
+      .record({
+        name: serviceNameArbitrary(),
+        transport: fc.constant('sse' as const),
+        url: urlArbitrary(),
+        enabled: fc.boolean(),
+        tags: fc.array(fc.string(), { maxLength: 5 }),
+        connectionPool: connectionPoolConfigArbitrary(),
+        toolStates: fc.option(
+          fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 10 }),
+          { nil: undefined }
+        ),
+      })
+      .map((service) => {
+        const result: any = {
+          name: service.name,
+          transport: service.transport,
+          url: service.url,
+          enabled: service.enabled,
+          tags: service.tags,
+          connectionPool: service.connectionPool,
+        };
+        if (service.toolStates !== undefined) result.toolStates = service.toolStates;
+        return result;
+      }),
     // HTTP transport service
-    fc.record({
-      name: serviceNameArbitrary(),
-      transport: fc.constant('http' as const),
-      url: urlArbitrary(),
-      enabled: fc.boolean(),
-      tags: fc.array(fc.string(), { maxLength: 5 }),
-      connectionPool: connectionPoolConfigArbitrary(),
-      toolStates: fc.option(
-        fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 10 }),
-        { nil: undefined }
-      ),
-    }).map(service => {
-      const result: any = {
-        name: service.name,
-        transport: service.transport,
-        url: service.url,
-        enabled: service.enabled,
-        tags: service.tags,
-        connectionPool: service.connectionPool,
-      };
-      if (service.toolStates !== undefined) result.toolStates = service.toolStates;
-      return result;
-    })
+    fc
+      .record({
+        name: serviceNameArbitrary(),
+        transport: fc.constant('http' as const),
+        url: urlArbitrary(),
+        enabled: fc.boolean(),
+        tags: fc.array(fc.string(), { maxLength: 5 }),
+        connectionPool: connectionPoolConfigArbitrary(),
+        toolStates: fc.option(
+          fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 10 }),
+          { nil: undefined }
+        ),
+      })
+      .map((service) => {
+        const result: any = {
+          name: service.name,
+          transport: service.transport,
+          url: service.url,
+          enabled: service.enabled,
+          tags: service.tags,
+          connectionPool: service.connectionPool,
+        };
+        if (service.toolStates !== undefined) result.toolStates = service.toolStates;
+        return result;
+      })
   );
 
 /**
  * Generate valid system configuration
  */
 const systemConfigArbitrary = () =>
-  fc.record({
-    mode: deploymentModeArbitrary(),
-    port: fc.option(fc.integer({ min: 1, max: 65535 }), { nil: undefined }),
-    logLevel: logLevelArbitrary(),
-    configDir: fc.constant('/tmp/test-config'),
-    services: fc.array(serviceDefinitionArbitrary(), { maxLength: 5 }),
-    connectionPool: connectionPoolConfigArbitrary(),
-    healthCheck: fc.record({
-      enabled: fc.boolean(),
-      interval: fc.integer({ min: 1000, max: 60000 }),
-      failureThreshold: fc.integer({ min: 1, max: 10 }),
-      autoUnload: fc.boolean(),
-    }),
-    audit: fc.record({
-      enabled: fc.boolean(),
-      level: fc.constantFrom('minimal' as const, 'standard' as const, 'verbose' as const),
-      logInput: fc.boolean(),
-      logOutput: fc.boolean(),
-      retention: fc.record({
-        days: fc.integer({ min: 1, max: 365 }),
-        maxSize: fc.constantFrom('100MB', '500MB', '1GB', '5GB'),
-      }),
-    }),
-    security: fc.record({
-      dataMasking: fc.record({
+  fc
+    .record({
+      mode: deploymentModeArbitrary(),
+      port: fc.option(fc.integer({ min: 1, max: 65535 }), { nil: undefined }),
+      logLevel: logLevelArbitrary(),
+      configDir: fc.constant('/tmp/test-config'),
+      services: fc.array(serviceDefinitionArbitrary(), { maxLength: 5 }),
+      connectionPool: connectionPoolConfigArbitrary(),
+      healthCheck: fc.record({
         enabled: fc.boolean(),
-        patterns: fc.array(fc.string({ minLength: 1 }), { minLength: 1, maxLength: 10 }),
+        interval: fc.integer({ min: 1000, max: 60000 }),
+        failureThreshold: fc.integer({ min: 1, max: 10 }),
+        autoUnload: fc.boolean(),
       }),
-    }),
-    logging: fc.option(
-      fc.record({
-        level: logLevelArbitrary(),
-        outputs: fc.array(fc.constantFrom('console', 'file'), { minLength: 1, maxLength: 2 }),
-        format: fc.constantFrom('json' as const, 'pretty' as const),
-        filePath: fc.option(fc.string(), { nil: undefined }),
+      audit: fc.record({
+        enabled: fc.boolean(),
+        level: fc.constantFrom('minimal' as const, 'standard' as const, 'verbose' as const),
+        logInput: fc.boolean(),
+        logOutput: fc.boolean(),
+        retention: fc.record({
+          days: fc.integer({ min: 1, max: 365 }),
+          maxSize: fc.constantFrom('100MB', '500MB', '1GB', '5GB'),
+        }),
       }),
-      { nil: undefined }
-    ),
-  }).chain(config => {
-    // Ensure server mode has a port
-    if (config.mode === 'server' && !config.port) {
-      return fc.constant({ ...config, port: 3000 } as SystemConfig);
-    }
-    return fc.constant(config as SystemConfig);
-  });
+      security: fc.record({
+        dataMasking: fc.record({
+          enabled: fc.boolean(),
+          patterns: fc.array(fc.string({ minLength: 1 }), { minLength: 1, maxLength: 10 }),
+        }),
+      }),
+      logging: fc.option(
+        fc.record({
+          level: logLevelArbitrary(),
+          outputs: fc.array(fc.constantFrom('console', 'file'), { minLength: 1, maxLength: 2 }),
+          format: fc.constantFrom('json' as const, 'pretty' as const),
+          filePath: fc.option(fc.string(), { nil: undefined }),
+        }),
+        { nil: undefined }
+      ),
+    })
+    .chain((config) => {
+      // Ensure server mode has a port
+      if (config.mode === 'server' && !config.port) {
+        return fc.constant({ ...config, port: 3000 } as SystemConfig);
+      }
+      return fc.constant(config as SystemConfig);
+    });
 
 /**
  * Generate invalid system configuration (missing required fields or wrong types)
@@ -238,36 +245,37 @@ const invalidSystemConfigArbitrary = () =>
       }),
     }),
     // Invalid port number (out of range)
-    systemConfigArbitrary().map(config => ({
+    systemConfigArbitrary().map((config) => ({
       ...config,
       mode: 'server' as const,
-      port: fc.sample(fc.oneof(
-        fc.integer({ max: 0 }),
-        fc.integer({ min: 65536 })
-      ), 1)[0],
+      port: fc.sample(fc.oneof(fc.integer({ max: 0 }), fc.integer({ min: 65536 })), 1)[0],
     })),
     // Invalid service: stdio without command
-    systemConfigArbitrary().map(config => ({
+    systemConfigArbitrary().map((config) => ({
       ...config,
-      services: [{
-        name: 'invalid-service',
-        transport: 'stdio' as const,
-        enabled: true,
-        // Missing command field
-      }],
+      services: [
+        {
+          name: 'invalid-service',
+          transport: 'stdio' as const,
+          enabled: true,
+          // Missing command field
+        },
+      ],
     })),
     // Invalid service: http without URL
-    systemConfigArbitrary().map(config => ({
+    systemConfigArbitrary().map((config) => ({
       ...config,
-      services: [{
-        name: 'invalid-service',
-        transport: 'http' as const,
-        enabled: true,
-        // Missing url field
-      }],
+      services: [
+        {
+          name: 'invalid-service',
+          transport: 'http' as const,
+          enabled: true,
+          // Missing url field
+        },
+      ],
     })),
     // Invalid health check interval (too small)
-    systemConfigArbitrary().map(config => ({
+    systemConfigArbitrary().map((config) => ({
       ...config,
       healthCheck: {
         ...config.healthCheck,
@@ -280,7 +288,7 @@ const invalidSystemConfigArbitrary = () =>
  * Generate configuration with multiple validation errors
  */
 const multiErrorConfigArbitrary = () =>
-  systemConfigArbitrary().map(config => ({
+  systemConfigArbitrary().map((config) => ({
     ...config,
     mode: 'server' as const,
     port: undefined, // Error 1: Missing port for server mode
@@ -308,7 +316,7 @@ const multiErrorConfigArbitrary = () =>
 // Property 2: Configuration Persistence Round-Trip
 // ============================================================================
 
-describe('Feature: onemcp-router-system, Property 2: Configuration persistence round-trip', () => {
+describe('Feature: onemcp-system, Property 2: Configuration persistence round-trip', () => {
   describe('MemoryStorageAdapter', () => {
     let storage: MemoryStorageAdapter;
     let provider: FileConfigProvider;
@@ -330,13 +338,13 @@ describe('Feature: onemcp-router-system, Property 2: Configuration persistence r
         fc.asyncProperty(systemConfigArbitrary(), async (config) => {
           // Save configuration
           await provider.save(config);
-          
+
           // Load configuration
           const loaded = await provider.load();
-          
+
           // Verify configuration is preserved
           expect(loaded).toEqual(config);
-          
+
           return true;
         }),
         { numRuns: 100 }
@@ -350,16 +358,16 @@ describe('Feature: onemcp-router-system, Property 2: Configuration persistence r
           fc.array(serviceDefinitionArbitrary(), { minLength: 1, maxLength: 10 }),
           async (baseConfig, services) => {
             const config = { ...baseConfig, services };
-            
+
             // Save
             await provider.save(config);
-            
+
             // Load
             const loaded = await provider.load();
-            
+
             // Verify services are preserved
             expect(loaded.services).toEqual(services);
-            
+
             return true;
           }
         ),
@@ -387,16 +395,16 @@ describe('Feature: onemcp-router-system, Property 2: Configuration persistence r
                 },
               ],
             };
-            
+
             // Save
             await provider.save(config);
-            
+
             // Load
             const loaded = await provider.load();
-            
+
             // Verify tool states are preserved
             expect(loaded.services[0]?.toolStates).toEqual(toolStates);
-            
+
             return true;
           }
         ),
@@ -411,7 +419,10 @@ describe('Feature: onemcp-router-system, Property 2: Configuration persistence r
     let tempDir: string;
 
     beforeEach(async () => {
-      tempDir = path.join(os.tmpdir(), `config-test-${Date.now()}-${Math.random().toString(36).substring(7)}`);
+      tempDir = path.join(
+        os.tmpdir(),
+        `config-test-${Date.now()}-${Math.random().toString(36).substring(7)}`
+      );
       storage = new FileStorageAdapter(tempDir);
       await storage.initialize();
       provider = new FileConfigProvider({
@@ -434,16 +445,16 @@ describe('Feature: onemcp-router-system, Property 2: Configuration persistence r
         fc.asyncProperty(systemConfigArbitrary(), async (config) => {
           // Update configDir to match tempDir
           const configWithDir = { ...config, configDir: tempDir };
-          
+
           // Save configuration
           await provider.save(configWithDir);
-          
+
           // Load configuration
           const loaded = await provider.load();
-          
+
           // Verify configuration is preserved
           expect(loaded).toEqual(configWithDir);
-          
+
           return true;
         }),
         { numRuns: 50 } // Reduced for file I/O
@@ -454,22 +465,22 @@ describe('Feature: onemcp-router-system, Property 2: Configuration persistence r
       await fc.assert(
         fc.asyncProperty(systemConfigArbitrary(), async (config) => {
           const configWithDir = { ...config, configDir: tempDir };
-          
+
           // Save configuration
           await provider.save(configWithDir);
-          
+
           // Simulate system restart by creating new provider instance
           const newProvider = new FileConfigProvider({
             storageAdapter: new FileStorageAdapter(tempDir),
             configDir: tempDir,
           });
-          
+
           // Load configuration with new provider
           const loaded = await newProvider.load();
-          
+
           // Verify configuration is preserved across restart
           expect(loaded).toEqual(configWithDir);
-          
+
           return true;
         }),
         { numRuns: 50 } // Reduced for file I/O
@@ -482,7 +493,7 @@ describe('Feature: onemcp-router-system, Property 2: Configuration persistence r
 // Property 14: Invalid Configuration Rejection
 // ============================================================================
 
-describe('Feature: onemcp-router-system, Property 14: Invalid configuration rejection', () => {
+describe('Feature: onemcp-system, Property 14: Invalid configuration rejection', () => {
   let storage: MemoryStorageAdapter;
   let provider: FileConfigProvider;
 
@@ -503,10 +514,10 @@ describe('Feature: onemcp-router-system, Property 14: Invalid configuration reje
       fc.property(invalidSystemConfigArbitrary(), (invalidConfig) => {
         // Validate should return invalid
         const result = provider.validate(invalidConfig as SystemConfig);
-        
+
         expect(result.valid).toBe(false);
         expect(result.errors.length).toBeGreaterThan(0);
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -522,10 +533,10 @@ describe('Feature: onemcp-router-system, Property 14: Invalid configuration reje
         }),
         (partialConfig) => {
           const result = provider.validate(partialConfig as SystemConfig);
-          
+
           expect(result.valid).toBe(false);
           expect(result.errors.length).toBeGreaterThan(0);
-          
+
           return true;
         }
       ),
@@ -541,12 +552,12 @@ describe('Feature: onemcp-router-system, Property 14: Invalid configuration reje
           mode: 'server' as const,
         };
         delete (serverConfig as any).port;
-        
+
         const result = provider.validate(serverConfig as SystemConfig);
-        
+
         expect(result.valid).toBe(false);
-        expect(result.errors.some(err => err.field === 'port')).toBe(true);
-        
+        expect(result.errors.some((err) => err.field === 'port')).toBe(true);
+
         return true;
       }),
       { numRuns: 100 }
@@ -567,12 +578,12 @@ describe('Feature: onemcp-router-system, Property 14: Invalid configuration reje
             },
           ],
         };
-        
+
         const result = provider.validate(invalidConfig as SystemConfig);
-        
+
         expect(result.valid).toBe(false);
-        expect(result.errors.some(err => err.field.includes('command'))).toBe(true);
-        
+        expect(result.errors.some((err) => err.field.includes('command'))).toBe(true);
+
         return true;
       }),
       { numRuns: 100 }
@@ -583,7 +594,7 @@ describe('Feature: onemcp-router-system, Property 14: Invalid configuration reje
     fc.assert(
       fc.property(
         systemConfigArbitrary(),
-        transportTypeArbitrary().filter(t => t === 'http' || t === 'sse'),
+        transportTypeArbitrary().filter((t) => t === 'http' || t === 'sse'),
         (config, transport) => {
           const invalidConfig = {
             ...config,
@@ -596,12 +607,12 @@ describe('Feature: onemcp-router-system, Property 14: Invalid configuration reje
               },
             ],
           };
-          
+
           const result = provider.validate(invalidConfig as SystemConfig);
-          
+
           expect(result.valid).toBe(false);
-          expect(result.errors.some(err => err.field.includes('url'))).toBe(true);
-          
+          expect(result.errors.some((err) => err.field.includes('url'))).toBe(true);
+
           return true;
         }
       ),
@@ -613,7 +624,7 @@ describe('Feature: onemcp-router-system, Property 14: Invalid configuration reje
     fc.assert(
       fc.property(
         systemConfigArbitrary(),
-        fc.string().filter(s => {
+        fc.string().filter((s) => {
           try {
             new URL(s);
             return false;
@@ -633,11 +644,11 @@ describe('Feature: onemcp-router-system, Property 14: Invalid configuration reje
               },
             ],
           };
-          
+
           const result = provider.validate(invalidConfig as SystemConfig);
-          
+
           expect(result.valid).toBe(false);
-          
+
           return true;
         }
       ),
@@ -650,7 +661,7 @@ describe('Feature: onemcp-router-system, Property 14: Invalid configuration reje
       fc.asyncProperty(invalidSystemConfigArbitrary(), async (invalidConfig) => {
         // Attempt to save should throw
         await expect(provider.save(invalidConfig as SystemConfig)).rejects.toThrow();
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -662,7 +673,7 @@ describe('Feature: onemcp-router-system, Property 14: Invalid configuration reje
 // Property 22: Configuration Validation Error Completeness
 // ============================================================================
 
-describe('Feature: onemcp-router-system, Property 22: Configuration validation error completeness', () => {
+describe('Feature: onemcp-system, Property 22: Configuration validation error completeness', () => {
   let storage: MemoryStorageAdapter;
   let provider: FileConfigProvider;
 
@@ -682,22 +693,22 @@ describe('Feature: onemcp-router-system, Property 22: Configuration validation e
     fc.assert(
       fc.property(multiErrorConfigArbitrary(), (configWithErrors) => {
         const result = provider.validate(configWithErrors as unknown as SystemConfig);
-        
+
         // Should be invalid
         expect(result.valid).toBe(false);
-        
+
         // Should have multiple errors (at least 2)
         expect(result.errors.length).toBeGreaterThanOrEqual(2);
-        
+
         // Verify specific expected errors are present
-        const errorFields = result.errors.map(err => err.field);
-        
+        const errorFields = result.errors.map((err) => err.field);
+
         // Should report port error
-        expect(errorFields.some(field => field.includes('port'))).toBe(true);
-        
+        expect(errorFields.some((field) => field.includes('port'))).toBe(true);
+
         // Should report service errors
-        expect(errorFields.some(field => field.includes('services'))).toBe(true);
-        
+        expect(errorFields.some((field) => field.includes('services'))).toBe(true);
+
         return true;
       }),
       { numRuns: 100 }
@@ -717,21 +728,21 @@ describe('Feature: onemcp-router-system, Property 22: Configuration validation e
             enabled: true,
             // Missing command
           }));
-          
+
           const config = {
             ...baseConfig,
             services: invalidServices,
           };
-          
+
           const result = provider.validate(config as unknown as SystemConfig);
-          
+
           // Should be invalid
           expect(result.valid).toBe(false);
-          
+
           // Should have at least one error per invalid service
-          const serviceErrors = result.errors.filter(err => err.field.includes('services'));
+          const serviceErrors = result.errors.filter((err) => err.field.includes('services'));
           expect(serviceErrors.length).toBeGreaterThanOrEqual(numInvalidServices);
-          
+
           return true;
         }
       ),
@@ -743,7 +754,7 @@ describe('Feature: onemcp-router-system, Property 22: Configuration validation e
     fc.assert(
       fc.property(multiErrorConfigArbitrary(), (configWithErrors) => {
         const result = provider.validate(configWithErrors as unknown as SystemConfig);
-        
+
         // Each error should have required fields
         for (const error of result.errors) {
           expect(error).toHaveProperty('field');
@@ -753,7 +764,7 @@ describe('Feature: onemcp-router-system, Property 22: Configuration validation e
           expect(error.field.length).toBeGreaterThan(0);
           expect(error.message.length).toBeGreaterThan(0);
         }
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -764,18 +775,18 @@ describe('Feature: onemcp-router-system, Property 22: Configuration validation e
     fc.assert(
       fc.property(invalidSystemConfigArbitrary(), (invalidConfig) => {
         const result = provider.validate(invalidConfig as SystemConfig);
-        
+
         // All errors should follow ValidationError interface
         for (const error of result.errors) {
           expect(error).toMatchObject({
             field: expect.any(String),
             message: expect.any(String),
           });
-          
+
           // Optional fields can be undefined or have correct type
           // Don't require them to be defined
         }
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -784,42 +795,39 @@ describe('Feature: onemcp-router-system, Property 22: Configuration validation e
 
   it('should not stop validation after first error', () => {
     fc.assert(
-      fc.property(
-        systemConfigArbitrary(),
-        (baseConfig) => {
-          // Create config with multiple known errors
-          const config: any = {
-            ...baseConfig,
-            mode: 'server' as const,
-            services: [
-              {
-                name: 'invalid-1',
-                transport: 'stdio' as const,
-                enabled: true,
-                // Missing command - Error 2
-              },
-              {
-                name: 'invalid-2',
-                transport: 'http' as const,
-                enabled: true,
-                // Missing url - Error 3
-              },
-            ],
-          };
-          delete config.port; // Error 1
-          
-          const result = provider.validate(config as unknown as SystemConfig);
-          
-          // Should report multiple errors
-          expect(result.errors.length).toBeGreaterThanOrEqual(3);
-          
-          // Should have errors for different fields
-          const uniqueFields = new Set(result.errors.map(err => err.field));
-          expect(uniqueFields.size).toBeGreaterThanOrEqual(2);
-          
-          return true;
-        }
-      ),
+      fc.property(systemConfigArbitrary(), (baseConfig) => {
+        // Create config with multiple known errors
+        const config: any = {
+          ...baseConfig,
+          mode: 'server' as const,
+          services: [
+            {
+              name: 'invalid-1',
+              transport: 'stdio' as const,
+              enabled: true,
+              // Missing command - Error 2
+            },
+            {
+              name: 'invalid-2',
+              transport: 'http' as const,
+              enabled: true,
+              // Missing url - Error 3
+            },
+          ],
+        };
+        delete config.port; // Error 1
+
+        const result = provider.validate(config as unknown as SystemConfig);
+
+        // Should report multiple errors
+        expect(result.errors.length).toBeGreaterThanOrEqual(3);
+
+        // Should have errors for different fields
+        const uniqueFields = new Set(result.errors.map((err) => err.field));
+        expect(uniqueFields.size).toBeGreaterThanOrEqual(2);
+
+        return true;
+      }),
       { numRuns: 100 }
     );
   });

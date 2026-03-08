@@ -1,6 +1,6 @@
 /**
  * Integration tests for ServiceFormUnified component
- * 
+ *
  * Note: These tests verify the component logic and structure.
  * Visual rendering tests would require ink-testing-library.
  */
@@ -15,7 +15,7 @@ describe('ServiceFormUnified', () => {
   // Test the form data conversion logic
 
   // Test the form data conversion logic
-  
+
   describe('Service Definition Conversion', () => {
     it('should create valid stdio service definition', () => {
       const service: ServiceDefinition = {
@@ -66,11 +66,11 @@ describe('ServiceFormUnified', () => {
       const validNames = ['my-service', 'api_v2', 'test123', 'Service-Name_123'];
       const invalidNames = ['invalid name', 'service!', 'test@service', 'my service'];
 
-      validNames.forEach(name => {
+      validNames.forEach((name) => {
         expect(/^[a-zA-Z0-9_-]+$/.test(name)).toBe(true);
       });
 
-      invalidNames.forEach(name => {
+      invalidNames.forEach((name) => {
         expect(/^[a-zA-Z0-9_-]+$/.test(name)).toBe(false);
       });
     });
@@ -81,17 +81,13 @@ describe('ServiceFormUnified', () => {
         'https://api.example.com',
         'http://192.168.1.1:8080/path',
       ];
-      const invalidUrls = [
-        'ftp://example.com',
-        'example.com',
-        'localhost:3000',
-      ];
+      const invalidUrls = ['ftp://example.com', 'example.com', 'localhost:3000'];
 
-      validUrls.forEach(url => {
+      validUrls.forEach((url) => {
         expect(/^https?:\/\/.+/.test(url)).toBe(true);
       });
 
-      invalidUrls.forEach(url => {
+      invalidUrls.forEach((url) => {
         expect(/^https?:\/\/.+/.test(url)).toBe(false);
       });
     });
@@ -112,16 +108,22 @@ describe('ServiceFormUnified', () => {
   describe('Form Data Structure', () => {
     it('should handle comma-separated values', () => {
       const tagsString = 'test, local, api';
-      const tags = tagsString.split(',').map(t => t.trim()).filter(t => t.length > 0);
-      
+      const tags = tagsString
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+
       expect(tags).toEqual(['test', 'local', 'api']);
     });
 
     it('should parse environment variables', () => {
       const envString = 'NODE_ENV=production, DEBUG=true, PORT=3000';
       const env: Record<string, string> = {};
-      
-      const envPairs = envString.split(',').map(e => e.trim()).filter(e => e.length > 0);
+
+      const envPairs = envString
+        .split(',')
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0);
       for (const pair of envPairs) {
         const [key, ...valueParts] = pair.split('=');
         if (key && valueParts.length > 0) {
@@ -159,7 +161,15 @@ describe('ServiceFormUnified', () => {
   describe('Field Configuration', () => {
     it('should have correct required fields for stdio', () => {
       const requiredFields = ['name', 'transport', 'command'];
-      const optionalFields = ['args', 'env', 'tags', 'enabled', 'maxConnections', 'idleTimeout', 'connectionTimeout'];
+      const optionalFields = [
+        'args',
+        'env',
+        'tags',
+        'enabled',
+        'maxConnections',
+        'idleTimeout',
+        'connectionTimeout',
+      ];
 
       expect(requiredFields).toContain('name');
       expect(requiredFields).toContain('command');
@@ -169,7 +179,13 @@ describe('ServiceFormUnified', () => {
 
     it('should have correct required fields for HTTP', () => {
       const requiredFields = ['name', 'transport', 'url'];
-      const optionalFields = ['tags', 'enabled', 'maxConnections', 'idleTimeout', 'connectionTimeout'];
+      const optionalFields = [
+        'tags',
+        'enabled',
+        'maxConnections',
+        'idleTimeout',
+        'connectionTimeout',
+      ];
 
       expect(requiredFields).toContain('name');
       expect(requiredFields).toContain('url');

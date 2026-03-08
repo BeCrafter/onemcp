@@ -96,7 +96,7 @@ export interface LoggingConfig {
   /** Log level */
   level: LogLevel;
   /** Log outputs (console, file, custom) */
-  outputs: Array<'console' | 'file' | string>;
+  outputs: Array<'console' | 'file'>;
   /** Log format (json, pretty) */
   format: 'json' | 'pretty';
   /** Log file path (if file output is enabled) */
@@ -157,7 +157,7 @@ export interface ValidationResult {
 
 /**
  * Configuration provider interface
- * 
+ *
  * Responsible for loading, saving, validating, and watching configuration.
  * Implementations can load configuration from various sources (files, databases, APIs, etc.)
  */
@@ -168,7 +168,7 @@ export interface ConfigProvider {
    * @throws Error if configuration cannot be loaded or is invalid
    */
   load(): Promise<SystemConfig>;
-  
+
   /**
    * Save configuration to storage
    * @param config - System configuration to save
@@ -176,14 +176,14 @@ export interface ConfigProvider {
    * @throws Error if configuration cannot be saved
    */
   save(config: SystemConfig): Promise<void>;
-  
+
   /**
    * Validate configuration structure and values
    * @param config - System configuration to validate
    * @returns Validation result with any errors found
    */
   validate(config: SystemConfig): ValidationResult;
-  
+
   /**
    * Watch for configuration changes and invoke callback
    * @param callback - Function to call when configuration changes

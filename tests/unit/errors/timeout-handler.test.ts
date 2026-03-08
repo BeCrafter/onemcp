@@ -6,7 +6,7 @@ describe('TimeoutHandler', () => {
   describe('withTimeout', () => {
     it('should resolve when operation completes before timeout', async () => {
       const operation = Promise.resolve('success');
-      
+
       const result = await TimeoutHandler.withTimeout(operation, {
         timeoutMs: 1000,
         operationName: 'test-op',
@@ -114,7 +114,7 @@ describe('TimeoutHandler', () => {
   describe('race', () => {
     it('should resolve when operation completes before timeout', async () => {
       const operation = Promise.resolve('success');
-      
+
       const result = await TimeoutHandler.race(operation, 1000, 'test-op');
 
       expect(result).toBe('success');
@@ -125,9 +125,7 @@ describe('TimeoutHandler', () => {
         setTimeout(() => resolve('too late'), 1000);
       });
 
-      await expect(
-        TimeoutHandler.race(operation, 100, 'test-op')
-      ).rejects.toThrow(TimeoutError);
+      await expect(TimeoutHandler.race(operation, 100, 'test-op')).rejects.toThrow(TimeoutError);
     });
   });
 
@@ -173,9 +171,9 @@ describe('TimeoutHandler', () => {
         { promise: Promise.resolve('result3'), timeout: 1000, name: 'op3' },
       ];
 
-      await expect(
-        TimeoutHandler.allWithTimeout(operations, { failFast: true })
-      ).rejects.toThrow(TimeoutError);
+      await expect(TimeoutHandler.allWithTimeout(operations, { failFast: true })).rejects.toThrow(
+        TimeoutError
+      );
     });
 
     it('should throw first error when all operations fail', async () => {
@@ -192,9 +190,9 @@ describe('TimeoutHandler', () => {
         },
       ];
 
-      await expect(
-        TimeoutHandler.allWithTimeout(operations, { failFast: false })
-      ).rejects.toThrow('fail1');
+      await expect(TimeoutHandler.allWithTimeout(operations, { failFast: false })).rejects.toThrow(
+        'fail1'
+      );
     });
   });
 });

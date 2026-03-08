@@ -211,11 +211,7 @@ export class RequestLogger {
   /**
    * Log tool state change
    */
-  logToolStateChange(
-    toolName: string,
-    enabled: boolean,
-    reason?: string
-  ): void {
+  logToolStateChange(toolName: string, enabled: boolean, reason?: string): void {
     const logContext: Record<string, unknown> = {
       event: 'tool_state_changed',
       toolName,

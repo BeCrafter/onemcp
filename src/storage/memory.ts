@@ -51,11 +51,11 @@ export class MemoryStorageAdapter implements StorageAdapter {
    */
   async listKeys(prefix?: string): Promise<string[]> {
     const keys = Array.from(this.data.keys());
-    
+
     if (prefix) {
-      return keys.filter(key => key.startsWith(prefix));
+      return keys.filter((key) => key.startsWith(prefix));
     }
-    
+
     return keys;
   }
 

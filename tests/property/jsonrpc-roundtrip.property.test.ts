@@ -10,10 +10,10 @@ import type {
 } from '../../src/types/jsonrpc.js';
 
 /**
- * Feature: onemcp-router-system, Property 21: JSON-RPC message round-trip
- * 
+ * Feature: onemcp-system, Property 21: JSON-RPC message round-trip
+ *
  * **Validates: Requirements 29.5**
- * 
+ *
  * For any valid JSON-RPC message object, serializing then parsing should
  * produce an equivalent message object.
  */
@@ -33,13 +33,13 @@ const jsonRpcIdArbitrary = (): fc.Arbitrary<string | number> =>
  * Generate valid JSON-RPC method names
  */
 const methodNameArbitrary = (): fc.Arbitrary<string> =>
-  fc.string({ minLength: 1, maxLength: 100 }).filter(s => !s.startsWith('rpc.'));
+  fc.string({ minLength: 1, maxLength: 100 }).filter((s) => !s.startsWith('rpc.'));
 
 /**
  * Generate arbitrary JSON-compatible values for params/result
  */
 const jsonValueArbitrary = (): fc.Arbitrary<unknown> =>
-  fc.letrec(tie => ({
+  fc.letrec((tie) => ({
     value: fc.oneof(
       { depthSize: 'small' },
       fc.constant(null),
@@ -47,12 +47,8 @@ const jsonValueArbitrary = (): fc.Arbitrary<unknown> =>
       fc.integer(),
       fc.double({ noNaN: true, noDefaultInfinity: true }),
       fc.string(),
-      fc.array(tie('value') as fc.Arbitrary<unknown>, { maxLength: 5 }),
-      fc.dictionary(
-        fc.string({ minLength: 1, maxLength: 20 }),
-        tie('value') as fc.Arbitrary<unknown>,
-        { maxKeys: 5 }
-      )
+      fc.array(tie('value'), { maxLength: 5 }),
+      fc.dictionary(fc.string({ minLength: 1, maxLength: 20 }), tie('value'), { maxKeys: 5 })
     ),
   })).value as fc.Arbitrary<unknown>;
 
@@ -151,7 +147,7 @@ function messagesEqual(a: JsonRpcMessage, b: JsonRpcMessage): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-describe('Feature: onemcp-router-system, Property 21: JSON-RPC message round-trip', () => {
+describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip', () => {
   it('should preserve JSON-RPC request messages through serialization round-trip', () => {
     fc.assert(
       fc.property(jsonRpcRequestArbitrary(), (message) => {

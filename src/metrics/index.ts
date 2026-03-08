@@ -4,11 +4,7 @@
 
 export { MetricsCollector } from './collector.js';
 export { MetricsService } from './service.js';
-export {
-  DEFAULT_METRICS_CONFIG,
-  createMetricsConfig,
-  validateMetricsConfig,
-} from './defaults.js';
+export { DEFAULT_METRICS_CONFIG, createMetricsConfig, validateMetricsConfig } from './defaults.js';
 export type {
   ToolCallMetrics,
   ConnectionPoolMetrics,

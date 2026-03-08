@@ -3,11 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  createLogger,
-  createDataMasker,
-  createAuditLogger,
-} from '../../../src/logging/index.js';
+import { createLogger, createDataMasker, createAuditLogger } from '../../../src/logging/index.js';
 import { AuditLogEntry } from '../../../src/types/audit.js';
 
 describe('AuditLogger', () => {
@@ -61,7 +57,7 @@ describe('AuditLogger', () => {
   describe('Audit Entry Logging', () => {
     it('should log successful audit entry', () => {
       const entry = createTestEntry();
-      
+
       expect(() => auditLogger.logAuditEntry(entry)).not.toThrow();
     });
 
@@ -105,29 +101,35 @@ describe('AuditLogger', () => {
   describe('Audit Log Querying', () => {
     beforeEach(() => {
       // Add some test entries
-      auditLogger.logAuditEntry(createTestEntry({
-        requestId: 'req-1',
-        sessionId: 'session-1',
-        toolName: 'tool-1',
-        serviceName: 'service-1',
-        status: 'success',
-      }));
+      auditLogger.logAuditEntry(
+        createTestEntry({
+          requestId: 'req-1',
+          sessionId: 'session-1',
+          toolName: 'tool-1',
+          serviceName: 'service-1',
+          status: 'success',
+        })
+      );
 
-      auditLogger.logAuditEntry(createTestEntry({
-        requestId: 'req-2',
-        sessionId: 'session-1',
-        toolName: 'tool-2',
-        serviceName: 'service-2',
-        status: 'error',
-      }));
+      auditLogger.logAuditEntry(
+        createTestEntry({
+          requestId: 'req-2',
+          sessionId: 'session-1',
+          toolName: 'tool-2',
+          serviceName: 'service-2',
+          status: 'error',
+        })
+      );
 
-      auditLogger.logAuditEntry(createTestEntry({
-        requestId: 'req-3',
-        sessionId: 'session-2',
-        toolName: 'tool-1',
-        serviceName: 'service-1',
-        status: 'success',
-      }));
+      auditLogger.logAuditEntry(
+        createTestEntry({
+          requestId: 'req-3',
+          sessionId: 'session-2',
+          toolName: 'tool-1',
+          serviceName: 'service-1',
+          status: 'success',
+        })
+      );
     });
 
     it('should query all logs without filter', () => {
@@ -138,7 +140,7 @@ describe('AuditLogger', () => {
     it('should filter by session ID', () => {
       const results = auditLogger.queryLogs({ sessionId: 'session-1' });
       expect(results.length).toBe(2);
-      expect(results.every(r => r.sessionId === 'session-1')).toBe(true);
+      expect(results.every((r) => r.sessionId === 'session-1')).toBe(true);
     });
 
     it('should filter by request ID', () => {
@@ -150,13 +152,13 @@ describe('AuditLogger', () => {
     it('should filter by tool name', () => {
       const results = auditLogger.queryLogs({ toolName: 'tool-1' });
       expect(results.length).toBe(2);
-      expect(results.every(r => r.toolName === 'tool-1')).toBe(true);
+      expect(results.every((r) => r.toolName === 'tool-1')).toBe(true);
     });
 
     it('should filter by service name', () => {
       const results = auditLogger.queryLogs({ serviceName: 'service-1' });
       expect(results.length).toBe(2);
-      expect(results.every(r => r.serviceName === 'service-1')).toBe(true);
+      expect(results.every((r) => r.serviceName === 'service-1')).toBe(true);
     });
 
     it('should filter by status', () => {
@@ -188,20 +190,24 @@ describe('AuditLogger', () => {
 
   describe('Audit Log Export', () => {
     beforeEach(() => {
-      auditLogger.logAuditEntry(createTestEntry({
-        requestId: 'req-1',
-        toolName: 'tool-1',
-      }));
+      auditLogger.logAuditEntry(
+        createTestEntry({
+          requestId: 'req-1',
+          toolName: 'tool-1',
+        })
+      );
 
-      auditLogger.logAuditEntry(createTestEntry({
-        requestId: 'req-2',
-        toolName: 'tool-2',
-      }));
+      auditLogger.logAuditEntry(
+        createTestEntry({
+          requestId: 'req-2',
+          toolName: 'tool-2',
+        })
+      );
     });
 
     it('should export to JSON format', () => {
       const exported = auditLogger.exportLogs(undefined, 'json');
-      
+
       expect(() => JSON.parse(exported)).not.toThrow();
       const parsed = JSON.parse(exported);
       expect(Array.isArray(parsed)).toBe(true);
@@ -210,7 +216,7 @@ describe('AuditLogger', () => {
 
     it('should export to CSV format', () => {
       const exported = auditLogger.exportLogs(undefined, 'csv');
-      
+
       const lines = exported.split('\n');
       expect(lines.length).toBe(3); // Header + 2 entries
       expect(lines[0]).toContain('requestId');
@@ -219,7 +225,7 @@ describe('AuditLogger', () => {
 
     it('should export filtered logs', () => {
       const exported = auditLogger.exportLogs({ requestId: 'req-1' }, 'json');
-      
+
       const parsed = JSON.parse(exported);
       expect(parsed.length).toBe(1);
       expect(parsed[0].requestId).toBe('req-1');
@@ -228,7 +234,7 @@ describe('AuditLogger', () => {
     it('should handle empty export', () => {
       auditLogger.clearLogs();
       const exported = auditLogger.exportLogs(undefined, 'csv');
-      
+
       expect(exported).toBe('');
     });
   });
@@ -320,25 +326,33 @@ describe('AuditLogger', () => {
 
   describe('Audit Statistics', () => {
     beforeEach(() => {
-      auditLogger.logAuditEntry(createTestEntry({
-        status: 'success',
-        duration: 100,
-      }));
+      auditLogger.logAuditEntry(
+        createTestEntry({
+          status: 'success',
+          duration: 100,
+        })
+      );
 
-      auditLogger.logAuditEntry(createTestEntry({
-        status: 'success',
-        duration: 200,
-      }));
+      auditLogger.logAuditEntry(
+        createTestEntry({
+          status: 'success',
+          duration: 200,
+        })
+      );
 
-      auditLogger.logAuditEntry(createTestEntry({
-        status: 'error',
-        duration: 50,
-      }));
+      auditLogger.logAuditEntry(
+        createTestEntry({
+          status: 'error',
+          duration: 50,
+        })
+      );
 
-      auditLogger.logAuditEntry(createTestEntry({
-        status: 'timeout',
-        duration: 5000,
-      }));
+      auditLogger.logAuditEntry(
+        createTestEntry({
+          status: 'timeout',
+          duration: 5000,
+        })
+      );
     });
 
     it('should calculate statistics correctly', () => {
@@ -380,17 +394,21 @@ describe('AuditLogger', () => {
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 2);
 
-      retentionLogger.logAuditEntry(createTestEntry({
-        requestId: 'old-req',
-        receivedAt: oldDate,
-        routedAt: oldDate,
-        completedAt: oldDate,
-      }));
+      retentionLogger.logAuditEntry(
+        createTestEntry({
+          requestId: 'old-req',
+          receivedAt: oldDate,
+          routedAt: oldDate,
+          completedAt: oldDate,
+        })
+      );
 
       // Add recent entry
-      retentionLogger.logAuditEntry(createTestEntry({
-        requestId: 'new-req',
-      }));
+      retentionLogger.logAuditEntry(
+        createTestEntry({
+          requestId: 'new-req',
+        })
+      );
 
       // Old entry should be removed
       const results = retentionLogger.queryLogs({});

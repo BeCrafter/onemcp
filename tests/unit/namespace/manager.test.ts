@@ -140,10 +140,10 @@ describe('NamespaceManager', () => {
     it('should maintain consistency for generate then parse', () => {
       const serviceName = 'my-service';
       const toolName = 'read_file';
-      
+
       const namespaced = manager.generateNamespacedName(serviceName, toolName);
       const parsed = manager.parseNamespacedName(namespaced);
-      
+
       expect(parsed.serviceName).toBe(serviceName);
       expect(parsed.toolName).toBe(toolName);
     });
@@ -151,10 +151,10 @@ describe('NamespaceManager', () => {
     it('should maintain consistency with sanitization', () => {
       const serviceName = 'My Service!';
       const toolName = 'read_file';
-      
+
       const namespaced = manager.generateNamespacedName(serviceName, toolName);
       const parsed = manager.parseNamespacedName(namespaced);
-      
+
       // Service name should be sanitized
       expect(parsed.serviceName).toBe(manager.sanitizeServiceName(serviceName));
       expect(parsed.toolName).toBe(toolName);
@@ -163,10 +163,10 @@ describe('NamespaceManager', () => {
     it('should handle tool names with double underscores in round-trip', () => {
       const serviceName = 'service';
       const toolName = 'tool__with__underscores';
-      
+
       const namespaced = manager.generateNamespacedName(serviceName, toolName);
       const parsed = manager.parseNamespacedName(namespaced);
-      
+
       expect(parsed.serviceName).toBe(serviceName);
       expect(parsed.toolName).toBe(toolName);
     });

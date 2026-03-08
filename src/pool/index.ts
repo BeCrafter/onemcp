@@ -2,9 +2,7 @@
  * Connection Pool module exports
  */
 
-export type {
-  Connection,
-} from './connection.js';
+export type { Connection } from './connection.js';
 
 export {
   createConnection,
@@ -15,7 +13,4 @@ export {
   isIdleTimeout,
 } from './connection.js';
 
-export {
-  ConnectionPool,
-  ConnectionPoolError,
-} from './connection-pool.js';
+export { ConnectionPool, ConnectionPoolError } from './connection-pool.js';

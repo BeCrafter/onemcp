@@ -33,10 +33,10 @@ export class FileConfigProvider implements ConfigProvider {
 
   constructor(options: FileConfigProviderOptions) {
     this.storageAdapter = options.storageAdapter;
-    
+
     // Determine config directory with priority order
     this.configDir = this.resolveConfigDir(options.configDir);
-    
+
     // Initialize JSON schema validator
     this.validator = this.createValidator();
   }
@@ -49,13 +49,13 @@ export class FileConfigProvider implements ConfigProvider {
     if (optionsDir) {
       return this.expandPath(optionsDir);
     }
-    
+
     // Priority 2: Environment variable
     const envDir = process.env['ONEMCP_CONFIG_DIR'];
     if (envDir) {
       return this.expandPath(envDir);
     }
-    
+
     // Priority 3: Default
     return path.join(os.homedir(), '.onemcp');
   }
@@ -76,10 +76,19 @@ export class FileConfigProvider implements ConfigProvider {
   private createValidator(): ValidateFunction {
     const ajv = new Ajv({ allErrors: true, verbose: true });
     addFormats(ajv); // Add format validators including 'uri'
-    
+
     const schema = {
       type: 'object',
-      required: ['mode', 'logLevel', 'configDir', 'services', 'connectionPool', 'healthCheck', 'audit', 'security'],
+      required: [
+        'mode',
+        'logLevel',
+        'configDir',
+        'services',
+        'connectionPool',
+        'healthCheck',
+        'audit',
+        'security',
+      ],
       properties: {
         mode: {
           type: 'string',
@@ -288,7 +297,7 @@ export class FileConfigProvider implements ConfigProvider {
         },
       },
     };
-    
+
     return ajv.compile(schema);
   }
 
@@ -299,31 +308,35 @@ export class FileConfigProvider implements ConfigProvider {
     try {
       // Read config file (use relative path for storage adapter)
       const configData = await this.storageAdapter.read(this.CONFIG_FILE);
-      
+
       if (!configData) {
         const configPath = path.join(this.configDir, this.CONFIG_FILE);
         throw new Error(`Configuration file not found: ${configPath}`);
       }
-      
+
       // Parse JSON
       let config: SystemConfig;
       try {
-        config = JSON.parse(configData);
+        const parsed = JSON.parse(configData);
+        if (typeof parsed !== 'object' || parsed === null) {
+          throw new Error('Configuration JSON is not an object');
+        }
+        config = parsed as SystemConfig;
       } catch (error) {
         throw new Error(
           `Failed to parse configuration JSON: ${error instanceof Error ? error.message : String(error)}`
         );
       }
-      
+
       // Validate configuration
       const validationResult = this.validate(config);
       if (!validationResult.valid) {
         const errorMessages = validationResult.errors
-          .map(err => `  - ${err.field}: ${err.message}`)
+          .map((err) => `  - ${err.field}: ${err.message}`)
           .join('\n');
         throw new Error(`Configuration validation failed:\n${errorMessages}`);
       }
-      
+
       return config;
     } catch (error) {
       throw new Error(
@@ -341,14 +354,14 @@ export class FileConfigProvider implements ConfigProvider {
       const validationResult = this.validate(config);
       if (!validationResult.valid) {
         const errorMessages = validationResult.errors
-          .map(err => `  - ${err.field}: ${err.message}`)
+          .map((err) => `  - ${err.field}: ${err.message}`)
           .join('\n');
         throw new Error(`Configuration validation failed:\n${errorMessages}`);
       }
-      
+
       // Serialize to JSON with pretty formatting
       const configData = JSON.stringify(config, null, 2);
-      
+
       // Write to file using atomic write (use relative path for storage adapter)
       await this.storageAdapter.write(this.CONFIG_FILE, configData);
     } catch (error) {
@@ -363,16 +376,16 @@ export class FileConfigProvider implements ConfigProvider {
    */
   validate(config: SystemConfig): ValidationResult {
     const errors: ValidationError[] = [];
-    
+
     // Run JSON schema validation
     const valid = this.validator(config);
-    
+
     if (!valid && this.validator.errors) {
       // Convert AJV errors to ValidationError format
       for (const error of this.validator.errors) {
         const field = error.instancePath || error.schemaPath;
         const message = error.message || 'Validation failed';
-        
+
         errors.push({
           field: field.replace(/^\//, '').replace(/\//g, '.'),
           message,
@@ -381,9 +394,9 @@ export class FileConfigProvider implements ConfigProvider {
         });
       }
     }
-    
+
     // Additional custom validations
-    
+
     // Validate server mode requires port
     if (config.mode === 'server' && !config.port) {
       errors.push({
@@ -393,47 +406,47 @@ export class FileConfigProvider implements ConfigProvider {
         actual: config.port,
       });
     }
-    
+
     // Validate service transport-specific requirements
     if (config.services && Array.isArray(config.services)) {
       for (let i = 0; i < config.services.length; i++) {
         const service = config.services[i];
         if (!service) continue;
-      
-      if (service.transport === 'stdio' && !service.command) {
-        errors.push({
-          field: `services[${i}].command`,
-          message: 'Command is required for stdio transport',
-          expected: 'non-empty string',
-          actual: service.command,
-        });
-      }
-      
-      if ((service.transport === 'sse' || service.transport === 'http') && !service.url) {
-        errors.push({
-          field: `services[${i}].url`,
-          message: `URL is required for ${service.transport} transport`,
-          expected: 'valid URL',
-          actual: service.url,
-        });
-      }
-      
-      // Validate URL format for HTTP transports
-      if (service.url) {
-        try {
-          new URL(service.url);
-        } catch {
+
+        if (service.transport === 'stdio' && !service.command) {
+          errors.push({
+            field: `services[${i}].command`,
+            message: 'Command is required for stdio transport',
+            expected: 'non-empty string',
+            actual: service.command,
+          });
+        }
+
+        if ((service.transport === 'sse' || service.transport === 'http') && !service.url) {
           errors.push({
             field: `services[${i}].url`,
-            message: 'Invalid URL format',
-            expected: 'valid URL (e.g., https://example.com)',
+            message: `URL is required for ${service.transport} transport`,
+            expected: 'valid URL',
             actual: service.url,
           });
         }
+
+        // Validate URL format for HTTP transports
+        if (service.url) {
+          try {
+            new URL(service.url);
+          } catch {
+            errors.push({
+              field: `services[${i}].url`,
+              message: 'Invalid URL format',
+              expected: 'valid URL (e.g., https://example.com)',
+              actual: service.url,
+            });
+          }
+        }
       }
     }
-    }
-    
+
     return {
       valid: errors.length === 0,
       errors,
@@ -442,19 +455,19 @@ export class FileConfigProvider implements ConfigProvider {
 
   /**
    * Watch for configuration changes and automatically reload
-   * 
+   *
    * Monitors the config file for changes and invokes the callback with the new
    * configuration when changes are detected. Validates configuration before
    * applying changes and maintains the previous valid configuration on validation
    * failure.
-   * 
+   *
    * Features:
    * - Debounces file change events to avoid multiple reloads for a single edit
    * - Validates configuration before applying changes
    * - Maintains previous valid configuration on validation failure
    * - Handles file deletion gracefully (logs warning, doesn't crash)
    * - Catches and logs callback errors (doesn't crash watcher)
-   * 
+   *
    * @param callback Function to invoke with new configuration
    * @returns Function to stop watching
    */
@@ -466,21 +479,21 @@ export class FileConfigProvider implements ConfigProvider {
     let lastMtime: number = 0;
     let debounceTimer: NodeJS.Timeout | null = null;
     let isWatching = true;
-    
+
     const DEBOUNCE_DELAY = 300;
     const POLL_INTERVAL = 1000;
-    
+
     const loadConfig = async () => {
       try {
         const fileData = await this.storageAdapter.read(configKey);
-        
+
         if (!fileData) {
           console.warn(`Configuration file deleted: ${configPath}`);
           return;
         }
-        
+
         const newConfig = await this.load();
-        
+
         try {
           callback(newConfig);
         } catch (callbackError) {
@@ -496,27 +509,27 @@ export class FileConfigProvider implements ConfigProvider {
         );
       }
     };
-    
-    const handleChange = async () => {
+
+    const handleChange = () => {
       if (!isWatching) return;
-      
+
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
-      
-      debounceTimer = setTimeout(loadConfig, DEBOUNCE_DELAY);
+
+      debounceTimer = setTimeout(() => void loadConfig(), DEBOUNCE_DELAY);
     };
-    
+
     const checkFile = async () => {
       if (!isWatching) return;
-      
+
       try {
         const stats = await fs.promises.stat(configPath);
         const currentMtime = stats.mtimeMs;
-        
+
         if (lastMtime !== 0 && currentMtime !== lastMtime) {
           lastMtime = currentMtime;
-          handleChange();
+          void handleChange();
         } else if (lastMtime === 0) {
           lastMtime = currentMtime;
         }
@@ -524,36 +537,39 @@ export class FileConfigProvider implements ConfigProvider {
         // File might not exist yet
       }
     };
-    
+
     try {
       watcher = fs.watch(configPath, { persistent: false }, (eventType) => {
         if (eventType === 'change') {
-          handleChange();
+          void handleChange();
         }
       });
-      
+
       watcher.on('error', (error: Error) => {
         console.error('Configuration file watcher error:', error.message);
       });
     } catch (error) {
-      console.error('Failed to start fs.watch, falling back to polling:', error instanceof Error ? error.message : String(error));
+      console.error(
+        'Failed to start fs.watch, falling back to polling:',
+        error instanceof Error ? error.message : String(error)
+      );
     }
-    
-    pollTimer = setInterval(checkFile, POLL_INTERVAL);
-    
+
+    pollTimer = setInterval(() => void checkFile(), POLL_INTERVAL);
+
     return () => {
       isWatching = false;
-      
+
       if (debounceTimer) {
         clearTimeout(debounceTimer);
         debounceTimer = null;
       }
-      
+
       if (pollTimer) {
         clearInterval(pollTimer);
         pollTimer = null;
       }
-      
+
       if (watcher) {
         watcher.close();
         watcher = null;
@@ -570,17 +586,17 @@ export class FileConfigProvider implements ConfigProvider {
 
   /**
    * Initialize configuration directory structure
-   * 
+   *
    * Creates the configuration directory and subdirectories if they don't exist:
    * - config.json: Main configuration file with sensible defaults
    * - services/: Directory for service definitions
    * - logs/: Directory for log files
    * - backups/: Directory for configuration backups
    * - README.md: Documentation explaining the directory structure
-   * 
+   *
    * This method is idempotent - calling it multiple times is safe and will not
    * overwrite existing files.
-   * 
+   *
    * @returns Promise resolving when initialization is complete
    * @throws Error if directory creation fails
    */
@@ -588,25 +604,25 @@ export class FileConfigProvider implements ConfigProvider {
     try {
       // Create main config directory
       await this.ensureDirectory(this.configDir);
-      
+
       // Create subdirectories
       await this.ensureDirectory(path.join(this.configDir, 'services'));
       await this.ensureDirectory(path.join(this.configDir, 'logs'));
       await this.ensureDirectory(path.join(this.configDir, 'backups'));
-      
+
       // Create default config.json if it doesn't exist
       const configPath = path.join(this.configDir, this.CONFIG_FILE);
       const existingConfig = await this.storageAdapter.read(configPath);
-      
+
       if (!existingConfig) {
         const defaultConfig = this.createDefaultConfig();
         await this.save(defaultConfig);
       }
-      
+
       // Create README.md if it doesn't exist
       const readmePath = path.join(this.configDir, 'README.md');
       const existingReadme = await this.storageAdapter.read(readmePath);
-      
+
       if (!existingReadme) {
         const readmeContent = this.createReadmeContent();
         await this.storageAdapter.write(readmePath, readmeContent);
@@ -624,8 +640,11 @@ export class FileConfigProvider implements ConfigProvider {
   private async ensureDirectory(dirPath: string): Promise<void> {
     try {
       // Check if directory exists by trying to read it
-      const exists = await this.storageAdapter.read(dirPath).then(() => true).catch(() => false);
-      
+      const exists = await this.storageAdapter
+        .read(dirPath)
+        .then(() => true)
+        .catch(() => false);
+
       if (!exists) {
         // Create directory using Node.js fs module directly
         // StorageAdapter is for file operations, not directory creation

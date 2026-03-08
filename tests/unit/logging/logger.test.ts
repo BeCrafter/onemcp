@@ -47,13 +47,13 @@ describe('Logger', () => {
       });
 
       expect(logger).toBeDefined();
-      
+
       // Log something to trigger file creation
       logger.info('Test message');
-      
+
       // Flush to ensure file is written
       await logger.flush();
-      
+
       // File should be created
       expect(existsSync(testLogFile)).toBe(true);
     });
@@ -69,9 +69,9 @@ describe('Logger', () => {
 
       expect(logger).toBeDefined();
       logger.debug('Test message');
-      
+
       await logger.flush();
-      
+
       expect(existsSync(testLogFile)).toBe(true);
     });
   });

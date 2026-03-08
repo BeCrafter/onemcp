@@ -3,11 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  createLogger,
-  createDataMasker,
-  createRequestLogger,
-} from '../../../src/logging/index.js';
+import { createLogger, createDataMasker, createRequestLogger } from '../../../src/logging/index.js';
 
 describe('RequestLogger', () => {
   let logger: ReturnType<typeof createLogger>;

@@ -29,29 +29,29 @@ export interface ServiceDefinition {
   enabled: boolean;
   /** Tags for categorization and filtering */
   tags: string[];
-  
+
   /** Transport protocol type */
   transport: TransportType;
-  
+
   /** Command to start the service (required for stdio transport) */
   command?: string;
   /** Command arguments (optional for stdio transport) */
   args?: string[];
   /** Environment variables (optional for stdio transport) */
   env?: Record<string, string>;
-  
+
   /** Service URL (required for sse/http transport) */
   url?: string;
-  
+
   /** Custom HTTP headers (optional for http/sse transport) */
   headers?: Record<string, string>;
-  
+
   /** Connection pool configuration */
   connectionPool: ConnectionPoolConfig;
-  
+
   /** Tool enable/disable states (pattern -> enabled) */
   toolStates?: Record<string, boolean>;
-  
+
   /** Total number of tools discovered from the service */
   discoveredToolsCount?: number;
 }

@@ -1,6 +1,6 @@
 /**
  * Integration tests for CLI mode
- * 
+ *
  * Tests the complete CLI mode workflow including:
  * - CLI startup and initialization
  * - Request processing via stdio
@@ -12,7 +12,11 @@ import { spawn, type ChildProcess } from 'child_process';
 import { resolve } from 'path';
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
-import type { JsonRpcRequest, JsonRpcSuccessResponse, JsonRpcErrorResponse } from '../../src/types/jsonrpc.js';
+import type {
+  JsonRpcRequest,
+  JsonRpcSuccessResponse,
+  JsonRpcErrorResponse,
+} from '../../src/types/jsonrpc.js';
 
 describe('CLI Mode Integration Tests', () => {
   let testConfigDir: string;
@@ -71,22 +75,18 @@ describe('CLI Mode Integration Tests', () => {
       },
     };
 
-    writeFileSync(
-      resolve(testConfigDir, 'config.json'),
-      JSON.stringify(config, null, 2),
-      'utf8'
-    );
+    writeFileSync(resolve(testConfigDir, 'config.json'), JSON.stringify(config, null, 2), 'utf8');
   });
 
   afterEach(async () => {
     // Clean up CLI process
     if (cliProcess) {
       cliProcess.kill('SIGTERM');
-      
+
       // Wait for process to exit
       await new Promise<void>((resolve) => {
         cliProcess!.once('exit', () => resolve());
-        
+
         // Force kill after timeout
         setTimeout(() => {
           if (cliProcess && !cliProcess.killed) {
@@ -95,7 +95,7 @@ describe('CLI Mode Integration Tests', () => {
           resolve();
         }, 5000);
       });
-      
+
       cliProcess = null;
     }
 
@@ -114,7 +114,7 @@ describe('CLI Mode Integration Tests', () => {
     // Build the CLI if not already built
     // In a real test, we'd ensure the build is up to date
     const cliPath = resolve(__dirname, '../../dist/cli.js');
-    
+
     const process = spawn('node', [cliPath, '--config-dir', testConfigDir], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -133,7 +133,10 @@ describe('CLI Mode Integration Tests', () => {
   /**
    * Wait for a JSON-RPC response from the CLI process
    */
-  function waitForResponse(process: ChildProcess, timeout = 5000): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> {
+  function waitForResponse(
+    process: ChildProcess,
+    timeout = 5000
+  ): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(new Error('Response timeout'));
@@ -142,7 +145,7 @@ describe('CLI Mode Integration Tests', () => {
       const onData = (chunk: Buffer) => {
         clearTimeout(timer);
         process.stdout!.off('data', onData);
-        
+
         try {
           const response = JSON.parse(chunk.toString().trim());
           resolve(response);
@@ -223,12 +226,12 @@ describe('CLI Mode Integration Tests', () => {
     expect(response.jsonrpc).toBe('2.0');
     expect(response.id).toBe(1);
     expect('result' in response).toBe(true);
-    
+
     if ('result' in response) {
       const result = response.result as any;
       expect(result.protocolVersion).toBe('2024-11-05');
       expect(result.serverInfo).toBeDefined();
-      expect(result.serverInfo.name).toBe('onemcp-router');
+      expect(result.serverInfo.name).toBe('onemcp');
     }
   });
 
@@ -275,7 +278,7 @@ describe('CLI Mode Integration Tests', () => {
     expect(response.jsonrpc).toBe('2.0');
     expect(response.id).toBe(2);
     expect('result' in response).toBe(true);
-    
+
     if ('result' in response) {
       const result = response.result as any;
       expect(result.tools).toBeDefined();
@@ -315,7 +318,7 @@ describe('CLI Mode Integration Tests', () => {
     expect(response.jsonrpc).toBe('2.0');
     expect(response.id).toBe(1);
     expect('error' in response).toBe(true);
-    
+
     if ('error' in response) {
       expect(response.error.code).toBe(-32601); // Method not found
     }

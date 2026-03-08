@@ -44,13 +44,13 @@ export class FileStorageAdapter implements StorageAdapter {
    */
   async read(key: string): Promise<string | undefined> {
     const filePath = this.getFilePath(key);
-    
+
     try {
       const exists = await fs.pathExists(filePath);
       if (!exists) {
         return undefined;
       }
-      
+
       const data = await fs.readFile(filePath, 'utf-8');
       return data;
     } catch (error) {
@@ -68,7 +68,7 @@ export class FileStorageAdapter implements StorageAdapter {
     const tempPath = `${filePath}.tmp`;
     const maxRetries = 3;
     const baseDelay = 50;
-    
+
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         const parentDir = path.dirname(filePath);
@@ -79,7 +79,7 @@ export class FileStorageAdapter implements StorageAdapter {
             throw mkdirError;
           }
         }
-        
+
         await fs.writeFile(tempPath, value, 'utf-8');
         await fs.move(tempPath, filePath, { overwrite: true });
         return;
@@ -89,22 +89,22 @@ export class FileStorageAdapter implements StorageAdapter {
         } catch {
           // Ignore cleanup errors
         }
-        
+
         const errCode = (error as NodeJS.ErrnoException).code;
-        const isTransientError = 
+        const isTransientError =
           errCode === 'ENOENT' ||
           errCode === 'EBUSY' ||
           errCode === 'EAGAIN' ||
           errCode === 'EACCES';
-        
+
         if (attempt === maxRetries - 1 || !isTransientError) {
           throw new Error(
             `Failed to write file ${key}: ${error instanceof Error ? error.message : String(error)}`
           );
         }
-        
+
         const delay = baseDelay * Math.pow(2, attempt);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
@@ -115,13 +115,13 @@ export class FileStorageAdapter implements StorageAdapter {
    */
   async update(key: string, value: string): Promise<void> {
     const filePath = this.getFilePath(key);
-    
+
     try {
       const exists = await fs.pathExists(filePath);
       if (!exists) {
         throw new Error(`File ${key} does not exist`);
       }
-      
+
       // Use atomic write for update
       await this.write(key, value);
     } catch (error) {
@@ -136,14 +136,14 @@ export class FileStorageAdapter implements StorageAdapter {
    */
   async delete(key: string): Promise<void> {
     const filePath = this.getFilePath(key);
-    
+
     try {
       const exists = await fs.pathExists(filePath);
       if (!exists) {
         // Silently succeed if file doesn't exist
         return;
       }
-      
+
       await fs.remove(filePath);
     } catch (error) {
       throw new Error(
@@ -161,12 +161,12 @@ export class FileStorageAdapter implements StorageAdapter {
       if (!exists) {
         return [];
       }
-      
+
       const keys: string[] = [];
-      
+
       // Recursively walk directory
       await this.walkDirectory(this.baseDir, this.baseDir, keys, prefix);
-      
+
       return keys;
     } catch (error) {
       throw new Error(
@@ -185,10 +185,10 @@ export class FileStorageAdapter implements StorageAdapter {
     prefix?: string
   ): Promise<void> {
     const entries = await fs.readdir(dir, { withFileTypes: true });
-    
+
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
-      
+
       if (entry.isDirectory()) {
         await this.walkDirectory(fullPath, baseDir, keys, prefix);
       } else if (entry.isFile()) {
@@ -196,10 +196,10 @@ export class FileStorageAdapter implements StorageAdapter {
         if (entry.name.endsWith('.tmp')) {
           continue;
         }
-        
+
         // Get relative path from base directory
         const relativePath = path.relative(baseDir, fullPath);
-        
+
         // Apply prefix filter if specified
         if (!prefix || relativePath.startsWith(prefix)) {
           keys.push(relativePath);

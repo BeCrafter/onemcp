@@ -1,11 +1,11 @@
 /**
- * Feature: onemcp-router-system
+ * Feature: onemcp-system
  * Property-based tests for Connection Pool
- * 
+ *
  * Tests:
  * - Property 9: Connection pool reuse
  * - Property 10: Connection pool limit enforcement
- * 
+ *
  * **Validates: Requirements 6.1, 6.5**
  */
 
@@ -17,7 +17,7 @@ import type { ServiceDefinition, ConnectionPoolConfig } from '../../src/types/se
 // Mock the transport modules
 vi.mock('../../src/transport/stdio.js', () => {
   return {
-    StdioTransport: vi.fn().mockImplementation(function(this: any) {
+    StdioTransport: vi.fn().mockImplementation(function (this: any) {
       this.send = vi.fn().mockResolvedValue(undefined);
       this.receive = vi.fn();
       this.close = vi.fn().mockResolvedValue(undefined);
@@ -30,7 +30,7 @@ vi.mock('../../src/transport/stdio.js', () => {
 
 vi.mock('../../src/transport/http.js', () => {
   return {
-    HttpTransport: vi.fn().mockImplementation(function(this: any) {
+    HttpTransport: vi.fn().mockImplementation(function (this: any) {
       this.send = vi.fn().mockResolvedValue(undefined);
       this.receive = vi.fn();
       this.close = vi.fn().mockResolvedValue(undefined);
@@ -59,16 +59,16 @@ const connectionPoolConfigArbitrary = (): fc.Arbitrary<ConnectionPoolConfig> =>
  */
 const stdioServiceArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
   fc.record({
-    name: fc.string({ minLength: 1, maxLength: 20 })
-      .filter(s => s.trim().length > 0)
-      .map(s => s.trim()),
+    name: fc
+      .string({ minLength: 1, maxLength: 20 })
+      .filter((s) => s.trim().length > 0)
+      .map((s) => s.trim()),
     transport: fc.constant('stdio' as const),
     command: fc.constant('test-command'),
     args: fc.option(fc.array(fc.string(), { maxLength: 5 }), { nil: undefined }),
-    env: fc.option(
-      fc.dictionary(fc.string({ minLength: 1 }), fc.string(), { maxKeys: 5 }),
-      { nil: undefined }
-    ),
+    env: fc.option(fc.dictionary(fc.string({ minLength: 1 }), fc.string(), { maxKeys: 5 }), {
+      nil: undefined,
+    }),
     enabled: fc.constant(true),
     tags: fc.option(fc.array(fc.string(), { maxLength: 3 }), { nil: undefined }),
     connectionPool: fc.option(connectionPoolConfigArbitrary(), { nil: undefined }),
@@ -79,9 +79,10 @@ const stdioServiceArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
  */
 const httpServiceArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
   fc.record({
-    name: fc.string({ minLength: 1, maxLength: 20 })
-      .filter(s => s.trim().length > 0)
-      .map(s => s.trim()),
+    name: fc
+      .string({ minLength: 1, maxLength: 20 })
+      .filter((s) => s.trim().length > 0)
+      .map((s) => s.trim()),
     transport: fc.constantFrom('http' as const, 'sse' as const),
     url: fc.webUrl({ validSchemes: ['http', 'https'] }),
     enabled: fc.constant(true),
@@ -99,16 +100,16 @@ const serviceDefinitionArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
  * Generate a sequence of acquire/release operations
  */
 const operationSequenceArbitrary = (maxOps: number = 20) =>
-  fc.array(
-    fc.constantFrom('acquire' as const, 'release' as const),
-    { minLength: 1, maxLength: maxOps }
-  );
+  fc.array(fc.constantFrom('acquire' as const, 'release' as const), {
+    minLength: 1,
+    maxLength: maxOps,
+  });
 
 // ============================================================================
 // Property 9: Connection Pool Reuse
 // ============================================================================
 
-describe('Feature: onemcp-router-system, Property 9: Connection pool reuse', () => {
+describe('Feature: onemcp-system, Property 9: Connection pool reuse', () => {
   let pools: ConnectionPool[] = [];
 
   afterEach(async () => {
@@ -197,7 +198,7 @@ describe('Feature: onemcp-router-system, Property 9: Connection pool reuse', () 
           const reusedId = reusedConn.id;
 
           // Verify the reused connection was one of the original connections
-          const originalIds = connections.map(c => c.id);
+          const originalIds = connections.map((c) => c.id);
           expect(originalIds).toContain(reusedId);
 
           // Verify stats show one less idle connection
@@ -235,10 +236,10 @@ describe('Feature: onemcp-router-system, Property 9: Connection pool reuse', () 
           // Multiple acquire-release cycles
           for (let i = 0; i < numCycles; i++) {
             const conn = await pool.acquire();
-            
+
             // Should be the same connection
             expect(conn.id).toBe(originalId);
-            
+
             pool.release(conn);
           }
 
@@ -305,7 +306,7 @@ describe('Feature: onemcp-router-system, Property 9: Connection pool reuse', () 
           // Create some connections and release them
           const initialConnections = Math.min(3, maxConnections);
           const connections = [];
-          
+
           for (let i = 0; i < initialConnections; i++) {
             connections.push(await pool.acquire());
           }
@@ -346,7 +347,7 @@ describe('Feature: onemcp-router-system, Property 9: Connection pool reuse', () 
 // Property 10: Connection Pool Limit Enforcement
 // ============================================================================
 
-describe('Feature: onemcp-router-system, Property 10: Connection pool limit enforcement', () => {
+describe('Feature: onemcp-system, Property 10: Connection pool limit enforcement', () => {
   let pools: ConnectionPool[] = [];
 
   afterEach(async () => {
@@ -383,7 +384,7 @@ describe('Feature: onemcp-router-system, Property 10: Connection pool limit enfo
             acquirePromises.push(pool.acquire());
           }
 
-          connections.push(...await Promise.all(acquirePromises));
+          connections.push(...(await Promise.all(acquirePromises)));
 
           // Verify we're at the limit
           const stats = pool.getStats();
@@ -392,9 +393,9 @@ describe('Feature: onemcp-router-system, Property 10: Connection pool limit enfo
 
           // Try to acquire one more - should queue
           const extraPromise = pool.acquire();
-          
+
           // Give it a moment to process
-          await new Promise(resolve => setTimeout(resolve, 10));
+          await new Promise((resolve) => setTimeout(resolve, 10));
 
           // Should still be at the limit
           const statsAfterExtra = pool.getStats();
@@ -461,7 +462,7 @@ describe('Feature: onemcp-router-system, Property 10: Connection pool limit enfo
             // Check stats
             const stats = pool.getStats();
             maxObservedTotal = Math.max(maxObservedTotal, stats.total);
-            
+
             // Verify limit is never exceeded
             expect(stats.total).toBeLessThanOrEqual(maxConnections);
           }
@@ -506,7 +507,7 @@ describe('Feature: onemcp-router-system, Property 10: Connection pool limit enfo
 
           // Try to acquire more - should queue
           const extraPromise = pool.acquire();
-          await new Promise(resolve => setTimeout(resolve, 10));
+          await new Promise((resolve) => setTimeout(resolve, 10));
 
           const statsWithQueue = pool.getStats();
           expect(statsWithQueue.total).toBe(maxConnections);
@@ -516,7 +517,7 @@ describe('Feature: onemcp-router-system, Property 10: Connection pool limit enfo
           pool.release(connections[0]!);
           const extraConn = await extraPromise;
           pool.release(extraConn);
-          
+
           for (let i = 1; i < connections.length; i++) {
             pool.release(connections[i]!);
           }
@@ -595,7 +596,7 @@ describe('Feature: onemcp-router-system, Property 10: Connection pool limit enfo
             queuedPromises.push(pool.acquire());
           }
 
-          await new Promise(resolve => setTimeout(resolve, 10));
+          await new Promise((resolve) => setTimeout(resolve, 10));
 
           // Verify all are queued
           const statsWithQueue = pool.getStats();
@@ -605,10 +606,10 @@ describe('Feature: onemcp-router-system, Property 10: Connection pool limit enfo
           const fulfilledConnections = [];
           for (let i = 0; i < queueSize; i++) {
             pool.release(connections[i % maxConnections]!);
-            
+
             // Wait a bit for queue processing
-            await new Promise(resolve => setTimeout(resolve, 10));
-            
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
             // One queued request should be fulfilled
             const stats = pool.getStats();
             expect(stats.waiting).toBe(queueSize - i - 1);

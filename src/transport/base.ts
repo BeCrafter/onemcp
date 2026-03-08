@@ -25,11 +25,7 @@ export class TransportError extends Error {
   public readonly code: string;
   public readonly errorCause: Error | undefined;
 
-  constructor(
-    message: string,
-    code: string,
-    cause?: Error
-  ) {
+  constructor(message: string, code: string, cause?: Error) {
     super(message);
     this.name = 'TransportError';
     this.code = code;
@@ -72,17 +68,11 @@ export abstract class BaseTransport extends EventEmitter implements Transport {
    */
   public async send(message: JsonRpcMessage): Promise<void> {
     if (this.state === TransportState.CLOSED) {
-      throw new TransportError(
-        'Cannot send message: transport is closed',
-        'TRANSPORT_CLOSED'
-      );
+      throw new TransportError('Cannot send message: transport is closed', 'TRANSPORT_CLOSED');
     }
 
     if (this.state === TransportState.CLOSING) {
-      throw new TransportError(
-        'Cannot send message: transport is closing',
-        'TRANSPORT_CLOSING'
-      );
+      throw new TransportError('Cannot send message: transport is closing', 'TRANSPORT_CLOSING');
     }
 
     if (this.state === TransportState.ERROR) {
@@ -106,10 +96,7 @@ export abstract class BaseTransport extends EventEmitter implements Transport {
    */
   public receive(): AsyncIterator<JsonRpcMessage> {
     if (this.state === TransportState.CLOSED) {
-      throw new TransportError(
-        'Cannot receive messages: transport is closed',
-        'TRANSPORT_CLOSED'
-      );
+      throw new TransportError('Cannot receive messages: transport is closed', 'TRANSPORT_CLOSED');
     }
 
     return this.doReceive();

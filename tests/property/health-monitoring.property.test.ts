@@ -1,10 +1,10 @@
 /**
- * Feature: onemcp-router-system
+ * Feature: onemcp-system
  * Property-based tests for Health Monitoring
- * 
+ *
  * Tests:
  * - Property 17: Health status auto tool management
- * 
+ *
  * **Validates: Requirements 20.6, 20.7**
  */
 
@@ -21,7 +21,7 @@ import type { ConfigProvider, SystemConfig } from '../../src/types/config.js';
 // Mock the transport modules
 vi.mock('../../src/transport/stdio.js', () => {
   return {
-    StdioTransport: vi.fn().mockImplementation(function(this: any) {
+    StdioTransport: vi.fn().mockImplementation(function (this: any) {
       this.send = vi.fn().mockResolvedValue(undefined);
       this.receive = vi.fn();
       this.close = vi.fn().mockResolvedValue(undefined);
@@ -34,7 +34,7 @@ vi.mock('../../src/transport/stdio.js', () => {
 
 vi.mock('../../src/transport/http.js', () => {
   return {
-    HttpTransport: vi.fn().mockImplementation(function(this: any) {
+    HttpTransport: vi.fn().mockImplementation(function (this: any) {
       this.send = vi.fn().mockResolvedValue(undefined);
       this.receive = vi.fn();
       this.close = vi.fn().mockResolvedValue(undefined);
@@ -57,7 +57,7 @@ async function createTestConfigProvider(): Promise<ConfigProvider> {
     storageAdapter: storage,
     configDir: '/tmp/test-health-config',
   });
-  
+
   const defaultConfig: SystemConfig = {
     mode: 'cli',
     logLevel: 'INFO',
@@ -91,7 +91,7 @@ async function createTestConfigProvider(): Promise<ConfigProvider> {
       },
     },
   };
-  
+
   await provider.save(defaultConfig);
   return provider;
 }
@@ -122,9 +122,10 @@ function createMockConnection(id: string): Connection {
  * Generate valid service names
  */
 const serviceNameArbitrary = (): fc.Arbitrary<string> =>
-  fc.string({ minLength: 1, maxLength: 30 })
-    .filter(s => s.trim().length > 0)
-    .map(s => s.trim().replace(/[^a-zA-Z0-9-_]/g, '-'));
+  fc
+    .string({ minLength: 1, maxLength: 30 })
+    .filter((s) => s.trim().length > 0)
+    .map((s) => s.trim().replace(/[^a-zA-Z0-9-_]/g, '-'));
 
 /**
  * Generate valid service definition
@@ -149,16 +150,16 @@ const serviceDefinitionArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
  * Each transition is either 'healthy' or 'unhealthy'
  */
 const healthTransitionSequenceArbitrary = () =>
-  fc.array(
-    fc.constantFrom('healthy' as const, 'unhealthy' as const),
-    { minLength: 2, maxLength: 10 }
-  );
+  fc.array(fc.constantFrom('healthy' as const, 'unhealthy' as const), {
+    minLength: 2,
+    maxLength: 10,
+  });
 
 // ============================================================================
 // Property 17: Health Status Auto Tool Management
 // ============================================================================
 
-describe('Feature: onemcp-router-system, Property 17: Health status auto tool management', () => {
+describe('Feature: onemcp-system, Property 17: Health status auto tool management', () => {
   let healthMonitor: HealthMonitor;
   let serviceRegistry: ServiceRegistry;
   let configProvider: ConfigProvider;
@@ -182,88 +183,82 @@ describe('Feature: onemcp-router-system, Property 17: Health status auto tool ma
 
   it('should emit serviceFailed event when service transitions from healthy to unhealthy', async () => {
     await fc.assert(
-      fc.asyncProperty(
-        serviceDefinitionArbitrary(),
-        async (serviceDef) => {
-          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool!);
-          pools.push(pool);
+      fc.asyncProperty(serviceDefinitionArbitrary(), async (serviceDef) => {
+        const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool);
+        pools.push(pool);
 
-          const mockConnection = createMockConnection('test-conn-1');
+        const mockConnection = createMockConnection('test-conn-1');
 
-          // Start healthy
-          vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-          vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-          vi.spyOn(pool, 'release').mockImplementation(() => {});
+        // Start healthy
+        vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
+        vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
+        vi.spyOn(pool, 'release').mockImplementation(() => {});
 
-          await healthMonitor.registerConnectionPool(serviceDef.name, pool);
+        await healthMonitor.registerConnectionPool(serviceDef.name, pool);
 
-          // Verify initial healthy status
-          const initialStatus = healthMonitor.getHealthStatus(serviceDef.name);
-          expect(initialStatus?.healthy).toBe(true);
+        // Verify initial healthy status
+        const initialStatus = healthMonitor.getHealthStatus(serviceDef.name);
+        expect(initialStatus?.healthy).toBe(true);
 
-          // Set up event listener AFTER registration
-          const serviceFailedSpy = vi.fn();
-          healthMonitor.on('serviceFailed', serviceFailedSpy);
+        // Set up event listener AFTER registration
+        const serviceFailedSpy = vi.fn();
+        healthMonitor.on('serviceFailed', serviceFailedSpy);
 
-          // Transition to unhealthy
-          vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+        // Transition to unhealthy
+        vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
 
-          await healthMonitor.checkHealth(serviceDef.name);
+        await healthMonitor.checkHealth(serviceDef.name);
 
-          // Verify unhealthy status
-          const unhealthyStatus = healthMonitor.getHealthStatus(serviceDef.name);
-          expect(unhealthyStatus?.healthy).toBe(false);
+        // Verify unhealthy status
+        const unhealthyStatus = healthMonitor.getHealthStatus(serviceDef.name);
+        expect(unhealthyStatus?.healthy).toBe(false);
 
-          // Verify serviceFailed event was emitted
-          expect(serviceFailedSpy).toHaveBeenCalledWith(serviceDef.name);
+        // Verify serviceFailed event was emitted
+        expect(serviceFailedSpy).toHaveBeenCalledWith(serviceDef.name);
 
-          return true;
-        }
-      ),
+        return true;
+      }),
       { numRuns: 100 }
     );
   });
 
   it('should emit serviceRecovered event when service transitions from unhealthy to healthy', async () => {
     await fc.assert(
-      fc.asyncProperty(
-        serviceDefinitionArbitrary(),
-        async (serviceDef) => {
-          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool!);
-          pools.push(pool);
+      fc.asyncProperty(serviceDefinitionArbitrary(), async (serviceDef) => {
+        const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool);
+        pools.push(pool);
 
-          const mockConnection = createMockConnection('test-conn-1');
+        const mockConnection = createMockConnection('test-conn-1');
 
-          // Start unhealthy
-          vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+        // Start unhealthy
+        vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
 
-          await healthMonitor.registerConnectionPool(serviceDef.name, pool);
+        await healthMonitor.registerConnectionPool(serviceDef.name, pool);
 
-          // Verify initial unhealthy status
-          const initialStatus = healthMonitor.getHealthStatus(serviceDef.name);
-          expect(initialStatus?.healthy).toBe(false);
+        // Verify initial unhealthy status
+        const initialStatus = healthMonitor.getHealthStatus(serviceDef.name);
+        expect(initialStatus?.healthy).toBe(false);
 
-          // Set up event listener
-          const serviceRecoveredSpy = vi.fn();
-          healthMonitor.on('serviceRecovered', serviceRecoveredSpy);
+        // Set up event listener
+        const serviceRecoveredSpy = vi.fn();
+        healthMonitor.on('serviceRecovered', serviceRecoveredSpy);
 
-          // Transition to healthy
-          vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-          vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-          vi.spyOn(pool, 'release').mockImplementation(() => {});
+        // Transition to healthy
+        vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
+        vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
+        vi.spyOn(pool, 'release').mockImplementation(() => {});
 
-          await healthMonitor.checkHealth(serviceDef.name);
+        await healthMonitor.checkHealth(serviceDef.name);
 
-          // Verify healthy status
-          const healthyStatus = healthMonitor.getHealthStatus(serviceDef.name);
-          expect(healthyStatus?.healthy).toBe(true);
+        // Verify healthy status
+        const healthyStatus = healthMonitor.getHealthStatus(serviceDef.name);
+        expect(healthyStatus?.healthy).toBe(true);
 
-          // Verify event was emitted
-          expect(serviceRecoveredSpy).toHaveBeenCalledWith(serviceDef.name);
+        // Verify event was emitted
+        expect(serviceRecoveredSpy).toHaveBeenCalledWith(serviceDef.name);
 
-          return true;
-        }
-      ),
+        return true;
+      }),
       { numRuns: 100 }
     );
   });
@@ -274,7 +269,7 @@ describe('Feature: onemcp-router-system, Property 17: Health status auto tool ma
         serviceDefinitionArbitrary(),
         healthTransitionSequenceArbitrary(),
         async (serviceDef, transitions) => {
-          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool!);
+          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool);
           pools.push(pool);
 
           const mockConnection = createMockConnection('test-conn-1');
@@ -335,7 +330,7 @@ describe('Feature: onemcp-router-system, Property 17: Health status auto tool ma
         serviceDefinitionArbitrary(),
         fc.integer({ min: 1, max: 10 }),
         async (serviceDef, numFailures) => {
-          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool!);
+          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool);
           pools.push(pool);
 
           const mockConnection = createMockConnection('test-conn-1');
@@ -352,7 +347,7 @@ describe('Feature: onemcp-router-system, Property 17: Health status auto tool ma
 
           for (let i = 0; i < numFailures; i++) {
             await healthMonitor.checkHealth(serviceDef.name);
-            
+
             const status = healthMonitor.getHealthStatus(serviceDef.name);
             expect(status?.consecutiveFailures).toBe(i + 1);
           }
@@ -376,55 +371,52 @@ describe('Feature: onemcp-router-system, Property 17: Health status auto tool ma
 
   it('should emit serviceUnhealthy event when failure threshold is exceeded during heartbeat', async () => {
     await fc.assert(
-      fc.asyncProperty(
-        serviceDefinitionArbitrary(),
-        async (serviceDef) => {
-          // Create a fresh health monitor for each test run to avoid event listener pollution
-          const freshConfigProvider = await createTestConfigProvider();
-          const freshRegistry = new ServiceRegistry(freshConfigProvider);
-          await freshRegistry.initialize();
-          const freshHealthMonitor = new HealthMonitor(freshRegistry);
+      fc.asyncProperty(serviceDefinitionArbitrary(), async (serviceDef) => {
+        // Create a fresh health monitor for each test run to avoid event listener pollution
+        const freshConfigProvider = await createTestConfigProvider();
+        const freshRegistry = new ServiceRegistry(freshConfigProvider);
+        await freshRegistry.initialize();
+        const freshHealthMonitor = new HealthMonitor(freshRegistry);
 
-          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool!);
-          pools.push(pool);
+        const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool);
+        pools.push(pool);
 
-          // Start with failing connection
-          vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+        // Start with failing connection
+        vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
 
-          await freshHealthMonitor.registerConnectionPool(serviceDef.name, pool);
+        await freshHealthMonitor.registerConnectionPool(serviceDef.name, pool);
 
-          // Set up event listener
-          const serviceUnhealthySpy = vi.fn();
-          freshHealthMonitor.on('serviceUnhealthy', serviceUnhealthySpy);
+        // Set up event listener
+        const serviceUnhealthySpy = vi.fn();
+        freshHealthMonitor.on('serviceUnhealthy', serviceUnhealthySpy);
 
-          // Use a fixed threshold of 2 for faster testing
-          const failureThreshold = 2;
+        // Use a fixed threshold of 2 for faster testing
+        const failureThreshold = 2;
 
-          // Start heartbeat with short interval
-          freshHealthMonitor.startHeartbeat(50, failureThreshold);
+        // Start heartbeat with short interval
+        freshHealthMonitor.startHeartbeat(50, failureThreshold);
 
-          // Wait for enough heartbeat cycles to exceed threshold
-          // Add extra time to ensure the threshold is exceeded
-          const waitTime = 50 * (failureThreshold + 1) + 100;
-          await new Promise(resolve => setTimeout(resolve, waitTime));
+        // Wait for enough heartbeat cycles to exceed threshold
+        // Add extra time to ensure the threshold is exceeded
+        const waitTime = 50 * (failureThreshold + 1) + 100;
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
 
-          // Stop heartbeat
-          freshHealthMonitor.stopHeartbeat();
+        // Stop heartbeat
+        freshHealthMonitor.stopHeartbeat();
 
-          // Verify serviceUnhealthy event was emitted
-          expect(serviceUnhealthySpy).toHaveBeenCalled();
+        // Verify serviceUnhealthy event was emitted
+        expect(serviceUnhealthySpy).toHaveBeenCalled();
 
-          // Verify the status has exceeded threshold
-          const calls = serviceUnhealthySpy.mock.calls;
-          const lastCall = calls[calls.length - 1];
-          const [serviceName, status] = lastCall as [string, HealthStatus];
-          
-          expect(serviceName).toBe(serviceDef.name);
-          expect(status.consecutiveFailures).toBeGreaterThanOrEqual(failureThreshold);
+        // Verify the status has exceeded threshold
+        const calls = serviceUnhealthySpy.mock.calls;
+        const lastCall = calls[calls.length - 1];
+        const [serviceName, status] = lastCall as [string, HealthStatus];
 
-          return true;
-        }
-      ),
+        expect(serviceName).toBe(serviceDef.name);
+        expect(status.consecutiveFailures).toBeGreaterThanOrEqual(failureThreshold);
+
+        return true;
+      }),
       { numRuns: 20, timeout: 30000 }
     );
   }, 30000);
@@ -442,7 +434,7 @@ describe('Feature: onemcp-router-system, Property 17: Health status auto tool ma
 
           // Register all services as healthy initially
           for (const serviceDef of uniqueServices) {
-            const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool!);
+            const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool);
             pools.push(pool);
             poolsMap.set(serviceDef.name, pool);
 
@@ -493,7 +485,7 @@ describe('Feature: onemcp-router-system, Property 17: Health status auto tool ma
         serviceDefinitionArbitrary(),
         fc.integer({ min: 2, max: 10 }),
         async (serviceDef, numChecks) => {
-          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool!);
+          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool);
           pools.push(pool);
 
           const mockConnection = createMockConnection('test-conn-1');
@@ -508,7 +500,7 @@ describe('Feature: onemcp-router-system, Property 17: Health status auto tool ma
           // Perform multiple health checks
           for (let i = 0; i < numChecks; i++) {
             await healthMonitor.checkHealth(serviceDef.name);
-            
+
             const status = healthMonitor.getHealthStatus(serviceDef.name);
             expect(status?.healthy).toBe(true);
             expect(status?.consecutiveFailures).toBe(0);
@@ -523,51 +515,48 @@ describe('Feature: onemcp-router-system, Property 17: Health status auto tool ma
 
   it('should emit correct events in the correct order during health transitions', async () => {
     await fc.assert(
-      fc.asyncProperty(
-        serviceDefinitionArbitrary(),
-        async (serviceDef) => {
-          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool!);
-          pools.push(pool);
+      fc.asyncProperty(serviceDefinitionArbitrary(), async (serviceDef) => {
+        const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool);
+        pools.push(pool);
 
-          const mockConnection = createMockConnection('test-conn-1');
+        const mockConnection = createMockConnection('test-conn-1');
 
-          // Start healthy
-          vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-          vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-          vi.spyOn(pool, 'release').mockImplementation(() => {});
+        // Start healthy
+        vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
+        vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
+        vi.spyOn(pool, 'release').mockImplementation(() => {});
 
-          await healthMonitor.registerConnectionPool(serviceDef.name, pool);
+        await healthMonitor.registerConnectionPool(serviceDef.name, pool);
 
-          // Track event order
-          const events: string[] = [];
+        // Track event order
+        const events: string[] = [];
 
-          healthMonitor.on('healthChanged', () => events.push('healthChanged'));
-          healthMonitor.on('serviceFailed', () => events.push('serviceFailed'));
-          healthMonitor.on('serviceRecovered', () => events.push('serviceRecovered'));
+        healthMonitor.on('healthChanged', () => events.push('healthChanged'));
+        healthMonitor.on('serviceFailed', () => events.push('serviceFailed'));
+        healthMonitor.on('serviceRecovered', () => events.push('serviceRecovered'));
 
-          // Transition to unhealthy
-          vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
-          await healthMonitor.checkHealth(serviceDef.name);
+        // Transition to unhealthy
+        vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+        await healthMonitor.checkHealth(serviceDef.name);
 
-          // Should emit healthChanged and serviceFailed
-          expect(events).toContain('healthChanged');
-          expect(events).toContain('serviceFailed');
+        // Should emit healthChanged and serviceFailed
+        expect(events).toContain('healthChanged');
+        expect(events).toContain('serviceFailed');
 
-          // Clear events
-          events.length = 0;
+        // Clear events
+        events.length = 0;
 
-          // Transition back to healthy
-          vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-          vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-          await healthMonitor.checkHealth(serviceDef.name);
+        // Transition back to healthy
+        vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
+        vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
+        await healthMonitor.checkHealth(serviceDef.name);
 
-          // Should emit healthChanged and serviceRecovered
-          expect(events).toContain('healthChanged');
-          expect(events).toContain('serviceRecovered');
+        // Should emit healthChanged and serviceRecovered
+        expect(events).toContain('healthChanged');
+        expect(events).toContain('serviceRecovered');
 
-          return true;
-        }
-      ),
+        return true;
+      }),
       { numRuns: 100 }
     );
   });
@@ -578,7 +567,7 @@ describe('Feature: onemcp-router-system, Property 17: Health status auto tool ma
         serviceDefinitionArbitrary(),
         fc.integer({ min: 2, max: 8 }),
         async (serviceDef, numChecks) => {
-          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool!);
+          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool);
           pools.push(pool);
 
           const mockConnection = createMockConnection('test-conn-1');
@@ -622,7 +611,7 @@ describe('Feature: onemcp-router-system, Property 17: Health status auto tool ma
         serviceDefinitionArbitrary(),
         fc.integer({ min: 3, max: 10 }),
         async (serviceDef, numOscillations) => {
-          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool!);
+          const pool = new ConnectionPool(serviceDef, serviceDef.connectionPool);
           pools.push(pool);
 
           const mockConnection = createMockConnection('test-conn-1');

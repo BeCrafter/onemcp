@@ -156,12 +156,7 @@ describe('ErrorBuilder', () => {
   describe('internalError', () => {
     it('should create an internal error', () => {
       const error = new Error('Something went wrong');
-      const response = ErrorBuilder.internalError(
-        'Internal error',
-        'req-123',
-        mockContext,
-        error
-      );
+      const response = ErrorBuilder.internalError('Internal error', 'req-123', mockContext, error);
 
       expect(response.error.code).toBe(ErrorCode.INTERNAL_ERROR);
       expect(response.error.message).toBe('Internal error');
@@ -194,11 +189,7 @@ describe('ErrorBuilder', () => {
 
   describe('serviceUnavailable', () => {
     it('should create a service unavailable error', () => {
-      const response = ErrorBuilder.serviceUnavailable(
-        'my-service',
-        'req-123',
-        mockContext
-      );
+      const response = ErrorBuilder.serviceUnavailable('my-service', 'req-123', mockContext);
 
       expect(response.error.code).toBe(ErrorCode.SERVICE_UNAVAILABLE);
       expect(response.error.message).toContain('my-service');
@@ -220,11 +211,7 @@ describe('ErrorBuilder', () => {
 
   describe('serviceUnhealthy', () => {
     it('should create a service unhealthy error', () => {
-      const response = ErrorBuilder.serviceUnhealthy(
-        'my-service',
-        'req-123',
-        mockContext
-      );
+      const response = ErrorBuilder.serviceUnhealthy('my-service', 'req-123', mockContext);
 
       expect(response.error.code).toBe(ErrorCode.SERVICE_UNHEALTHY);
       expect(response.error.message).toContain('my-service');
@@ -234,11 +221,7 @@ describe('ErrorBuilder', () => {
 
   describe('connectionPoolExhausted', () => {
     it('should create a connection pool exhausted error', () => {
-      const response = ErrorBuilder.connectionPoolExhausted(
-        'my-service',
-        'req-123',
-        mockContext
-      );
+      const response = ErrorBuilder.connectionPoolExhausted('my-service', 'req-123', mockContext);
 
       expect(response.error.code).toBe(ErrorCode.CONNECTION_POOL_EXHAUSTED);
       expect(response.error.message).toContain('my-service');
@@ -248,12 +231,7 @@ describe('ErrorBuilder', () => {
 
   describe('timeout', () => {
     it('should create a timeout error', () => {
-      const response = ErrorBuilder.timeout(
-        'Operation timed out',
-        'req-123',
-        mockContext,
-        5000
-      );
+      const response = ErrorBuilder.timeout('Operation timed out', 'req-123', mockContext, 5000);
 
       expect(response.error.code).toBe(ErrorCode.TIMEOUT);
       expect(response.error.message).toBe('Operation timed out');
@@ -295,11 +273,7 @@ describe('ErrorBuilder', () => {
 
   describe('sessionError', () => {
     it('should create a session error', () => {
-      const response = ErrorBuilder.sessionError(
-        'Session expired',
-        'req-123',
-        mockContext
-      );
+      const response = ErrorBuilder.sessionError('Session expired', 'req-123', mockContext);
 
       expect(response.error.code).toBe(ErrorCode.SESSION_ERROR);
       expect(response.error.message).toBe('Session expired');

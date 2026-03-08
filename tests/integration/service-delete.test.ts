@@ -1,6 +1,6 @@
 /**
  * Service Deletion Integration Test
- * 
+ *
  * Verifies that service deletion properly syncs to configuration file
  */
 
@@ -22,14 +22,14 @@ describe('Service Deletion Integration', () => {
   beforeEach(async () => {
     // Create temporary directory
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'onemcp-delete-test-'));
-    
+
     // Initialize components
     storage = new FileStorageAdapter(tempDir);
     provider = new FileConfigProvider({
       storageAdapter: storage,
       configDir: tempDir,
     });
-    
+
     // Create initial configuration with two services
     const config: SystemConfig = {
       mode: 'server',
@@ -100,9 +100,9 @@ describe('Service Deletion Integration', () => {
         retentionPeriod: 86400000,
       },
     };
-    
+
     await provider.save(config);
-    
+
     // Initialize registry
     registry = new ServiceRegistry(provider);
     await registry.initialize();
@@ -119,8 +119,8 @@ describe('Service Deletion Integration', () => {
     // Verify initial state
     const initialServices = await registry.list();
     expect(initialServices).toHaveLength(2);
-    expect(initialServices.map(s => s.name)).toContain('test-service-1');
-    expect(initialServices.map(s => s.name)).toContain('test-service-2');
+    expect(initialServices.map((s) => s.name)).toContain('test-service-1');
+    expect(initialServices.map((s) => s.name)).toContain('test-service-2');
 
     // Delete service
     await registry.unregister('test-service-1');
@@ -139,14 +139,14 @@ describe('Service Deletion Integration', () => {
   it('should delete multiple services sequentially', async () => {
     // Delete first service
     await registry.unregister('test-service-1');
-    
+
     let services = await registry.list();
     expect(services).toHaveLength(1);
     expect(services[0].name).toBe('test-service-2');
 
     // Delete second service
     await registry.unregister('test-service-2');
-    
+
     services = await registry.list();
     expect(services).toHaveLength(0);
 
@@ -162,7 +162,7 @@ describe('Service Deletion Integration', () => {
     // Verify original services still exist
     const services = await registry.list();
     expect(services).toHaveLength(2);
-    
+
     const savedConfig = await provider.load();
     expect(savedConfig.services).toHaveLength(2);
   });

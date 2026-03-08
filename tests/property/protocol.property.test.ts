@@ -12,14 +12,14 @@ import type {
 } from '../../src/types/jsonrpc.js';
 
 /**
- * Feature: onemcp-router-system
+ * Feature: onemcp-system
  * Property-based tests for Protocol Layer
- * 
+ *
  * Tests:
  * - Property 11: JSON-RPC request acceptance
  * - Property 12: JSON-RPC response compliance
  * - Property 21: JSON-RPC message round-trip (integration with existing test)
- * 
+ *
  * **Validates: Requirements 7.1, 7.2, 29.5**
  */
 
@@ -41,13 +41,13 @@ const jsonRpcIdArbitrary = (): fc.Arbitrary<string | number> =>
  * Method names must not start with "rpc." (reserved for internal use)
  */
 const methodNameArbitrary = (): fc.Arbitrary<string> =>
-  fc.string({ minLength: 1, maxLength: 100 }).filter(s => !s.startsWith('rpc.'));
+  fc.string({ minLength: 1, maxLength: 100 }).filter((s) => !s.startsWith('rpc.'));
 
 /**
  * Generate arbitrary JSON-compatible values for params/result
  */
 const jsonValueArbitrary = (): fc.Arbitrary<unknown> =>
-  fc.letrec(tie => ({
+  fc.letrec((tie) => ({
     value: fc.oneof(
       { depthSize: 'small' },
       fc.constant(null),
@@ -55,12 +55,8 @@ const jsonValueArbitrary = (): fc.Arbitrary<unknown> =>
       fc.integer(),
       fc.double({ noNaN: true, noDefaultInfinity: true }),
       fc.string(),
-      fc.array(tie('value') as fc.Arbitrary<unknown>, { maxLength: 5 }),
-      fc.dictionary(
-        fc.string({ minLength: 1, maxLength: 20 }),
-        tie('value') as fc.Arbitrary<unknown>,
-        { maxKeys: 5 }
-      )
+      fc.array(tie('value'), { maxLength: 5 }),
+      fc.dictionary(fc.string({ minLength: 1, maxLength: 20 }), tie('value'), { maxKeys: 5 })
     ),
   })).value as fc.Arbitrary<unknown>;
 
@@ -141,7 +137,7 @@ const jsonRpcMessageArbitrary = (): fc.Arbitrary<JsonRpcMessage> =>
 // Property 11: JSON-RPC Request Acceptance
 // ============================================================================
 
-describe('Feature: onemcp-router-system, Property 11: JSON-RPC request acceptance', () => {
+describe('Feature: onemcp-system, Property 11: JSON-RPC request acceptance', () => {
   let parser: JsonRpcParser;
 
   beforeEach(() => {
@@ -153,22 +149,22 @@ describe('Feature: onemcp-router-system, Property 11: JSON-RPC request acceptanc
       fc.property(jsonRpcRequestArbitrary(), (request) => {
         // Serialize the request to JSON string
         const serialized = JSON.stringify(request);
-        
+
         // Parse should succeed without throwing
         const parsed = parser.parse(serialized);
-        
+
         // Parsed message should be a valid request
         expect(parser.isRequest(parsed)).toBe(true);
-        
+
         // Validation should pass
         const validation = parser.validate(parsed);
         expect(validation.valid).toBe(true);
-        
+
         // Parsed message should match the serialized-then-parsed version
         // (This handles edge cases like -0 becoming 0 through JSON serialization)
         const expected = JSON.parse(serialized);
         expect(parsed).toEqual(expected);
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -188,13 +184,13 @@ describe('Feature: onemcp-router-system, Property 11: JSON-RPC request acceptanc
             method,
             params,
           };
-          
+
           const serialized = JSON.stringify(request);
           const parsed = parser.parse(serialized);
-          
+
           expect(parser.isRequest(parsed)).toBe(true);
           expect(parsed).toEqual(request);
-          
+
           return true;
         }
       ),
@@ -204,25 +200,21 @@ describe('Feature: onemcp-router-system, Property 11: JSON-RPC request acceptanc
 
   it('should accept requests without params field', () => {
     fc.assert(
-      fc.property(
-        jsonRpcIdArbitrary(),
-        methodNameArbitrary(),
-        (id, method) => {
-          const request: JsonRpcRequest = {
-            jsonrpc: '2.0',
-            id,
-            method,
-          };
-          
-          const serialized = JSON.stringify(request);
-          const parsed = parser.parse(serialized);
-          
-          expect(parser.isRequest(parsed)).toBe(true);
-          expect(parsed).toEqual(request);
-          
-          return true;
-        }
-      ),
+      fc.property(jsonRpcIdArbitrary(), methodNameArbitrary(), (id, method) => {
+        const request: JsonRpcRequest = {
+          jsonrpc: '2.0',
+          id,
+          method,
+        };
+
+        const serialized = JSON.stringify(request);
+        const parsed = parser.parse(serialized);
+
+        expect(parser.isRequest(parsed)).toBe(true);
+        expect(parsed).toEqual(request);
+
+        return true;
+      }),
       { numRuns: 100 }
     );
   });
@@ -232,14 +224,14 @@ describe('Feature: onemcp-router-system, Property 11: JSON-RPC request acceptanc
       fc.property(jsonRpcNotificationArbitrary(), (notification) => {
         const serialized = JSON.stringify(notification);
         const parsed = parser.parse(serialized);
-        
+
         expect(parser.isNotification(parsed)).toBe(true);
-        
+
         const validation = parser.validate(parsed);
         expect(validation.valid).toBe(true);
-        
+
         expect(parsed).toEqual(notification);
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -251,7 +243,7 @@ describe('Feature: onemcp-router-system, Property 11: JSON-RPC request acceptanc
 // Property 12: JSON-RPC Response Compliance
 // ============================================================================
 
-describe('Feature: onemcp-router-system, Property 12: JSON-RPC response compliance', () => {
+describe('Feature: onemcp-system, Property 12: JSON-RPC response compliance', () => {
   let parser: JsonRpcParser;
   let serializer: JsonRpcSerializer;
 
@@ -265,25 +257,25 @@ describe('Feature: onemcp-router-system, Property 12: JSON-RPC response complian
       fc.property(jsonRpcSuccessResponseArbitrary(), (response) => {
         // Serialize the response
         const serialized = serializer.serialize(response);
-        
+
         // Parse it back
         const parsed = parser.parse(serialized);
-        
+
         // Should be recognized as a success response
         expect(parser.isSuccessResponse(parsed)).toBe(true);
-        
+
         // Should pass validation
         const validation = parser.validate(parsed);
         expect(validation.valid).toBe(true);
-        
+
         // Should have required fields
         expect(parsed).toHaveProperty('jsonrpc', '2.0');
         expect(parsed).toHaveProperty('id');
         expect(parsed).toHaveProperty('result');
-        
+
         // Should not have error field
         expect(parsed).not.toHaveProperty('error');
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -295,32 +287,32 @@ describe('Feature: onemcp-router-system, Property 12: JSON-RPC response complian
       fc.property(jsonRpcErrorResponseArbitrary(), (response) => {
         // Serialize the response
         const serialized = serializer.serialize(response);
-        
+
         // Parse it back
         const parsed = parser.parse(serialized);
-        
+
         // Should be recognized as an error response
         expect(parser.isErrorResponse(parsed)).toBe(true);
-        
+
         // Should pass validation
         const validation = parser.validate(parsed);
         expect(validation.valid).toBe(true);
-        
+
         // Should have required fields
         expect(parsed).toHaveProperty('jsonrpc', '2.0');
         expect(parsed).toHaveProperty('id');
         expect(parsed).toHaveProperty('error');
-        
+
         // Error should have required fields
         const errorResponse = parsed as JsonRpcErrorResponse;
         expect(errorResponse.error).toHaveProperty('code');
         expect(errorResponse.error).toHaveProperty('message');
         expect(typeof errorResponse.error.code).toBe('number');
         expect(typeof errorResponse.error.message).toBe('string');
-        
+
         // Should not have result field
         expect(parsed).not.toHaveProperty('result');
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -332,25 +324,25 @@ describe('Feature: onemcp-router-system, Property 12: JSON-RPC response complian
       fc.property(jsonRpcMessageArbitrary(), (message) => {
         // Serialize the message
         const serialized = serializer.serialize(message);
-        
+
         // Parse it back
         const parsed = parser.parse(serialized);
-        
+
         // Should pass validation
         const validation = parser.validate(parsed);
         expect(validation.valid).toBe(true);
-        
+
         // Should have jsonrpc field set to "2.0"
         expect(parsed).toHaveProperty('jsonrpc', '2.0');
-        
+
         // Should be one of the valid message types
-        const isValidType = 
+        const isValidType =
           parser.isRequest(parsed) ||
           parser.isSuccessResponse(parsed) ||
           parser.isErrorResponse(parsed) ||
           parser.isNotification(parsed);
         expect(isValidType).toBe(true);
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -374,19 +366,19 @@ describe('Feature: onemcp-router-system, Property 12: JSON-RPC response complian
               ...(data !== undefined && { data }),
             },
           };
-          
+
           const serialized = serializer.serialize(response);
           const parsed = parser.parse(serialized);
-          
+
           expect(parser.isErrorResponse(parsed)).toBe(true);
-          
+
           const validation = parser.validate(parsed);
           expect(validation.valid).toBe(true);
-          
+
           const errorResponse = parsed as JsonRpcErrorResponse;
           expect(errorResponse.error.code).toBe(code);
           expect(errorResponse.error.message).toBe(message);
-          
+
           return true;
         }
       ),
@@ -396,33 +388,29 @@ describe('Feature: onemcp-router-system, Property 12: JSON-RPC response complian
 
   it('should handle null id in error responses', () => {
     fc.assert(
-      fc.property(
-        fc.integer(),
-        fc.string({ minLength: 1 }),
-        (code, message) => {
-          const response: JsonRpcErrorResponse = {
-            jsonrpc: '2.0',
-            id: null,
-            error: {
-              code,
-              message,
-            },
-          };
-          
-          const serialized = serializer.serialize(response);
-          const parsed = parser.parse(serialized);
-          
-          expect(parser.isErrorResponse(parsed)).toBe(true);
-          
-          const validation = parser.validate(parsed);
-          expect(validation.valid).toBe(true);
-          
-          const errorResponse = parsed as JsonRpcErrorResponse;
-          expect(errorResponse.id).toBe(null);
-          
-          return true;
-        }
-      ),
+      fc.property(fc.integer(), fc.string({ minLength: 1 }), (code, message) => {
+        const response: JsonRpcErrorResponse = {
+          jsonrpc: '2.0',
+          id: null,
+          error: {
+            code,
+            message,
+          },
+        };
+
+        const serialized = serializer.serialize(response);
+        const parsed = parser.parse(serialized);
+
+        expect(parser.isErrorResponse(parsed)).toBe(true);
+
+        const validation = parser.validate(parsed);
+        expect(validation.valid).toBe(true);
+
+        const errorResponse = parsed as JsonRpcErrorResponse;
+        expect(errorResponse.id).toBe(null);
+
+        return true;
+      }),
       { numRuns: 100 }
     );
   });
@@ -432,7 +420,7 @@ describe('Feature: onemcp-router-system, Property 12: JSON-RPC response complian
 // Property 21: JSON-RPC Message Round-Trip (Integration Test)
 // ============================================================================
 
-describe('Feature: onemcp-router-system, Property 21: JSON-RPC message round-trip (integration)', () => {
+describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip (integration)', () => {
   let parser: JsonRpcParser;
   let serializer: JsonRpcSerializer;
 
@@ -446,17 +434,17 @@ describe('Feature: onemcp-router-system, Property 21: JSON-RPC message round-tri
       fc.property(jsonRpcMessageArbitrary(), (message) => {
         // Serialize
         const serialized = serializer.serialize(message);
-        
+
         // Parse
         const parsed = parser.parse(serialized);
-        
+
         // Should be equal
         expect(parsed).toEqual(message);
-        
+
         // Validation should pass
         const validation = parser.validate(parsed);
         expect(validation.valid).toBe(true);
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -468,10 +456,10 @@ describe('Feature: onemcp-router-system, Property 21: JSON-RPC message round-tri
       fc.property(jsonRpcRequestArbitrary(), (request) => {
         const serialized = serializer.serialize(request);
         const parsed = parser.parse(serialized);
-        
+
         expect(parsed).toEqual(request);
         expect(parser.isRequest(parsed)).toBe(true);
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -483,10 +471,10 @@ describe('Feature: onemcp-router-system, Property 21: JSON-RPC message round-tri
       fc.property(jsonRpcSuccessResponseArbitrary(), (response) => {
         const serialized = serializer.serialize(response);
         const parsed = parser.parse(serialized);
-        
+
         expect(parsed).toEqual(response);
         expect(parser.isSuccessResponse(parsed)).toBe(true);
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -498,10 +486,10 @@ describe('Feature: onemcp-router-system, Property 21: JSON-RPC message round-tri
       fc.property(jsonRpcErrorResponseArbitrary(), (response) => {
         const serialized = serializer.serialize(response);
         const parsed = parser.parse(serialized);
-        
+
         expect(parsed).toEqual(response);
         expect(parser.isErrorResponse(parsed)).toBe(true);
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -513,10 +501,10 @@ describe('Feature: onemcp-router-system, Property 21: JSON-RPC message round-tri
       fc.property(jsonRpcNotificationArbitrary(), (notification) => {
         const serialized = serializer.serialize(notification);
         const parsed = parser.parse(serialized);
-        
+
         expect(parsed).toEqual(notification);
         expect(parser.isNotification(parsed)).toBe(true);
-        
+
         return true;
       }),
       { numRuns: 100 }
@@ -528,13 +516,13 @@ describe('Feature: onemcp-router-system, Property 21: JSON-RPC message round-tri
       fc.property(jsonRpcMessageArbitrary(), (message) => {
         // Pretty print
         const pretty = serializer.prettyPrint(message);
-        
+
         // Parse
         const parsed = parser.parse(pretty);
-        
+
         // Should be equal
         expect(parsed).toEqual(message);
-        
+
         return true;
       }),
       { numRuns: 100 }

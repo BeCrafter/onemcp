@@ -1,6 +1,6 @@
 /**
  * Connection Pool Manager for MCP Router System
- * 
+ *
  * This module implements connection pooling for backend MCP servers.
  * It manages connection lifecycle, reuse, limits, and cleanup.
  */
@@ -44,7 +44,7 @@ interface QueuedRequest {
 
 /**
  * Connection Pool Manager
- * 
+ *
  * Manages a pool of connections to a single MCP service.
  * Supports connection reuse, limits, timeouts, and automatic cleanup.
  * Creates appropriate transport (Stdio or HTTP) based on service configuration.
@@ -67,19 +67,16 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Acquire a connection from the pool
-   * 
+   *
    * Returns an available idle connection if one exists, otherwise creates
    * a new connection if under the limit, or queues the request if at capacity.
-   * 
+   *
    * @returns Promise resolving to an acquired connection
    * @throws ConnectionPoolError if pool is closed or timeout occurs
    */
   public async acquire(): Promise<Connection> {
     if (this.closed) {
-      throw new ConnectionPoolError(
-        'Cannot acquire connection: pool is closed',
-        'POOL_CLOSED'
-      );
+      throw new ConnectionPoolError('Cannot acquire connection: pool is closed', 'POOL_CLOSED');
     }
 
     // Try to find an idle connection
@@ -106,9 +103,9 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Release a connection back to the pool
-   * 
+   *
    * Marks the connection as idle and processes any queued requests.
-   * 
+   *
    * @param connection - Connection to release
    */
   public release(connection: Connection): void {
@@ -142,10 +139,10 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Mark a connection as failed and remove it from the pool
-   * 
+   *
    * This method should be called when a connection fails during use.
    * The connection will be closed and removed from the pool.
-   * 
+   *
    * @param connection - Failed connection
    * @param error - Error that caused the failure
    */
@@ -156,20 +153,20 @@ export class ConnectionPool extends EventEmitter {
     }
 
     this.emit('connectionFailed', connection.id, error);
-    
+
     // Close and remove the connection
     await this.closeConnection(connection);
-    
+
     // Process queue to potentially create a new connection for waiting requests
     this.processQueue();
   }
 
   /**
    * Check if a connection is healthy
-   * 
+   *
    * Performs a basic health check by verifying the transport is not closed.
    * This is a lightweight check that can be called frequently.
-   * 
+   *
    * @param connection - Connection to check
    * @returns True if connection appears healthy
    */
@@ -192,9 +189,9 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Close all connections and shut down the pool
-   * 
+   *
    * Closes all active connections, rejects queued requests, and stops monitoring.
-   * 
+   *
    * @returns Promise resolving when all connections are closed
    */
   public async closeAll(): Promise<void> {
@@ -209,12 +206,7 @@ export class ConnectionPool extends EventEmitter {
     const queuedRequests = [...this.queue];
     this.queue = [];
     for (const request of queuedRequests) {
-      request.reject(
-        new ConnectionPoolError(
-          'Connection pool is closing',
-          'POOL_CLOSING'
-        )
-      );
+      request.reject(new ConnectionPoolError('Connection pool is closing', 'POOL_CLOSING'));
     }
 
     // Close all connections
@@ -230,7 +222,7 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Get pool statistics
-   * 
+   *
    * @returns Current pool statistics
    */
   public getStats(): PoolStats {
@@ -255,7 +247,7 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Validate service configuration
-   * 
+   *
    * @throws ConnectionPoolError if configuration is invalid
    */
   private validateServiceConfiguration(): void {
@@ -283,7 +275,7 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Find an idle connection in the pool
-   * 
+   *
    * @returns Idle connection or undefined if none available
    */
   private findIdleConnection(): Connection | undefined {
@@ -297,20 +289,20 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Create a new connection
-   * 
+   *
    * @returns Promise resolving to new connection
    * @throws ConnectionPoolError if connection creation fails
    */
   private async createConnection(): Promise<Connection> {
     const id = `${this.service.name}-${this.nextConnectionId++}`;
-    
+
     try {
       const transport = await this.createTransportWithTimeout();
       const connection = createConnection(id, transport);
-      
+
       // Initialize the MCP connection
       await this.initializeMCPConnection(connection);
-      
+
       this.emit('created', id);
       return connection;
     } catch (error) {
@@ -325,9 +317,9 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Create transport with connection timeout
-   * 
+   *
    * Creates the appropriate transport (Stdio or HTTP) based on service configuration
-   * 
+   *
    * @returns Promise resolving to transport
    * @throws Error if timeout occurs
    */
@@ -344,7 +336,7 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Create transport based on service configuration
-   * 
+   *
    * @returns Promise resolving to transport
    */
   private async createTransport(): Promise<Transport> {
@@ -389,7 +381,7 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Initialize MCP connection by sending initialize request
-   * 
+   *
    * @param connection - Connection to initialize
    * @throws Error if initialization fails
    * @private
@@ -403,7 +395,7 @@ export class ConnectionPool extends EventEmitter {
         protocolVersion: '2024-11-05',
         capabilities: {},
         clientInfo: {
-          name: 'onemcp-router',
+          name: 'onemcp',
           version: '1.0.0',
         },
       },
@@ -422,7 +414,7 @@ export class ConnectionPool extends EventEmitter {
 
     // Check for error response
     if ('error' in response) {
-      throw new Error(`Initialize failed: ${(response as any).error.message}`);
+      throw new Error(`Initialize failed: ${response.error.message}`);
     }
 
     // Verify it's a success response
@@ -433,7 +425,7 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Queue a connection request
-   * 
+   *
    * @returns Promise resolving to connection when available
    */
   private queueRequest(): Promise<Connection> {
@@ -465,7 +457,7 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Process queued requests
-   * 
+   *
    * Assigns idle connections to waiting requests. If no idle connections
    * are available and we're under the limit, creates new connections.
    * This method processes the queue synchronously for idle connections
@@ -497,7 +489,7 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Create new connections for queued requests
-   * 
+   *
    * This method is called asynchronously to create connections for waiting requests
    * when no idle connections are available but we're under the max limit.
    */
@@ -522,7 +514,7 @@ export class ConnectionPool extends EventEmitter {
 
   /**
    * Close a single connection
-   * 
+   *
    * @param connection - Connection to close
    */
   private async closeConnection(connection: Connection): Promise<void> {
@@ -544,7 +536,7 @@ export class ConnectionPool extends EventEmitter {
   private startIdleTimeoutMonitor(): void {
     // Check every 10 seconds or half the idle timeout, whichever is smaller
     const interval = Math.min(10000, this.config.idleTimeout / 2);
-    
+
     this.idleTimeoutTimer = setInterval(() => {
       this.cleanupIdleConnections();
     }, interval);

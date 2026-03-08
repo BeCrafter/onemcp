@@ -1,6 +1,6 @@
 /**
  * Unit tests for MetricsService
- * 
+ *
  * Requirements:
  * - 34.4: Provide API to query collected metrics
  * - 38.9: Support metrics aggregation by service, tool, session
@@ -29,21 +29,21 @@ describe('MetricsService', () => {
   describe('Recording', () => {
     it('should record tool calls', () => {
       service.recordToolCall('read_file', 'filesystem', 100, true);
-      
+
       const metrics = service.getSystemMetrics();
       expect(metrics.totalRequests).toBe(1);
     });
 
     it('should record errors', () => {
       service.recordError(-32001, 'TOOL_NOT_FOUND', 'filesystem');
-      
+
       const metrics = service.getSystemMetrics();
       expect(metrics.errors).toHaveLength(1);
     });
 
     it('should register sessions', () => {
       service.registerSession('session1', 'agent1');
-      
+
       const metrics = service.getSystemMetrics();
       expect(metrics.sessions).toHaveLength(1);
     });
@@ -139,12 +139,12 @@ describe('MetricsService', () => {
       for (let i = 0; i < 5; i++) {
         service.recordToolCall('tool_a', 'service1', 100, i < 4);
       }
-      
+
       // Tool B: 3 calls, 2 errors, avg 200ms
       for (let i = 0; i < 3; i++) {
         service.recordToolCall('tool_b', 'service1', 200, i < 1);
       }
-      
+
       // Tool C: 10 calls, 0 errors, avg 50ms
       for (let i = 0; i < 10; i++) {
         service.recordToolCall('tool_c', 'service2', 50, true);
@@ -189,7 +189,7 @@ describe('MetricsService', () => {
 
     it('should get summary statistics', () => {
       const summary = service.getSummary();
-      
+
       expect(summary.totalServices).toBe(2);
       expect(summary.totalTools).toBe(3);
       expect(summary.totalSessions).toBe(1);
@@ -202,14 +202,14 @@ describe('MetricsService', () => {
     it('should handle empty summary', () => {
       const emptyService = new MetricsService(config);
       const summary = emptyService.getSummary();
-      
+
       expect(summary.totalServices).toBe(0);
       expect(summary.totalTools).toBe(0);
       expect(summary.totalSessions).toBe(0);
       expect(summary.totalRequests).toBe(0);
       expect(summary.successRate).toBe(0);
       expect(summary.avgResponseTime).toBe(0);
-      
+
       emptyService.stop();
     });
   });
@@ -241,7 +241,7 @@ describe('MetricsService', () => {
     it('should reset all metrics', () => {
       service.recordToolCall('read_file', 'filesystem', 100, true);
       service.reset();
-      
+
       const metrics = service.getSystemMetrics();
       expect(metrics.totalRequests).toBe(0);
     });

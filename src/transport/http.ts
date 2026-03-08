@@ -53,7 +53,7 @@ export class HttpTransport extends BaseTransport {
     this.timeout = config.timeout || 30000; // 30 seconds default
     this.maxReconnectAttempts = config.maxReconnectAttempts || 3;
     this.reconnectDelay = config.reconnectDelay || 1000; // 1 second default
-    
+
     if (config.mode === 'sse') {
       this.initializeSSE();
     } else {
@@ -117,9 +117,11 @@ export class HttpTransport extends BaseTransport {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // Exponential backoff
-      
-      console.warn(`SSE connection error, attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
-      
+
+      console.warn(
+        `SSE connection error, attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`
+      );
+
       this.reconnectTimer = setTimeout(() => {
         if (this.eventSource) {
           this.eventSource.close();
@@ -134,12 +136,9 @@ export class HttpTransport extends BaseTransport {
           'SSE_CONNECTION_FAILED'
         )
       );
-      
+
       // Reject all waiting receivers
-      const transportError = new TransportError(
-        'SSE connection lost',
-        'SSE_CONNECTION_LOST'
-      );
+      const transportError = new TransportError('SSE connection lost', 'SSE_CONNECTION_LOST');
       while (this.rejectQueue.length > 0) {
         const reject = this.rejectQueue.shift()!;
         reject(transportError);
@@ -172,7 +171,7 @@ export class HttpTransport extends BaseTransport {
       // Merge default headers with custom headers and session ID
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
+        Accept: 'application/json, text/event-stream',
         ...(this.config.headers || {}),
       };
 
@@ -232,12 +231,9 @@ export class HttpTransport extends BaseTransport {
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new TransportError(
-          `HTTP request timeout after ${this.timeout}ms`,
-          'HTTP_TIMEOUT'
-        );
+        throw new TransportError(`HTTP request timeout after ${this.timeout}ms`, 'HTTP_TIMEOUT');
       }
-      
+
       throw new TransportError(
         `Failed to send HTTP request: ${error instanceof Error ? error.message : String(error)}`,
         'HTTP_SEND_FAILED',

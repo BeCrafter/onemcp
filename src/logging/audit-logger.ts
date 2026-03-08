@@ -155,14 +155,14 @@ export class AuditLogger {
       routedAt: entry.routedAt.toISOString(),
       routingDecision: entry.routingDecision,
     };
-    
+
     if (entry.input !== undefined) {
       result['input'] = entry.input;
     }
     if (entry.output !== undefined) {
       result['output'] = entry.output;
     }
-    
+
     return result;
   }
 
@@ -199,8 +199,7 @@ export class AuditLogger {
     if (filter.timeRange) {
       results = results.filter(
         (entry) =>
-          entry.receivedAt >= filter.timeRange!.start &&
-          entry.receivedAt <= filter.timeRange!.end
+          entry.receivedAt >= filter.timeRange!.start && entry.receivedAt <= filter.timeRange!.end
       );
     }
 
@@ -269,9 +268,7 @@ export class AuditLogger {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - this.config.retention.days);
 
-    this.auditEntries = this.auditEntries.filter(
-      (entry) => entry.receivedAt >= cutoffDate
-    );
+    this.auditEntries = this.auditEntries.filter((entry) => entry.receivedAt >= cutoffDate);
 
     // Note: maxSize enforcement would require tracking actual size
     // For now, we just keep entries within the time window
@@ -299,9 +296,7 @@ export class AuditLogger {
     const error = this.auditEntries.filter((e) => e.status === 'error').length;
     const timeout = this.auditEntries.filter((e) => e.status === 'timeout').length;
     const avgDuration =
-      total > 0
-        ? this.auditEntries.reduce((sum, e) => sum + e.duration, 0) / total
-        : 0;
+      total > 0 ? this.auditEntries.reduce((sum, e) => sum + e.duration, 0) / total : 0;
 
     return {
       totalRequests: total,

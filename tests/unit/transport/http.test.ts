@@ -30,7 +30,7 @@ describe('HttpTransport', () => {
         onerror: null,
         close: vi.fn(),
       };
-      
+
       vi.mocked(EventSource).mockImplementation(() => mockEventSource as any);
 
       const transport = new HttpTransport({
@@ -49,7 +49,7 @@ describe('HttpTransport', () => {
         onerror: null as ((event: Event) => void) | null,
         close: vi.fn(),
       };
-      
+
       vi.mocked(EventSource).mockImplementation(() => mockEventSource as any);
 
       const transport = new HttpTransport({
@@ -87,14 +87,14 @@ describe('HttpTransport', () => {
 
     it('should handle SSE connection errors with reconnection', () => {
       vi.useFakeTimers();
-      
+
       const mockEventSource = {
         onmessage: null as ((event: MessageEvent) => void) | null,
         onopen: null as ((event: Event) => void) | null,
         onerror: null as ((event: Event) => void) | null,
         close: vi.fn(),
       };
-      
+
       let eventSourceCallCount = 0;
       vi.mocked(EventSource).mockImplementation(() => {
         eventSourceCallCount++;
@@ -125,14 +125,14 @@ describe('HttpTransport', () => {
 
     it('should stop reconnecting after max attempts', () => {
       vi.useFakeTimers();
-      
+
       const mockEventSource = {
         onmessage: null as ((event: MessageEvent) => void) | null,
         onopen: null as ((event: Event) => void) | null,
         onerror: null as ((event: Event) => void) | null,
         close: vi.fn(),
       };
-      
+
       let eventSourceCallCount = 0;
       vi.mocked(EventSource).mockImplementation(() => {
         eventSourceCallCount++;
@@ -154,10 +154,10 @@ describe('HttpTransport', () => {
       if (mockEventSource.onerror) {
         mockEventSource.onerror({} as Event);
         vi.advanceTimersByTime(1000);
-        
+
         mockEventSource.onerror({} as Event);
         vi.advanceTimersByTime(2000);
-        
+
         mockEventSource.onerror({} as Event);
         vi.advanceTimersByTime(4000);
       }
@@ -178,7 +178,7 @@ describe('HttpTransport', () => {
         onerror: null,
         close: vi.fn(),
       };
-      
+
       vi.mocked(EventSource).mockImplementation(() => mockEventSource as any);
 
       const transport = new HttpTransport({
@@ -209,11 +209,13 @@ describe('HttpTransport', () => {
         ok: true,
         status: 200,
         statusText: 'OK',
-        text: vi.fn().mockResolvedValue(JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          result: { success: true },
-        })),
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            result: { success: true },
+          })
+        ),
       };
 
       vi.mocked(fetch).mockResolvedValue(mockResponse as any);
@@ -294,7 +296,9 @@ describe('HttpTransport', () => {
         params: {},
       };
 
-      await expect(transport.send(testMessage)).rejects.toThrow('HTTP request failed with status 500');
+      await expect(transport.send(testMessage)).rejects.toThrow(
+        'HTTP request failed with status 500'
+      );
 
       await transport.close();
     });
@@ -376,7 +380,9 @@ describe('HttpTransport', () => {
         params: {},
       };
 
-      await expect(transport.send(testMessage)).rejects.toThrow('Cannot send message: transport is closed');
+      await expect(transport.send(testMessage)).rejects.toThrow(
+        'Cannot send message: transport is closed'
+      );
     });
 
     it('should handle multiple close calls gracefully', async () => {
@@ -399,7 +405,7 @@ describe('HttpTransport', () => {
 
       // Default values should be applied
       expect(transport).toBeDefined();
-      
+
       transport.close();
     });
   });

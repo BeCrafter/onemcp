@@ -12,7 +12,7 @@ import { McpRouterError } from './custom-errors.js';
  */
 export interface ErrorPropagationOptions {
   /** Original error from backend or system */
-  error: Error | JsonRpcError | unknown;
+  error: Error | JsonRpcError;
   /** Request ID */
   requestId?: string | number;
   /** Request context */
@@ -79,13 +79,8 @@ export class ErrorPropagation {
       return ErrorBuilder.buildErrorResponse(builderOptions);
     }
 
-    // Unknown error type, wrap as internal error
-    return ErrorBuilder.internalError(
-      'An unknown error occurred',
-      requestId,
-      context,
-      error instanceof Error ? error : undefined
-    );
+    // Should not reach here given the type, but handle defensively
+    return ErrorBuilder.internalError('An unknown error occurred', requestId, context);
   }
 
   /**

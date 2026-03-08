@@ -50,7 +50,7 @@ describe('StdioTransport', () => {
 
   beforeEach(() => {
     mockProcess = createMockProcess();
-    vi.mocked(spawn).mockReturnValue(mockProcess as any);
+    vi.mocked(spawn).mockReturnValue(mockProcess);
   });
 
   afterEach(async () => {
@@ -242,22 +242,22 @@ describe('StdioTransport', () => {
       const receivePromise = (async () => {
         const received: JsonRpcMessage[] = [];
         const iterator = transport.receive();
-        
+
         // Receive first message
         const result1 = await iterator.next();
         if (!result1.done) received.push(result1.value);
-        
+
         // Receive second message
         const result2 = await iterator.next();
         if (!result2.done) received.push(result2.value);
-        
+
         return received;
       })();
 
       // Simulate stdout data
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       mockProcess.stdout.emit('data', JSON.stringify(messages[0]) + '\n');
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       mockProcess.stdout.emit('data', JSON.stringify(messages[1]) + '\n');
 
       const received = await receivePromise;
@@ -275,18 +275,18 @@ describe('StdioTransport', () => {
       const receivePromise = (async () => {
         const received: JsonRpcMessage[] = [];
         const iterator = transport.receive();
-        
+
         for (let i = 0; i < 3; i++) {
           const result = await iterator.next();
           if (!result.done) received.push(result.value);
         }
-        
+
         return received;
       })();
 
       // Simulate all messages in one chunk
-      await new Promise(resolve => setImmediate(resolve));
-      const chunk = messages.map(m => JSON.stringify(m)).join('\n') + '\n';
+      await new Promise((resolve) => setImmediate(resolve));
+      const chunk = messages.map((m) => JSON.stringify(m)).join('\n') + '\n';
       mockProcess.stdout.emit('data', chunk);
 
       const received = await receivePromise;
@@ -312,9 +312,9 @@ describe('StdioTransport', () => {
       })();
 
       // Simulate partial chunks
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       mockProcess.stdout.emit('data', chunk1);
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       mockProcess.stdout.emit('data', chunk2);
 
       const received = await receivePromise;
@@ -336,9 +336,9 @@ describe('StdioTransport', () => {
       })();
 
       // Simulate invalid JSON followed by valid message
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       mockProcess.stdout.emit('data', 'invalid json\n');
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       mockProcess.stdout.emit('data', JSON.stringify(validMessage) + '\n');
 
       const received = await receivePromise;
@@ -350,22 +350,22 @@ describe('StdioTransport', () => {
       const receivePromise = (async () => {
         const received: JsonRpcMessage[] = [];
         const iterator = transport.receive();
-        
+
         // Manually iterate instead of using for-await
         while (true) {
           const result = await iterator.next();
           if (result.done) break;
           received.push(result.value);
         }
-        
+
         return received;
       })();
 
       // Emit one message then end
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       const message: JsonRpcMessage = { jsonrpc: '2.0', id: 1, result: 'result' };
       mockProcess.stdout.emit('data', JSON.stringify(message) + '\n');
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       mockProcess.stdout.emit('end');
 
       const received = await receivePromise;
@@ -383,7 +383,7 @@ describe('StdioTransport', () => {
     });
 
     it('should handle process exit with code 0', async () => {
-      const exitPromise = new Promise<void>(resolve => {
+      const exitPromise = new Promise<void>((resolve) => {
         transport.on('error', () => {
           // Should not emit error for clean exit
           throw new Error('Should not emit error for exit code 0');
@@ -396,7 +396,7 @@ describe('StdioTransport', () => {
     });
 
     it('should handle process exit with non-zero code', async () => {
-      const errorPromise = new Promise<Error>(resolve => {
+      const errorPromise = new Promise<Error>((resolve) => {
         transport.on('error', (error) => {
           resolve(error);
         });
@@ -415,7 +415,7 @@ describe('StdioTransport', () => {
         const timeout = setTimeout(() => {
           resolve(); // No error is expected
         }, 100);
-        
+
         transport.on('error', (_error) => {
           clearTimeout(timeout);
           reject(new Error('Should not emit error for SIGTERM'));
@@ -428,7 +428,7 @@ describe('StdioTransport', () => {
     });
 
     it('should handle process errors', async () => {
-      const errorPromise = new Promise<Error>(resolve => {
+      const errorPromise = new Promise<Error>((resolve) => {
         transport.on('error', (error) => {
           resolve(error);
         });
@@ -447,7 +447,7 @@ describe('StdioTransport', () => {
 
       mockProcess.stderr.emit('data', 'Error message from process\n');
 
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('Error message from process')
@@ -469,7 +469,7 @@ describe('StdioTransport', () => {
       const closePromise = transport.close();
 
       // Simulate process exit
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       mockProcess.emit('exit', 0, null);
 
       await closePromise;
@@ -492,11 +492,11 @@ describe('StdioTransport', () => {
 
     it('should be idempotent', async () => {
       const closePromise1 = transport.close();
-      
+
       // Simulate process exit
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       mockProcess.emit('exit', 0, null);
-      
+
       await closePromise1;
 
       // Second close should not throw
@@ -512,7 +512,7 @@ describe('StdioTransport', () => {
       const closePromise = transport.close();
 
       // Simulate process exit
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       mockProcess.emit('exit', 0, null);
 
       await closePromise;

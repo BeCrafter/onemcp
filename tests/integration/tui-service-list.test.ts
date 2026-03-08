@@ -1,6 +1,6 @@
 /**
  * Integration tests for TUI Service List View
- * 
+ *
  * Tests the service list display functionality including:
  * - Displaying all registered services
  * - Showing service details (name, transport, tags, enabled status)
@@ -25,7 +25,7 @@ describe('TUI Service List View Integration', () => {
   beforeEach(async () => {
     // Create temporary directory for test configuration
     tempDir = mkdtempSync(join(tmpdir(), 'onemcp-tui-test-'));
-    
+
     // Initialize storage and config provider
     storage = new FileStorageAdapter(tempDir);
     configProvider = new FileConfigProvider({
@@ -80,7 +80,7 @@ describe('TUI Service List View Integration', () => {
 
   it('should display empty service list when no services are registered', async () => {
     const services = await registry.list();
-    
+
     expect(services).toEqual([]);
   });
 
@@ -122,9 +122,9 @@ describe('TUI Service List View Integration', () => {
 
     // Verify all services are returned
     expect(services).toHaveLength(2);
-    
+
     // Verify service 1 details
-    const retrievedService1 = services.find(s => s.name === 'test-service-1');
+    const retrievedService1 = services.find((s) => s.name === 'test-service-1');
     expect(retrievedService1).toBeDefined();
     expect(retrievedService1?.transport).toBe('stdio');
     expect(retrievedService1?.command).toBe('node');
@@ -133,7 +133,7 @@ describe('TUI Service List View Integration', () => {
     expect(retrievedService1?.enabled).toBe(true);
 
     // Verify service 2 details
-    const retrievedService2 = services.find(s => s.name === 'test-service-2');
+    const retrievedService2 = services.find((s) => s.name === 'test-service-2');
     expect(retrievedService2).toBeDefined();
     expect(retrievedService2?.transport).toBe('http');
     expect(retrievedService2?.url).toBe('http://localhost:3000');
@@ -189,9 +189,9 @@ describe('TUI Service List View Integration', () => {
 
     // Verify all transport types are present
     expect(services).toHaveLength(3);
-    expect(services.find(s => s.transport === 'stdio')).toBeDefined();
-    expect(services.find(s => s.transport === 'sse')).toBeDefined();
-    expect(services.find(s => s.transport === 'http')).toBeDefined();
+    expect(services.find((s) => s.transport === 'stdio')).toBeDefined();
+    expect(services.find((s) => s.transport === 'sse')).toBeDefined();
+    expect(services.find((s) => s.transport === 'http')).toBeDefined();
   });
 
   it('should display services with enabled and disabled status', async () => {
@@ -228,8 +228,8 @@ describe('TUI Service List View Integration', () => {
 
     // Verify status
     expect(services).toHaveLength(2);
-    expect(services.find(s => s.name === 'enabled-service')?.enabled).toBe(true);
-    expect(services.find(s => s.name === 'disabled-service')?.enabled).toBe(false);
+    expect(services.find((s) => s.name === 'enabled-service')?.enabled).toBe(true);
+    expect(services.find((s) => s.name === 'disabled-service')?.enabled).toBe(false);
   });
 
   it('should display services with tags', async () => {
@@ -306,33 +306,33 @@ describe('TUI Service List View Integration', () => {
 
     // Verify we can navigate through all services
     expect(services).toHaveLength(5);
-    
+
     // Simulate navigation
     let selectedIndex = 0;
-    
+
     // Navigate down
     selectedIndex = Math.min(services.length - 1, selectedIndex + 1);
     expect(selectedIndex).toBe(1);
-    
+
     selectedIndex = Math.min(services.length - 1, selectedIndex + 1);
     expect(selectedIndex).toBe(2);
-    
+
     // Navigate up
     selectedIndex = Math.max(0, selectedIndex - 1);
     expect(selectedIndex).toBe(1);
-    
+
     // Navigate to end
     selectedIndex = services.length - 1;
     expect(selectedIndex).toBe(4);
-    
+
     // Try to navigate past end (should stay at end)
     selectedIndex = Math.min(services.length - 1, selectedIndex + 1);
     expect(selectedIndex).toBe(4);
-    
+
     // Navigate to beginning
     selectedIndex = 0;
     expect(selectedIndex).toBe(0);
-    
+
     // Try to navigate before beginning (should stay at beginning)
     selectedIndex = Math.max(0, selectedIndex - 1);
     expect(selectedIndex).toBe(0);

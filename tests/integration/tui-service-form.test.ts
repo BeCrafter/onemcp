@@ -441,8 +441,8 @@ describe('TUI Service Form Integration', () => {
 
       const services = await registry.list();
       expect(services).toHaveLength(2);
-      expect(services.map(s => s.name)).toContain('service-1');
-      expect(services.map(s => s.name)).toContain('service-2');
+      expect(services.map((s) => s.name)).toContain('service-1');
+      expect(services.map((s) => s.name)).toContain('service-2');
     });
 
     it('should update service count after operations', async () => {

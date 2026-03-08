@@ -1,6 +1,6 @@
 /**
  * Server Mode Runner
- * 
+ *
  * Implements Server mode functionality where the router acts as an HTTP server
  * and handles multiple concurrent client connections using Streamable HTTP protocol.
  */
@@ -24,7 +24,7 @@ import type { RequestContext } from './types/context.js';
 
 /**
  * Server Mode Runner class
- * 
+ *
  * Manages the lifecycle of the router in Server mode:
  * - Initializes all components from configuration
  * - Sets up Fastify HTTP server
@@ -63,11 +63,13 @@ export class ServerModeRunner {
     this.namespaceManager = new NamespaceManager();
     this.healthMonitor = new HealthMonitor(this.serviceRegistry);
     this.sessionManager = new SessionManager();
-    this.metricsService = new MetricsService(config.metrics || {
-      enabled: true,
-      collectionInterval: 60000,
-      retentionPeriod: 86400000,
-    });
+    this.metricsService = new MetricsService(
+      config.metrics || {
+        enabled: true,
+        collectionInterval: 60000,
+        retentionPeriod: 86400000,
+      }
+    );
     this.toolRouter = new ToolRouter(
       this.serviceRegistry,
       this.namespaceManager,
@@ -115,10 +117,7 @@ export class ServerModeRunner {
   /**
    * Handle MCP JSON-RPC requests
    */
-  private async handleMcpRequest(
-    request: FastifyRequest,
-    reply: FastifyReply
-  ): Promise<void> {
+  private async handleMcpRequest(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     if (!this.protocolHandler) {
       reply.code(503).send({
         jsonrpc: '2.0',
@@ -135,22 +134,25 @@ export class ServerModeRunner {
       // Get or create session
       const sessionId = this.getSessionId(request);
       let session = this.sessionManager.getSession(sessionId);
-      
+
       if (!session) {
         // Create new session for this client
         const agentId = this.getAgentId(request);
-        
+
         // Parse tag filter from HTTP header (X-MCP-Tags: "tag1,tag2,tag3")
         let tagFilter: TagFilter | undefined;
         const tagsHeader = request.headers['x-mcp-tags'];
         if (tagsHeader && typeof tagsHeader === 'string') {
-          const tags = tagsHeader.split(',').map(t => t.trim()).filter(t => t.length > 0);
+          const tags = tagsHeader
+            .split(',')
+            .map((t) => t.trim())
+            .filter((t) => t.length > 0);
           if (tags.length > 0) {
             tagFilter = { tags, logic: 'OR' };
             console.error(`Tag filter from header: ${tags.join(', ')} (OR logic)`);
           }
         }
-        
+
         const sessionContext: { tagFilter?: TagFilter } = {};
         if (tagFilter) {
           sessionContext.tagFilter = tagFilter;
@@ -161,7 +163,7 @@ export class ServerModeRunner {
       // Parse request body
       const body = request.body as string | object;
       const messageText = typeof body === 'string' ? body : JSON.stringify(body);
-      
+
       let message;
       try {
         message = this.parser.parse(messageText);
@@ -216,7 +218,8 @@ export class ServerModeRunner {
               code: -32603,
               message: 'Internal error',
               data: {
-                details: handlerError instanceof Error ? handlerError.message : String(handlerError),
+                details:
+                  handlerError instanceof Error ? handlerError.message : String(handlerError),
                 correlationId: context.correlationId,
               },
             },
@@ -256,18 +259,15 @@ export class ServerModeRunner {
   /**
    * Handle health check requests
    */
-  private async handleHealthCheck(
-    _request: FastifyRequest,
-    reply: FastifyReply
-  ): Promise<void> {
+  private async handleHealthCheck(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
     try {
       const healthStatuses = await this.healthMonitor.getAllHealthStatus();
-      const allHealthy = healthStatuses.every(status => status.healthy);
+      const allHealthy = healthStatuses.every((status) => status.healthy);
 
       const response = {
         status: allHealthy ? 'healthy' : 'degraded',
         timestamp: new Date().toISOString(),
-        services: healthStatuses.map(status => ({
+        services: healthStatuses.map((status) => ({
           name: status.serviceName,
           healthy: status.healthy,
           lastCheck: status.lastCheck.toISOString(),
@@ -290,10 +290,7 @@ export class ServerModeRunner {
   /**
    * Handle diagnostics requests
    */
-  private async handleDiagnostics(
-    _request: FastifyRequest,
-    reply: FastifyReply
-  ): Promise<void> {
+  private async handleDiagnostics(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
     try {
       const services = await this.serviceRegistry.list();
       const sessions = this.sessionManager.listActiveSessions();
@@ -305,8 +302,8 @@ export class ServerModeRunner {
         port: this.config.port || 3000,
         services: {
           total: services.length,
-          enabled: services.filter(s => s.enabled).length,
-          list: services.map(s => ({
+          enabled: services.filter((s) => s.enabled).length,
+          list: services.map((s) => ({
             name: s.name,
             enabled: s.enabled,
             transport: s.transport,
@@ -315,7 +312,7 @@ export class ServerModeRunner {
         },
         sessions: {
           active: sessions.length,
-          list: sessions.map(s => ({
+          list: sessions.map((s) => ({
             id: s.id,
             agentId: s.agentId,
             createdAt: s.createdAt.toISOString(),
@@ -323,7 +320,7 @@ export class ServerModeRunner {
             activeRequests: s.activeRequests,
           })),
         },
-        health: healthStatuses.map(status => ({
+        health: healthStatuses.map((status) => ({
           serviceName: status.serviceName,
           healthy: status.healthy,
           lastCheck: status.lastCheck.toISOString(),
@@ -348,10 +345,7 @@ export class ServerModeRunner {
   /**
    * Handle metrics requests
    */
-  private async handleMetrics(
-    _request: FastifyRequest,
-    reply: FastifyReply
-  ): Promise<void> {
+  private async handleMetrics(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
     try {
       const metrics = this.metricsService.getSystemMetrics();
 
@@ -392,7 +386,7 @@ export class ServerModeRunner {
 
   /**
    * Start the Server mode runner
-   * 
+   *
    * Initializes the system, starts health monitoring, and starts the HTTP server.
    */
   async start(): Promise<void> {
@@ -423,7 +417,9 @@ export class ServerModeRunner {
       this.unwatchConfig = this.configProvider.watch((newConfig) => {
         console.error('Configuration change detected, reloading...');
         this.reloadConfig(newConfig).catch((error) => {
-          console.error(`Failed to reload configuration: ${error instanceof Error ? error.message : String(error)}`);
+          console.error(
+            `Failed to reload configuration: ${error instanceof Error ? error.message : String(error)}`
+          );
         });
       });
       console.error('Config file watcher started');
@@ -431,16 +427,18 @@ export class ServerModeRunner {
       // Start HTTP server
       const port = this.config.port || 3000;
       const host = '0.0.0.0';
-      
+
       await this.fastify.listen({ port, host });
-      
+
       this.running = true;
       console.error(`MCP Router is ready and listening on http://${host}:${port}`);
       console.error(`Health check: http://${host}:${port}/health`);
       console.error(`Diagnostics: http://${host}:${port}/diagnostics`);
       console.error(`Metrics: http://${host}:${port}/metrics`);
     } catch (error) {
-      console.error(`Failed to start Server mode: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `Failed to start Server mode: ${error instanceof Error ? error.message : String(error)}`
+      );
       throw error;
     }
   }
@@ -450,7 +448,7 @@ export class ServerModeRunner {
    */
   private async initializeConnectionPools(): Promise<void> {
     const services = await this.serviceRegistry.list();
-    const enabledServices = services.filter(s => s.enabled);
+    const enabledServices = services.filter((s) => s.enabled);
 
     for (const service of enabledServices) {
       try {
@@ -480,8 +478,8 @@ export class ServerModeRunner {
     const oldServices = oldConfig.services;
     const newServices = newConfig.services;
 
-    const oldServiceNames = new Set(oldServices.map(s => s.name));
-    const newServiceNames = new Set(newServices.map(s => s.name));
+    const oldServiceNames = new Set(oldServices.map((s) => s.name));
+    const newServiceNames = new Set(newServices.map((s) => s.name));
 
     for (const serviceName of oldServiceNames) {
       if (!newServiceNames.has(serviceName)) {
@@ -496,7 +494,7 @@ export class ServerModeRunner {
     }
 
     for (const newService of newServices) {
-      const oldService = oldServices.find(s => s.name === newService.name);
+      const oldService = oldServices.find((s) => s.name === newService.name);
       if (!oldService) {
         if (newService.enabled) {
           try {
@@ -513,8 +511,10 @@ export class ServerModeRunner {
             );
           }
         }
-      } else if (oldService.enabled !== newService.enabled || 
-                 JSON.stringify(oldService.connectionPool) !== JSON.stringify(newService.connectionPool)) {
+      } else if (
+        oldService.enabled !== newService.enabled ||
+        JSON.stringify(oldService.connectionPool) !== JSON.stringify(newService.connectionPool)
+      ) {
         const existingPool = this.connectionPools.get(newService.name);
         if (existingPool) {
           await existingPool.closeAll();
@@ -547,7 +547,7 @@ export class ServerModeRunner {
 
   /**
    * Stop the Server mode runner
-   * 
+   *
    * Performs graceful shutdown:
    * - Stops accepting new requests
    * - Waits for active requests to complete
@@ -602,7 +602,9 @@ export class ServerModeRunner {
 
       console.error('MCP Router shutdown complete');
     } catch (error) {
-      console.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `Error during shutdown: ${error instanceof Error ? error.message : String(error)}`
+      );
       throw error;
     }
   }

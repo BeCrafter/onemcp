@@ -1,6 +1,6 @@
 /**
  * Unit tests for JSON-RPC Error Response Formatting
- * 
+ *
  * Tests error response formatting according to requirements:
  * - 7.3: Error responses must be JSON-RPC 2.0 compliant
  * - 9.1: Error responses must contain code, message, and context details
@@ -41,7 +41,7 @@ describe('Error Response Formatting', () => {
 
       expect(parser.isErrorResponse(parsed)).toBe(true);
       expect(parsed).toEqual(errorResponse);
-      
+
       const errorResp = parsed as JsonRpcErrorResponse;
       expect(errorResp.error.code).toBe(ErrorCode.PARSE_ERROR);
       expect(errorResp.error.message).toBe('Parse error');
@@ -421,7 +421,7 @@ describe('Error Response Formatting', () => {
 
       expect(parser.isErrorResponse(parsed)).toBe(true);
       const errorResp = parsed as JsonRpcErrorResponse;
-      
+
       // Verify all context fields are preserved
       expect(errorResp.error.data?.correlationId).toBe('corr-full');
       expect(errorResp.error.data?.requestId).toBe('req-full');
@@ -571,11 +571,11 @@ describe('Error Response Formatting', () => {
       };
 
       const pretty = serializer.prettyPrint(errorResponse);
-      
+
       // Should be formatted with newlines and indentation
       expect(pretty).toContain('\n');
       expect(pretty).toContain('  ');
-      
+
       // Should be parseable back to the same object
       const parsed = parser.parse(pretty);
       expect(parsed).toEqual(errorResponse);
@@ -592,11 +592,11 @@ describe('Error Response Formatting', () => {
       };
 
       const pretty = serializer.prettyPrint(errorResponse, 4);
-      
+
       // Should use 4-space indentation
       expect(pretty).toContain('\n');
       expect(pretty).toContain('    ');
-      
+
       // Should be parseable
       const parsed = parser.parse(pretty);
       expect(parsed).toEqual(errorResponse);

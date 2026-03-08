@@ -1,6 +1,6 @@
 /**
  * Unit tests for metrics configuration defaults
- * 
+ *
  * Requirements:
  * - 34.5: Support configurable collection interval and retention period
  */
@@ -34,7 +34,7 @@ describe('Metrics Configuration', () => {
       const config = createMetricsConfig({
         enabled: false,
       });
-      
+
       expect(config.enabled).toBe(false);
       expect(config.collectionInterval).toBe(DEFAULT_METRICS_CONFIG.collectionInterval);
       expect(config.retentionPeriod).toBe(DEFAULT_METRICS_CONFIG.retentionPeriod);
@@ -46,7 +46,7 @@ describe('Metrics Configuration', () => {
         collectionInterval: 5000,
         retentionPeriod: 10000,
       });
-      
+
       expect(config.enabled).toBe(false);
       expect(config.collectionInterval).toBe(5000);
       expect(config.retentionPeriod).toBe(10000);
@@ -60,7 +60,7 @@ describe('Metrics Configuration', () => {
         collectionInterval: 1000,
         retentionPeriod: 5000,
       });
-      
+
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
     });
@@ -71,7 +71,7 @@ describe('Metrics Configuration', () => {
         collectionInterval: -1000,
         retentionPeriod: 5000,
       });
-      
+
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('collectionInterval must be greater than 0');
     });
@@ -82,7 +82,7 @@ describe('Metrics Configuration', () => {
         collectionInterval: 0,
         retentionPeriod: 5000,
       });
-      
+
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('collectionInterval must be greater than 0');
     });
@@ -93,7 +93,7 @@ describe('Metrics Configuration', () => {
         collectionInterval: 1000,
         retentionPeriod: -5000,
       });
-      
+
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('retentionPeriod must be greater than 0');
     });
@@ -104,7 +104,7 @@ describe('Metrics Configuration', () => {
         collectionInterval: 1000,
         retentionPeriod: 0,
       });
-      
+
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('retentionPeriod must be greater than 0');
     });
@@ -115,7 +115,7 @@ describe('Metrics Configuration', () => {
         collectionInterval: 5000,
         retentionPeriod: 1000,
       });
-      
+
       expect(result.valid).toBe(false);
       expect(result.errors).toContain(
         'retentionPeriod must be greater than or equal to collectionInterval'
@@ -128,7 +128,7 @@ describe('Metrics Configuration', () => {
         collectionInterval: 5000,
         retentionPeriod: 5000,
       });
-      
+
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
     });
@@ -139,7 +139,7 @@ describe('Metrics Configuration', () => {
         collectionInterval: -1000,
         retentionPeriod: -5000,
       });
-      
+
       expect(result.valid).toBe(false);
       expect(result.errors.length).toBeGreaterThan(1);
     });

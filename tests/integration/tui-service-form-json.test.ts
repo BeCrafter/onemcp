@@ -1,6 +1,6 @@
 /**
  * Integration tests for ServiceForm with JSON mode
- * 
+ *
  * Tests mode switching, data preservation, and JSON/form integration.
  */
 
@@ -12,7 +12,7 @@ describe('ServiceForm with JSON Mode', () => {
     it('should support switching between form and JSON modes', () => {
       const formMode = 'form';
       const jsonMode = 'json';
-      
+
       expect(formMode).toBe('form');
       expect(jsonMode).toBe('json');
     });
@@ -34,10 +34,10 @@ describe('ServiceForm with JSON Mode', () => {
 
       // Convert to JSON
       const json = JSON.stringify(service, null, 2);
-      
+
       // Parse back
       const parsed = JSON.parse(json) as ServiceDefinition;
-      
+
       expect(parsed).toEqual(service);
     });
 
@@ -59,14 +59,14 @@ describe('ServiceForm with JSON Mode', () => {
         name: formData.name,
         transport: formData.transport,
         command: formData.command,
-        args: formData.args.split(',').map(a => a.trim()),
+        args: formData.args.split(',').map((a) => a.trim()),
         env: Object.fromEntries(
-          formData.env.split(',').map(e => {
+          formData.env.split(',').map((e) => {
             const [key, ...valueParts] = e.trim().split('=');
             return [key?.trim() || '', valueParts.join('=').trim()];
           })
         ),
-        tags: formData.tags.split(',').map(t => t.trim()),
+        tags: formData.tags.split(',').map((t) => t.trim()),
         enabled: formData.enabled,
         connectionPool: {
           maxConnections: parseInt(formData.maxConnections, 10),
@@ -77,7 +77,7 @@ describe('ServiceForm with JSON Mode', () => {
 
       const json = JSON.stringify(service, null, 2);
       const parsed = JSON.parse(json) as ServiceDefinition;
-      
+
       expect(parsed.name).toBe('filesystem');
       expect(parsed.command).toBe('npx');
       expect(parsed.args).toEqual(['-y', '@modelcontextprotocol/server-filesystem', '/tmp']);
@@ -104,13 +104,17 @@ describe('ServiceForm with JSON Mode', () => {
       });
 
       const service = JSON.parse(json) as ServiceDefinition;
-      
+
       const formData = {
         name: service.name,
         transport: service.transport,
         command: service.command || '',
         args: service.args?.join(', ') || '',
-        env: service.env ? Object.entries(service.env).map(([k, v]) => `${k}=${v}`).join(', ') : '',
+        env: service.env
+          ? Object.entries(service.env)
+              .map(([k, v]) => `${k}=${v}`)
+              .join(', ')
+          : '',
         tags: service.tags.join(', '),
         enabled: service.enabled,
         maxConnections: service.connectionPool.maxConnections.toString(),
@@ -143,7 +147,7 @@ describe('ServiceForm with JSON Mode', () => {
       });
 
       const service = JSON.parse(json) as ServiceDefinition;
-      
+
       expect(service.name).toBe('test');
       expect(service.transport).toBe('stdio');
     });
@@ -177,7 +181,7 @@ describe('ServiceForm with JSON Mode', () => {
       ]);
 
       const services = JSON.parse(json) as ServiceDefinition[];
-      
+
       expect(services).toHaveLength(2);
       expect(services[0]?.name).toBe('service1');
       expect(services[1]?.name).toBe('service2');
@@ -198,19 +202,21 @@ describe('ServiceForm with JSON Mode', () => {
       });
 
       const mcpServers = JSON.parse(json);
-      const services: ServiceDefinition[] = Object.entries(mcpServers).map(([name, config]: [string, any]) => ({
-        name,
-        transport: config.transport,
-        command: config.command,
-        args: config.args,
-        enabled: true,
-        tags: [],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      }));
+      const services: ServiceDefinition[] = Object.entries(mcpServers).map(
+        ([name, config]: [string, any]) => ({
+          name,
+          transport: config.transport,
+          command: config.command,
+          args: config.args,
+          enabled: true,
+          tags: [],
+          connectionPool: {
+            maxConnections: 5,
+            idleTimeout: 60000,
+            connectionTimeout: 30000,
+          },
+        })
+      );
 
       expect(services).toHaveLength(2);
       expect(services[0]?.name).toBe('filesystem');
@@ -266,12 +272,7 @@ describe('ServiceForm with JSON Mode', () => {
         'https://api.example.com',
         'http://192.168.1.1:8080',
       ];
-      const invalidUrls = [
-        'localhost:3000',
-        'ftp://example.com',
-        'not-a-url',
-        '',
-      ];
+      const invalidUrls = ['localhost:3000', 'ftp://example.com', 'not-a-url', ''];
 
       for (const url of validUrls) {
         expect(/^https?:\/\/.+/.test(url)).toBe(true);

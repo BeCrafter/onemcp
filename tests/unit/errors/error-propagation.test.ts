@@ -135,9 +135,7 @@ describe('ErrorPropagation', () => {
     });
 
     it('should return INTERNAL_ERROR for unknown error types', () => {
-      expect(ErrorPropagation.extractErrorCode(new Error('test'))).toBe(
-        ErrorCode.INTERNAL_ERROR
-      );
+      expect(ErrorPropagation.extractErrorCode(new Error('test'))).toBe(ErrorCode.INTERNAL_ERROR);
     });
   });
 });

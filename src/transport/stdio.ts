@@ -86,11 +86,7 @@ export class StdioTransport extends BaseTransport {
       // Handle process errors
       this.process.on('error', (error) => {
         this.handleError(
-          new TransportError(
-            `Process error: ${error.message}`,
-            'PROCESS_ERROR',
-            error
-          )
+          new TransportError(`Process error: ${error.message}`, 'PROCESS_ERROR', error)
         );
       });
 
@@ -117,7 +113,7 @@ export class StdioTransport extends BaseTransport {
     // Parse complete JSON messages from buffer
     // Messages are separated by newlines
     const lines = this.messageBuffer.split('\n');
-    
+
     // Keep the last incomplete line in the buffer
     this.messageBuffer = lines.pop() || '';
 
@@ -166,23 +162,15 @@ export class StdioTransport extends BaseTransport {
    */
   private handleProcessExit(code: number | null, signal: NodeJS.Signals | null): void {
     const exitInfo = signal ? `signal ${signal}` : `code ${code}`;
-    
+
     // Only treat non-zero exit codes as errors
     // Signals like SIGTERM are normal termination
     if (code !== null && code !== 0) {
-      this.handleError(
-        new TransportError(
-          `Process exited with ${exitInfo}`,
-          'PROCESS_EXITED',
-        )
-      );
+      this.handleError(new TransportError(`Process exited with ${exitInfo}`, 'PROCESS_EXITED'));
     }
 
     // Reject all waiting receivers
-    const error = new TransportError(
-      `Process exited with ${exitInfo}`,
-      'PROCESS_EXITED'
-    );
+    const error = new TransportError(`Process exited with ${exitInfo}`, 'PROCESS_EXITED');
     while (this.rejectQueue.length > 0) {
       const reject = this.rejectQueue.shift()!;
       reject(error);
@@ -194,23 +182,17 @@ export class StdioTransport extends BaseTransport {
    */
   protected async doSend(message: JsonRpcMessage): Promise<void> {
     if (!this.process || !this.process.stdin) {
-      throw new TransportError(
-        'Process stdin is not available',
-        'STDIN_UNAVAILABLE'
-      );
+      throw new TransportError('Process stdin is not available', 'STDIN_UNAVAILABLE');
     }
 
     if (this.process.stdin.destroyed) {
-      throw new TransportError(
-        'Process stdin is destroyed',
-        'STDIN_DESTROYED'
-      );
+      throw new TransportError('Process stdin is destroyed', 'STDIN_DESTROYED');
     }
 
     try {
       // Serialize message and write to stdin with newline
       const serialized = JSON.stringify(message) + '\n';
-      
+
       return new Promise<void>((resolve, reject) => {
         this.process!.stdin!.write(serialized, (error) => {
           if (error) {
@@ -280,12 +262,7 @@ export class StdioTransport extends BaseTransport {
         if (this.process && !this.process.killed) {
           this.process.kill('SIGKILL');
         }
-        reject(
-          new TransportError(
-            'Process termination timeout',
-            'CLOSE_TIMEOUT'
-          )
-        );
+        reject(new TransportError('Process termination timeout', 'CLOSE_TIMEOUT'));
       }, 5000); // 5 second timeout
 
       this.process!.once('exit', () => {

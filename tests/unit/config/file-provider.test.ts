@@ -229,7 +229,7 @@ describe('FileConfigProvider', () => {
       expect(result.valid).toBe(false);
       expect(result.errors.length).toBeGreaterThan(0);
       // AJV reports missing required fields at the root level, not with the field name
-      expect(result.errors.some(e => e.message.includes('mode') || e.field === '')).toBe(true);
+      expect(result.errors.some((e) => e.message.includes('mode') || e.field === '')).toBe(true);
     });
 
     it('should reject invalid mode value', () => {
@@ -241,7 +241,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.field.includes('mode'))).toBe(true);
+      expect(result.errors.some((e) => e.field.includes('mode'))).toBe(true);
     });
 
     it('should reject invalid log level', () => {
@@ -253,7 +253,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.field.includes('logLevel'))).toBe(true);
+      expect(result.errors.some((e) => e.field.includes('logLevel'))).toBe(true);
     });
 
     it('should reject invalid port number', () => {
@@ -265,7 +265,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.field.includes('port'))).toBe(true);
+      expect(result.errors.some((e) => e.field.includes('port'))).toBe(true);
     });
 
     it('should require port for server mode', () => {
@@ -277,7 +277,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.field === 'port')).toBe(true);
+      expect(result.errors.some((e) => e.field === 'port')).toBe(true);
     });
 
     it('should accept valid port for server mode', () => {
@@ -315,7 +315,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.field.includes('command'))).toBe(true);
+      expect(result.errors.some((e) => e.field.includes('command'))).toBe(true);
     });
 
     it('should reject HTTP service without URL', () => {
@@ -342,7 +342,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.field.includes('url'))).toBe(true);
+      expect(result.errors.some((e) => e.field.includes('url'))).toBe(true);
     });
 
     it('should reject SSE service without URL', () => {
@@ -369,7 +369,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.field.includes('url'))).toBe(true);
+      expect(result.errors.some((e) => e.field.includes('url'))).toBe(true);
     });
 
     it('should reject invalid URL format', () => {
@@ -397,7 +397,9 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.field.includes('url') && e.message.includes('Invalid URL'))).toBe(true);
+      expect(
+        result.errors.some((e) => e.field.includes('url') && e.message.includes('Invalid URL'))
+      ).toBe(true);
     });
 
     it('should accept valid HTTP URL', () => {
@@ -451,7 +453,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.field.includes('transport'))).toBe(true);
+      expect(result.errors.some((e) => e.field.includes('transport'))).toBe(true);
     });
 
     it('should reject invalid connection pool values', () => {
@@ -488,7 +490,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.field.includes('interval'))).toBe(true);
+      expect(result.errors.some((e) => e.field.includes('interval'))).toBe(true);
     });
 
     it('should reject invalid audit level', () => {
@@ -506,7 +508,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.field.includes('level'))).toBe(true);
+      expect(result.errors.some((e) => e.field.includes('level'))).toBe(true);
     });
 
     it('should return all validation errors, not just first', () => {
@@ -545,8 +547,8 @@ describe('FileConfigProvider', () => {
               connectionTimeout: 30000,
             },
             toolStates: {
-              'read_file': true,
-              'write_file': false,
+              read_file: true,
+              write_file: false,
               '*_directory': true,
             },
           },
@@ -568,7 +570,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(typeof unwatch).toBe('function');
-      
+
       // Cleanup
       unwatch();
     });
@@ -584,10 +586,10 @@ describe('FileConfigProvider', () => {
     it('should invoke callback when configuration changes', async () => {
       // Arrange
       await storage.write('/test/config/config.json', JSON.stringify(validConfig));
-      
+
       let callbackInvoked = false;
       let receivedConfig: SystemConfig | null = null;
-      
+
       const unwatch = provider.watch((config) => {
         callbackInvoked = true;
         receivedConfig = config;
@@ -596,16 +598,16 @@ describe('FileConfigProvider', () => {
       // Act - Simulate file change by updating storage
       const updatedConfig = { ...validConfig, logLevel: 'DEBUG' as const };
       await storage.write('/test/config/config.json', JSON.stringify(updatedConfig));
-      
+
       // Trigger the watcher manually since we're using memory storage
       // In real scenario, fs.watch would trigger this
-      await new Promise(resolve => setTimeout(resolve, 400)); // Wait for debounce
+      await new Promise((resolve) => setTimeout(resolve, 400)); // Wait for debounce
 
       // Assert
       // Note: This test may not work perfectly with MemoryStorageAdapter
       // since it doesn't trigger fs.watch events. This is a limitation of unit testing.
       // The watch functionality will be properly tested in integration tests with real files.
-      
+
       // Cleanup
       unwatch();
     });
@@ -613,7 +615,7 @@ describe('FileConfigProvider', () => {
     it('should debounce multiple rapid changes', async () => {
       // Arrange
       await storage.write('/test/config/config.json', JSON.stringify(validConfig));
-      
+
       let callbackCount = 0;
       const unwatch = provider.watch(() => {
         callbackCount++;
@@ -624,14 +626,14 @@ describe('FileConfigProvider', () => {
         const updatedConfig = { ...validConfig, logLevel: 'DEBUG' as const };
         await storage.write('/test/config/config.json', JSON.stringify(updatedConfig));
       }
-      
+
       // Wait for debounce period
-      await new Promise(resolve => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 400));
 
       // Assert
       // With debouncing, callback should be invoked fewer times than changes
       // Note: This test has limitations with MemoryStorageAdapter
-      
+
       // Cleanup
       unwatch();
     });
@@ -639,7 +641,7 @@ describe('FileConfigProvider', () => {
     it('should maintain previous config on validation failure', async () => {
       // Arrange
       await storage.write('/test/config/config.json', JSON.stringify(validConfig));
-      
+
       let lastValidConfig: SystemConfig | null = null;
       const unwatch = provider.watch((config) => {
         lastValidConfig = config;
@@ -648,14 +650,14 @@ describe('FileConfigProvider', () => {
       // Act - Write invalid configuration
       const invalidConfig = { ...validConfig, mode: 'invalid' };
       await storage.write('/test/config/config.json', JSON.stringify(invalidConfig));
-      
+
       // Wait for debounce
-      await new Promise(resolve => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 400));
 
       // Assert
       // Callback should not be invoked with invalid config
       // lastValidConfig should remain null (or previous valid config if there was one)
-      
+
       // Cleanup
       unwatch();
     });
@@ -663,18 +665,18 @@ describe('FileConfigProvider', () => {
     it('should handle file deletion gracefully', async () => {
       // Arrange
       await storage.write('/test/config/config.json', JSON.stringify(validConfig));
-      
+
       const unwatch = provider.watch(() => {});
 
       // Act - Delete the config file
       await storage.delete('/test/config/config.json');
-      
+
       // Wait for debounce
-      await new Promise(resolve => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 400));
 
       // Assert - Should not throw
       // The watcher should log a warning but continue running
-      
+
       // Cleanup
       unwatch();
     });
@@ -682,7 +684,7 @@ describe('FileConfigProvider', () => {
     it('should catch and log callback errors without crashing', async () => {
       // Arrange
       await storage.write('/test/config/config.json', JSON.stringify(validConfig));
-      
+
       const unwatch = provider.watch(() => {
         throw new Error('Callback error');
       });
@@ -690,12 +692,12 @@ describe('FileConfigProvider', () => {
       // Act - Trigger a change
       const updatedConfig = { ...validConfig, logLevel: 'DEBUG' as const };
       await storage.write('/test/config/config.json', JSON.stringify(updatedConfig));
-      
+
       // Wait for debounce
-      await new Promise(resolve => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 400));
 
       // Assert - Should not throw, watcher should continue running
-      
+
       // Cleanup
       unwatch();
     });
@@ -703,7 +705,7 @@ describe('FileConfigProvider', () => {
     it('should stop watching after unwatch is called', async () => {
       // Arrange
       await storage.write('/test/config/config.json', JSON.stringify(validConfig));
-      
+
       let callbackCount = 0;
       const unwatch = provider.watch(() => {
         callbackCount++;
@@ -711,13 +713,13 @@ describe('FileConfigProvider', () => {
 
       // Act - Unwatch immediately
       unwatch();
-      
+
       // Make changes after unwatching
       const updatedConfig = { ...validConfig, logLevel: 'DEBUG' as const };
       await storage.write('/test/config/config.json', JSON.stringify(updatedConfig));
-      
+
       // Wait for debounce
-      await new Promise(resolve => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 400));
 
       // Assert - Callback should not be invoked after unwatch
       expect(callbackCount).toBe(0);
@@ -748,7 +750,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(dir).toBe('/custom/config');
-      
+
       // Cleanup
       delete process.env['ONEMCP_CONFIG_DIR'];
     });
@@ -765,7 +767,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       expect(dir).toBe('/env/config');
-      
+
       // Cleanup
       delete process.env['ONEMCP_CONFIG_DIR'];
     });
@@ -844,8 +846,8 @@ describe('FileConfigProvider', () => {
               connectionTimeout: 60000,
             },
             toolStates: {
-              'tool1': true,
-              'tool2': false,
+              tool1: true,
+              tool2: false,
             },
           },
         ],
@@ -877,7 +879,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const configData = await storage.read('/test/config/config.json');
       expect(configData).toBeDefined();
-      
+
       if (configData) {
         const config = JSON.parse(configData);
         expect(config.mode).toBe('cli');
@@ -900,7 +902,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const readmeData = await storage.read('/test/config/README.md');
       expect(readmeData).toBeDefined();
-      
+
       if (readmeData) {
         expect(readmeData).toContain('OneMCP Configuration Directory');
         expect(readmeData).toContain('config.json');
@@ -924,7 +926,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const configData = await storage.read('/test/config/config.json');
       expect(configData).toBeDefined();
-      
+
       if (configData) {
         const config = JSON.parse(configData);
         expect(config.logLevel).toBe('DEBUG'); // Should preserve existing value
@@ -953,7 +955,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const configData = await storage.read('/test/config/config.json');
       expect(configData).toBeDefined();
-      
+
       const readmeData = await storage.read('/test/config/README.md');
       expect(readmeData).toBeDefined();
     });
@@ -965,10 +967,10 @@ describe('FileConfigProvider', () => {
       // Assert
       const configData = await storage.read('/test/config/config.json');
       expect(configData).toBeDefined();
-      
+
       if (configData) {
         const config = JSON.parse(configData);
-        
+
         // Validate the created config
         const validationResult = provider.validate(config);
         expect(validationResult.valid).toBe(true);
@@ -983,7 +985,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const configData = await storage.read('/test/config/config.json');
       expect(configData).toBeDefined();
-      
+
       if (configData) {
         const config = JSON.parse(configData);
         expect(config.connectionPool.maxConnections).toBe(5);
@@ -999,7 +1001,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const configData = await storage.read('/test/config/config.json');
       expect(configData).toBeDefined();
-      
+
       if (configData) {
         const config = JSON.parse(configData);
         expect(config.healthCheck.enabled).toBe(true);
@@ -1016,7 +1018,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const configData = await storage.read('/test/config/config.json');
       expect(configData).toBeDefined();
-      
+
       if (configData) {
         const config = JSON.parse(configData);
         expect(config.audit.enabled).toBe(true);
@@ -1035,7 +1037,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const configData = await storage.read('/test/config/config.json');
       expect(configData).toBeDefined();
-      
+
       if (configData) {
         const config = JSON.parse(configData);
         expect(config.security.dataMasking.enabled).toBe(true);
@@ -1053,7 +1055,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const configData = await storage.read('/test/config/config.json');
       expect(configData).toBeDefined();
-      
+
       if (configData) {
         const config = JSON.parse(configData);
         expect(config.logging).toBeDefined();
@@ -1070,7 +1072,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const configData = await storage.read('/test/config/config.json');
       expect(configData).toBeDefined();
-      
+
       if (configData) {
         const config = JSON.parse(configData);
         expect(config.configDir).toBe('/test/config');
@@ -1084,7 +1086,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const readmeData = await storage.read('/test/config/README.md');
       expect(readmeData).toBeDefined();
-      
+
       if (readmeData) {
         expect(readmeData).toContain('Stdio Transport');
         expect(readmeData).toContain('HTTP/SSE Transport');
@@ -1102,7 +1104,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const readmeData = await storage.read('/test/config/README.md');
       expect(readmeData).toBeDefined();
-      
+
       if (readmeData) {
         expect(readmeData).toContain('Tool State Management');
         expect(readmeData).toContain('toolStates');
@@ -1117,7 +1119,7 @@ describe('FileConfigProvider', () => {
       // Assert
       const readmeData = await storage.read('/test/config/README.md');
       expect(readmeData).toBeDefined();
-      
+
       if (readmeData) {
         expect(readmeData).toContain('Hot Reload');
         expect(readmeData).toContain('automatically reloads');

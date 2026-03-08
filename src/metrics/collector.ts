@@ -1,6 +1,6 @@
 /**
  * MetricsCollector - Collects and aggregates system metrics
- * 
+ *
  * Requirements:
  * - 34.1: Track tool call counts and execution times
  * - 34.2: Track connection pool statistics
@@ -186,10 +186,7 @@ export class MetricsCollector {
     const failedRequests = totalRequests - successfulRequests;
 
     // Calculate average response time
-    const totalResponseTime = this.toolCallRecords.reduce(
-      (sum, r) => sum + r.executionTime,
-      0
-    );
+    const totalResponseTime = this.toolCallRecords.reduce((sum, r) => sum + r.executionTime, 0);
     const avgResponseTime = totalRequests > 0 ? totalResponseTime / totalRequests : 0;
 
     // Aggregate service metrics
@@ -255,16 +252,15 @@ export class MetricsCollector {
       totalRequests: activity.requests,
       successfulRequests: activity.successfulRequests,
       failedRequests: activity.failedRequests,
-      avgResponseTime:
-        activity.requests > 0 ? activity.totalResponseTime / activity.requests : 0,
+      avgResponseTime: activity.requests > 0 ? activity.totalResponseTime / activity.requests : 0,
       createdAt: activity.createdAt,
       lastActivity: activity.lastActivity,
     };
-    
+
     if (activity.agentId !== undefined) {
       metrics.agentId = activity.agentId;
     }
-    
+
     return metrics;
   }
 
@@ -276,9 +272,7 @@ export class MetricsCollector {
     let filteredRecords = this.toolCallRecords;
 
     if (options.serviceName) {
-      filteredRecords = filteredRecords.filter(
-        (r) => r.serviceName === options.serviceName
-      );
+      filteredRecords = filteredRecords.filter((r) => r.serviceName === options.serviceName);
     }
 
     if (options.toolName) {
@@ -290,9 +284,7 @@ export class MetricsCollector {
     }
 
     if (options.startTime) {
-      filteredRecords = filteredRecords.filter(
-        (r) => r.timestamp >= options.startTime!
-      );
+      filteredRecords = filteredRecords.filter((r) => r.timestamp >= options.startTime!);
     }
 
     if (options.endTime) {
@@ -327,9 +319,7 @@ export class MetricsCollector {
     // Filter error records
     let filteredErrors = this.errorRecords;
     if (options.serviceName) {
-      filteredErrors = filteredErrors.filter(
-        (e) => e.serviceName === options.serviceName
-      );
+      filteredErrors = filteredErrors.filter((e) => e.serviceName === options.serviceName);
     }
     if (options.sessionId) {
       filteredErrors = filteredErrors.filter((e) => e.sessionId === options.sessionId);
@@ -369,11 +359,7 @@ export class MetricsCollector {
   /**
    * Update session activity
    */
-  private updateSessionActivity(
-    sessionId: string,
-    responseTime: number,
-    success: boolean
-  ): void {
+  private updateSessionActivity(sessionId: string, responseTime: number, success: boolean): void {
     let activity = this.sessionActivities.get(sessionId);
 
     if (!activity) {
@@ -430,9 +416,7 @@ export class MetricsCollector {
 
     // Aggregate tool call metrics
     for (const [serviceName, serviceMetrics] of serviceMap) {
-      const serviceRecords = this.toolCallRecords.filter(
-        (r) => r.serviceName === serviceName
-      );
+      const serviceRecords = this.toolCallRecords.filter((r) => r.serviceName === serviceName);
 
       // Group by tool name
       const toolMap = new Map<string, ToolCallRecord[]>();
@@ -448,7 +432,7 @@ export class MetricsCollector {
         const executionTimes = records.map((r) => r.executionTime);
         const errorCount = records.filter((r) => !r.success).length;
         const lastRecord = records[records.length - 1];
-        
+
         const toolMetrics: ToolCallMetrics = {
           toolName,
           serviceName,
@@ -456,22 +440,19 @@ export class MetricsCollector {
           totalExecutionTime: executionTimes.reduce((sum, t) => sum + t, 0),
           minExecutionTime: Math.min(...executionTimes),
           maxExecutionTime: Math.max(...executionTimes),
-          avgExecutionTime:
-            executionTimes.reduce((sum, t) => sum + t, 0) / executionTimes.length,
+          avgExecutionTime: executionTimes.reduce((sum, t) => sum + t, 0) / executionTimes.length,
           errorCount,
         };
-        
+
         if (lastRecord !== undefined) {
           toolMetrics.lastCalled = lastRecord.timestamp;
         }
-        
+
         serviceMetrics.toolCalls.push(toolMetrics);
       }
 
       // Aggregate errors for this service
-      const serviceErrors = this.errorRecords.filter(
-        (e) => e.serviceName === serviceName
-      );
+      const serviceErrors = this.errorRecords.filter((e) => e.serviceName === serviceName);
       serviceMetrics.errors = this.aggregateErrorMetricsForRecords(serviceErrors);
     }
 
@@ -490,16 +471,15 @@ export class MetricsCollector {
         totalRequests: activity.requests,
         successfulRequests: activity.successfulRequests,
         failedRequests: activity.failedRequests,
-        avgResponseTime:
-          activity.requests > 0 ? activity.totalResponseTime / activity.requests : 0,
+        avgResponseTime: activity.requests > 0 ? activity.totalResponseTime / activity.requests : 0,
         createdAt: activity.createdAt,
         lastActivity: activity.lastActivity,
       };
-      
+
       if (activity.agentId !== undefined) {
         metrics.agentId = activity.agentId;
       }
-      
+
       sessions.push(metrics);
     }
 
@@ -555,9 +535,7 @@ export class MetricsCollector {
     const cutoffTime = new Date(now.getTime() - this.config.retentionPeriod);
 
     // Remove old tool call records
-    this.toolCallRecords = this.toolCallRecords.filter(
-      (r) => r.timestamp >= cutoffTime
-    );
+    this.toolCallRecords = this.toolCallRecords.filter((r) => r.timestamp >= cutoffTime);
 
     // Remove old error records
     this.errorRecords = this.errorRecords.filter((e) => e.timestamp >= cutoffTime);

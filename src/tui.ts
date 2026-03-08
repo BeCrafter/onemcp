@@ -28,9 +28,7 @@ const USE_OPTIMIZED_UI = process.env['ONEMCP_USE_LEGACY_UI'] !== 'true';
  */
 export async function runApp(config: SystemConfig, configProvider: ConfigProvider): Promise<void> {
   const AppComponent = USE_OPTIMIZED_UI ? TuiAppOptimized : TuiApp;
-  const { waitUntilExit } = render(
-    React.createElement(AppComponent, { config, configProvider })
-  );
+  const { waitUntilExit } = render(React.createElement(AppComponent, { config, configProvider }));
   await waitUntilExit();
 }
 
@@ -130,7 +128,9 @@ function parseCliArgs(): TuiArgs {
       version: values.version,
     };
   } catch (error) {
-    console.error(`Error parsing arguments: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error parsing arguments: ${error instanceof Error ? error.message : String(error)}`
+    );
     console.error('Use --help for usage information');
     process.exit(1);
   }
@@ -143,7 +143,8 @@ function parseCliArgs(): TuiArgs {
  * 3. Default (~/.onemcp)
  */
 function resolveConfigDir(args: TuiArgs): string {
-  const configDir = args.configDir || process.env['ONEMCP_CONFIG_DIR'] || resolve(homedir(), '.onemcp');
+  const configDir =
+    args.configDir || process.env['ONEMCP_CONFIG_DIR'] || resolve(homedir(), '.onemcp');
   return resolve(configDir);
 }
 

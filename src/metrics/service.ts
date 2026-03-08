@@ -1,6 +1,6 @@
 /**
  * MetricsService - High-level API for metrics collection and querying
- * 
+ *
  * Requirements:
  * - 34.4: Provide API to query collected metrics
  * - 38.9: Support metrics aggregation by service, tool, session
@@ -96,7 +96,7 @@ export class MetricsService {
 
   /**
    * Get metrics for a specific tool
-   * 
+   *
    * @param toolName - The tool name to query
    * @param serviceName - Optional service name to filter by
    * @returns Array of tool metrics (one per service if serviceName not specified)
@@ -121,7 +121,7 @@ export class MetricsService {
 
   /**
    * Query metrics with filters
-   * 
+   *
    * Supports filtering by:
    * - serviceName: Filter by specific service
    * - toolName: Filter by specific tool
@@ -139,11 +139,11 @@ export class MetricsService {
   getMetricsByService(): Map<string, ServiceMetrics> {
     const services = this.collector.getSystemMetrics().services;
     const map = new Map<string, ServiceMetrics>();
-    
+
     for (const service of services) {
       map.set(service.serviceName, service);
     }
-    
+
     return map;
   }
 
@@ -153,7 +153,7 @@ export class MetricsService {
   getMetricsByTool(): Map<string, ToolCallMetrics[]> {
     const services = this.collector.getSystemMetrics().services;
     const map = new Map<string, ToolCallMetrics[]>();
-    
+
     for (const service of services) {
       for (const tool of service.toolCalls) {
         if (!map.has(tool.toolName)) {
@@ -162,7 +162,7 @@ export class MetricsService {
         map.get(tool.toolName)!.push(tool);
       }
     }
-    
+
     return map;
   }
 
@@ -172,11 +172,11 @@ export class MetricsService {
   getMetricsBySession(): Map<string, SessionMetrics> {
     const sessions = this.collector.getSystemMetrics().sessions;
     const map = new Map<string, SessionMetrics>();
-    
+
     for (const session of sessions) {
       map.set(session.sessionId, session);
     }
-    
+
     return map;
   }
 
@@ -186,14 +186,12 @@ export class MetricsService {
   getTopToolsByCallCount(limit: number = 10): ToolCallMetrics[] {
     const allTools: ToolCallMetrics[] = [];
     const services = this.collector.getSystemMetrics().services;
-    
+
     for (const service of services) {
       allTools.push(...service.toolCalls);
     }
-    
-    return allTools
-      .sort((a, b) => b.callCount - a.callCount)
-      .slice(0, limit);
+
+    return allTools.sort((a, b) => b.callCount - a.callCount).slice(0, limit);
   }
 
   /**
@@ -202,11 +200,11 @@ export class MetricsService {
   getTopToolsByErrorRate(limit: number = 10): ToolCallMetrics[] {
     const allTools: ToolCallMetrics[] = [];
     const services = this.collector.getSystemMetrics().services;
-    
+
     for (const service of services) {
       allTools.push(...service.toolCalls);
     }
-    
+
     return allTools
       .filter((t) => t.callCount > 0)
       .sort((a, b) => {
@@ -223,14 +221,12 @@ export class MetricsService {
   getTopToolsByExecutionTime(limit: number = 10): ToolCallMetrics[] {
     const allTools: ToolCallMetrics[] = [];
     const services = this.collector.getSystemMetrics().services;
-    
+
     for (const service of services) {
       allTools.push(...service.toolCalls);
     }
-    
-    return allTools
-      .sort((a, b) => b.avgExecutionTime - a.avgExecutionTime)
-      .slice(0, limit);
+
+    return allTools.sort((a, b) => b.avgExecutionTime - a.avgExecutionTime).slice(0, limit);
   }
 
   /**
@@ -246,17 +242,12 @@ export class MetricsService {
     uptime: number;
   } {
     const metrics = this.collector.getSystemMetrics();
-    
-    const totalTools = metrics.services.reduce(
-      (sum, s) => sum + s.toolCalls.length,
-      0
-    );
-    
+
+    const totalTools = metrics.services.reduce((sum, s) => sum + s.toolCalls.length, 0);
+
     const successRate =
-      metrics.totalRequests > 0
-        ? (metrics.successfulRequests / metrics.totalRequests) * 100
-        : 0;
-    
+      metrics.totalRequests > 0 ? (metrics.successfulRequests / metrics.totalRequests) * 100 : 0;
+
     return {
       totalServices: metrics.services.length,
       totalTools,

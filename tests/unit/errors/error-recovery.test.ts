@@ -365,10 +365,7 @@ describe('ErrorRecovery', () => {
 
     it('should call onAttempt callback', async () => {
       const operation = vi.fn().mockResolvedValue(undefined);
-      const healthCheck = vi
-        .fn()
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(true);
+      const healthCheck = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
       const onAttempt = vi.fn();
 
       await ErrorRecovery.recoverWithHealthCheck(operation, healthCheck, {

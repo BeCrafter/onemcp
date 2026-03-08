@@ -1,6 +1,6 @@
 /**
  * Service Registry implementation
- * 
+ *
  * Manages service definitions including registration, unregistration, retrieval,
  * and tag-based filtering. Uses ConfigProvider for persistence.
  */
@@ -11,10 +11,10 @@ import type { ConfigProvider } from '../types/config.js';
 
 /**
  * Service Registry class
- * 
+ *
  * Provides CRUD operations for service definitions and uses ConfigProvider
  * for persistence. Services are stored in the system configuration.
- * 
+ *
  * Events:
  * - 'serviceRegistered': Emitted when a service is registered (args: serviceName, service)
  * - 'serviceUnregistered': Emitted when a service is unregistered (args: serviceName)
@@ -35,7 +35,7 @@ export class ServiceRegistry extends EventEmitter {
   async initialize(): Promise<void> {
     const config = await this.configProvider.load();
     this.services.clear();
-    
+
     for (const service of config.services) {
       this.services.set(service.name, service);
     }
@@ -43,58 +43,58 @@ export class ServiceRegistry extends EventEmitter {
 
   /**
    * Register a new service or update an existing service
-   * 
+   *
    * Emits 'serviceRegistered' event after successful registration.
-   * 
+   *
    * @param service - Service definition to register
    * @throws Error if service definition is invalid
    */
   async register(service: ServiceDefinition): Promise<void> {
     // Validate service definition
     this.validateService(service);
-    
+
     // Add or update service in memory
     this.services.set(service.name, service);
-    
+
     // Persist to configuration
     await this.persistServices();
-    
+
     // Emit event for cache invalidation (Requirement 2.4)
     this.emit('serviceRegistered', service.name, service);
   }
 
   /**
    * Unregister a service by name
-   * 
+   *
    * Emits 'serviceUnregistered' event after successful unregistration.
-   * 
+   *
    * @param serviceName - Name of the service to unregister
    */
   async unregister(serviceName: string): Promise<void> {
     // Remove service from memory
     this.services.delete(serviceName);
-    
+
     // Persist to configuration
     await this.persistServices();
-    
+
     // Emit event for cache invalidation (Requirement 2.4)
     this.emit('serviceUnregistered', serviceName);
   }
 
   /**
    * Get a service by name
-   * 
+   *
    * @param serviceName - Name of the service to retrieve
    * @returns Service definition or null if not found
    */
   async get(serviceName: string): Promise<ServiceDefinition | null> {
     const service = this.services.get(serviceName);
-    return service || null;
+    return service ?? null;
   }
 
   /**
    * List all registered services
-   * 
+   *
    * @returns Array of all service definitions
    */
   async list(): Promise<ServiceDefinition[]> {
@@ -103,7 +103,7 @@ export class ServiceRegistry extends EventEmitter {
 
   /**
    * Find services by tags with AND or OR logic
-   * 
+   *
    * @param tags - Array of tags to filter by
    * @param matchAll - If true, use AND logic (service must have all tags).
    *                   If false, use OR logic (service must have at least one tag).
@@ -113,39 +113,39 @@ export class ServiceRegistry extends EventEmitter {
     if (tags.length === 0) {
       return this.list();
     }
-    
+
     const allServices = Array.from(this.services.values());
-    
-    return allServices.filter(service => {
+
+    return allServices.filter((service) => {
       const serviceTags = service.tags || [];
-      
+
       if (matchAll) {
         // AND logic: service must have all specified tags
-        return tags.every(tag => serviceTags.includes(tag));
+        return tags.every((tag) => serviceTags.includes(tag));
       } else {
         // OR logic: service must have at least one specified tag
-        return tags.some(tag => serviceTags.includes(tag));
+        return tags.some((tag) => serviceTags.includes(tag));
       }
     });
   }
 
   /**
    * Validate service definition
-   * 
+   *
    * Collects all validation errors and throws a single error with all issues.
    * This satisfies requirement 30.9: return all validation errors, not just the first.
-   * 
+   *
    * @param service - Service definition to validate
    * @throws Error if validation fails, with message containing all validation errors
    */
   private validateService(service: ServiceDefinition): void {
     const errors: string[] = [];
-    
+
     // Validate required fields
     if (!service.name || service.name.trim().length === 0) {
       errors.push('Service name is required and cannot be empty');
     }
-    
+
     if (!service.transport) {
       errors.push('Service transport type is required');
     } else {
@@ -173,7 +173,7 @@ export class ServiceRegistry extends EventEmitter {
             }
           }
         }
-        
+
         if (service.transport === 'sse' || service.transport === 'http') {
           // Requirement 30.7: validate URL field exists
           if (!service.url || service.url.trim().length === 0) {
@@ -189,12 +189,12 @@ export class ServiceRegistry extends EventEmitter {
         }
       }
     }
-    
+
     // Validate enabled field
     if (typeof service.enabled !== 'boolean') {
       errors.push('Service enabled field must be a boolean');
     }
-    
+
     // Validate tags if present
     if (service.tags !== undefined) {
       if (!Array.isArray(service.tags)) {
@@ -208,25 +208,31 @@ export class ServiceRegistry extends EventEmitter {
         }
       }
     }
-    
+
     // Validate connection pool config if present
     if (service.connectionPool) {
-      if (typeof service.connectionPool.maxConnections !== 'number' || 
-          service.connectionPool.maxConnections < 1) {
+      if (
+        typeof service.connectionPool.maxConnections !== 'number' ||
+        service.connectionPool.maxConnections < 1
+      ) {
         errors.push('Connection pool maxConnections must be a positive number');
       }
-      
-      if (typeof service.connectionPool.idleTimeout !== 'number' || 
-          service.connectionPool.idleTimeout < 0) {
+
+      if (
+        typeof service.connectionPool.idleTimeout !== 'number' ||
+        service.connectionPool.idleTimeout < 0
+      ) {
         errors.push('Connection pool idleTimeout must be a non-negative number');
       }
-      
-      if (typeof service.connectionPool.connectionTimeout !== 'number' || 
-          service.connectionPool.connectionTimeout < 0) {
+
+      if (
+        typeof service.connectionPool.connectionTimeout !== 'number' ||
+        service.connectionPool.connectionTimeout < 0
+      ) {
         errors.push('Connection pool connectionTimeout must be a non-negative number');
       }
     }
-    
+
     // Validate tool states if present
     if (service.toolStates !== undefined) {
       if (typeof service.toolStates !== 'object' || service.toolStates === null) {
@@ -237,17 +243,17 @@ export class ServiceRegistry extends EventEmitter {
             errors.push('Tool state pattern must be a string');
             break; // Only report this error once
           }
-          
+
           if (typeof enabled !== 'boolean') {
             errors.push(`Tool state value for pattern "${pattern}" must be a boolean`);
           }
         }
       }
     }
-    
+
     // Requirement 30.9: throw error with all validation errors
     if (errors.length > 0) {
-      throw new Error(`Service validation failed:\n${errors.map(e => `  - ${e}`).join('\n')}`);
+      throw new Error(`Service validation failed:\n${errors.map((e) => `  - ${e}`).join('\n')}`);
     }
   }
 
@@ -257,10 +263,10 @@ export class ServiceRegistry extends EventEmitter {
   private async persistServices(): Promise<void> {
     // Load current configuration
     const config = await this.configProvider.load();
-    
+
     // Update services in configuration
     config.services = Array.from(this.services.values());
-    
+
     // Save configuration
     await this.configProvider.save(config);
   }

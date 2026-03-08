@@ -51,11 +51,6 @@ const QUICK_MODE_STDIO_FIELDS: FormField[] = ['command', 'tags', 'quickMode', 'c
 const QUICK_MODE_HTTP_FIELDS: FormField[] = ['url', 'tags', 'quickMode', 'confirm'];
 
 /**
- * Full mode fields - all available fields
- */
-const FULL_MODE_FIELDS: FormField[] = ['name', 'transport'];
-
-/**
  * Form data structure
  */
 interface FormData {
