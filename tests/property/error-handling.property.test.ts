@@ -74,7 +74,7 @@ const requestContextArbitrary = (): fc.Arbitrary<RequestContext> => {
       fc.option(
         fc.record({
           tags: fc.array(fc.string({ minLength: 1, maxLength: 20 })),
-          logic: fc.constantFrom('AND', 'OR'),
+          logic: fc.constantFrom<'AND' | 'OR'>('AND', 'OR'),
         }),
         { nil: undefined }
       ) // tagFilter
@@ -260,12 +260,12 @@ describe('Feature: onemcp-system, Property 23: Service crash auto-recovery', () 
         async (failuresBeforeSuccess, initialDelay) => {
           let attemptCount = 0;
 
-          const operation = () => {
+          const operation = async () => {
             attemptCount++;
             if (attemptCount < failuresBeforeSuccess) {
               throw new ServiceUnavailableError('test-service', 'Simulated failure');
             }
-            return 'success';
+            return 'success' as const;
           };
 
           const result = await ErrorRecovery.withRetry(operation, {

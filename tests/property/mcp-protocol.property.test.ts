@@ -58,7 +58,7 @@ async function createTestConfigProvider(): Promise<FileConfigProvider> {
     },
   };
 
-  await storage.write('/test/config.json', JSON.stringify(defaultConfig));
+  await storage.write('config.json', JSON.stringify(defaultConfig));
 
   return new FileConfigProvider({
     storageAdapter: storage,

@@ -71,7 +71,7 @@ describe('FileConfigProvider', () => {
   describe('load()', () => {
     it('should load valid configuration from storage', async () => {
       // Arrange
-      await storage.write('/test/config/config.json', JSON.stringify(validConfig));
+      await storage.write('config.json', JSON.stringify(validConfig));
 
       // Act
       const config = await provider.load();
@@ -87,7 +87,7 @@ describe('FileConfigProvider', () => {
 
     it('should throw error when config JSON is malformed', async () => {
       // Arrange
-      await storage.write('/test/config/config.json', '{ invalid json }');
+      await storage.write('config.json', '{ invalid json }');
 
       // Act & Assert
       await expect(provider.load()).rejects.toThrow('Failed to parse configuration JSON');
@@ -96,7 +96,7 @@ describe('FileConfigProvider', () => {
     it('should throw error when config validation fails', async () => {
       // Arrange
       const invalidConfig = { ...validConfig, mode: 'invalid' };
-      await storage.write('/test/config/config.json', JSON.stringify(invalidConfig));
+      await storage.write('config.json', JSON.stringify(invalidConfig));
 
       // Act & Assert
       await expect(provider.load()).rejects.toThrow('Configuration validation failed');
@@ -121,7 +121,7 @@ describe('FileConfigProvider', () => {
           },
         ],
       };
-      await storage.write('/test/config/config.json', JSON.stringify(httpConfig));
+      await storage.write('config.json', JSON.stringify(httpConfig));
 
       // Act
       const config = await provider.load();
@@ -151,7 +151,7 @@ describe('FileConfigProvider', () => {
           },
         ],
       };
-      await storage.write('/test/config/config.json', JSON.stringify(sseConfig));
+      await storage.write('config.json', JSON.stringify(sseConfig));
 
       // Act
       const config = await provider.load();
@@ -169,7 +169,7 @@ describe('FileConfigProvider', () => {
       await provider.save(validConfig);
 
       // Assert
-      const saved = await storage.read('/test/config/config.json');
+      const saved = await storage.read('config.json');
       expect(saved).toBeDefined();
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -182,7 +182,7 @@ describe('FileConfigProvider', () => {
       await provider.save(validConfig);
 
       // Assert
-      const saved = await storage.read('/test/config/config.json');
+      const saved = await storage.read('config.json');
       if (saved) {
         expect(saved).toContain('\n');
         expect(saved).toContain('  ');
@@ -585,7 +585,7 @@ describe('FileConfigProvider', () => {
 
     it('should invoke callback when configuration changes', async () => {
       // Arrange
-      await storage.write('/test/config/config.json', JSON.stringify(validConfig));
+      await storage.write('config.json', JSON.stringify(validConfig));
 
       let callbackInvoked = false;
       let receivedConfig: SystemConfig | null = null;
@@ -597,7 +597,7 @@ describe('FileConfigProvider', () => {
 
       // Act - Simulate file change by updating storage
       const updatedConfig = { ...validConfig, logLevel: 'DEBUG' as const };
-      await storage.write('/test/config/config.json', JSON.stringify(updatedConfig));
+      await storage.write('config.json', JSON.stringify(updatedConfig));
 
       // Trigger the watcher manually since we're using memory storage
       // In real scenario, fs.watch would trigger this
@@ -617,7 +617,7 @@ describe('FileConfigProvider', () => {
 
     it('should debounce multiple rapid changes', async () => {
       // Arrange
-      await storage.write('/test/config/config.json', JSON.stringify(validConfig));
+      await storage.write('config.json', JSON.stringify(validConfig));
 
       let callbackCount = 0;
       const unwatch = provider.watch(() => {
@@ -627,7 +627,7 @@ describe('FileConfigProvider', () => {
       // Act - Simulate multiple rapid changes
       for (let i = 0; i < 5; i++) {
         const updatedConfig = { ...validConfig, logLevel: 'DEBUG' as const };
-        await storage.write('/test/config/config.json', JSON.stringify(updatedConfig));
+        await storage.write('config.json', JSON.stringify(updatedConfig));
       }
 
       // Wait for debounce period
@@ -643,7 +643,7 @@ describe('FileConfigProvider', () => {
 
     it('should maintain previous config on validation failure', async () => {
       // Arrange
-      await storage.write('/test/config/config.json', JSON.stringify(validConfig));
+      await storage.write('config.json', JSON.stringify(validConfig));
 
       let lastValidConfig: SystemConfig | null = null;
       const unwatch = provider.watch((config) => {
@@ -652,7 +652,7 @@ describe('FileConfigProvider', () => {
 
       // Act - Write invalid configuration
       const invalidConfig = { ...validConfig, mode: 'invalid' };
-      await storage.write('/test/config/config.json', JSON.stringify(invalidConfig));
+      await storage.write('config.json', JSON.stringify(invalidConfig));
 
       // Wait for debounce
       await new Promise((resolve) => setTimeout(resolve, 400));
@@ -668,12 +668,12 @@ describe('FileConfigProvider', () => {
 
     it('should handle file deletion gracefully', async () => {
       // Arrange
-      await storage.write('/test/config/config.json', JSON.stringify(validConfig));
+      await storage.write('config.json', JSON.stringify(validConfig));
 
       const unwatch = provider.watch(() => {});
 
       // Act - Delete the config file
-      await storage.delete('/test/config/config.json');
+      await storage.delete('config.json');
 
       // Wait for debounce
       await new Promise((resolve) => setTimeout(resolve, 400));
@@ -687,7 +687,7 @@ describe('FileConfigProvider', () => {
 
     it('should catch and log callback errors without crashing', async () => {
       // Arrange
-      await storage.write('/test/config/config.json', JSON.stringify(validConfig));
+      await storage.write('config.json', JSON.stringify(validConfig));
 
       const unwatch = provider.watch(() => {
         throw new Error('Callback error');
@@ -695,7 +695,7 @@ describe('FileConfigProvider', () => {
 
       // Act - Trigger a change
       const updatedConfig = { ...validConfig, logLevel: 'DEBUG' as const };
-      await storage.write('/test/config/config.json', JSON.stringify(updatedConfig));
+      await storage.write('config.json', JSON.stringify(updatedConfig));
 
       // Wait for debounce
       await new Promise((resolve) => setTimeout(resolve, 400));
@@ -708,7 +708,7 @@ describe('FileConfigProvider', () => {
 
     it('should stop watching after unwatch is called', async () => {
       // Arrange
-      await storage.write('/test/config/config.json', JSON.stringify(validConfig));
+      await storage.write('config.json', JSON.stringify(validConfig));
 
       let callbackCount = 0;
       const unwatch = provider.watch(() => {
@@ -720,7 +720,7 @@ describe('FileConfigProvider', () => {
 
       // Make changes after unwatching
       const updatedConfig = { ...validConfig, logLevel: 'DEBUG' as const };
-      await storage.write('/test/config/config.json', JSON.stringify(updatedConfig));
+      await storage.write('config.json', JSON.stringify(updatedConfig));
 
       // Wait for debounce
       await new Promise((resolve) => setTimeout(resolve, 400));
@@ -872,7 +872,7 @@ describe('FileConfigProvider', () => {
 
       // Assert
       // Check that config.json was created
-      const configData = await storage.read('/test/config/config.json');
+      const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
     });
 
@@ -881,7 +881,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const configData = await storage.read('/test/config/config.json');
+      const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
 
       if (configData) {
@@ -922,13 +922,13 @@ describe('FileConfigProvider', () => {
     it('should not overwrite existing config.json', async () => {
       // Arrange
       const existingConfig = { ...validConfig, logLevel: 'DEBUG' as const };
-      await storage.write('/test/config/config.json', JSON.stringify(existingConfig));
+      await storage.write('config.json', JSON.stringify(existingConfig));
 
       // Act
       await provider.initialize();
 
       // Assert
-      const configData = await storage.read('/test/config/config.json');
+      const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
 
       if (configData) {
@@ -957,7 +957,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const configData = await storage.read('/test/config/config.json');
+      const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
 
       const readmeData = await storage.read('/test/config/README.md');
@@ -969,7 +969,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const configData = await storage.read('/test/config/config.json');
+      const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
 
       if (configData) {
@@ -987,7 +987,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const configData = await storage.read('/test/config/config.json');
+      const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
 
       if (configData) {
@@ -1003,7 +1003,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const configData = await storage.read('/test/config/config.json');
+      const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
 
       if (configData) {
@@ -1020,7 +1020,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const configData = await storage.read('/test/config/config.json');
+      const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
 
       if (configData) {
@@ -1039,7 +1039,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const configData = await storage.read('/test/config/config.json');
+      const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
 
       if (configData) {
@@ -1057,7 +1057,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const configData = await storage.read('/test/config/config.json');
+      const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
 
       if (configData) {
@@ -1074,7 +1074,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const configData = await storage.read('/test/config/config.json');
+      const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
 
       if (configData) {
