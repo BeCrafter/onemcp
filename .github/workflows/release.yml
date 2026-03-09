@@ -1,0 +1,94 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch main branch
+        run: git fetch origin main --depth=1
+
+      - name: Ensure tag points to main HEAD
+        run: |
+          TAG_COMMIT=$(git rev-parse "${GITHUB_REF}^{}")
+          MAIN_HEAD=$(git rev-parse origin/main)
+          if [ "$TAG_COMMIT" != "$MAIN_HEAD" ]; then
+            echo "Tag does not point to main HEAD. Refusing to publish."
+            exit 1
+          fi
+
+      - name: Compute publish metadata
+        id: meta
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$VERSION" == *"-"* ]]; then
+            if [[ "$VERSION" == *"-dev."* ]]; then
+              NPM_TAG="dev"
+            elif [[ "$VERSION" == *"-alpha."* ]]; then
+              NPM_TAG="alpha"
+            elif [[ "$VERSION" == *"-beta."* ]]; then
+              NPM_TAG="beta"
+            elif [[ "$VERSION" == *"-rc."* ]]; then
+              NPM_TAG="rc"
+            else
+              NPM_TAG="next"
+            fi
+          else
+            NPM_TAG="latest"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Sync package version with tag
+        run: npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish
+        run: npm publish --access public --tag "${{ steps.meta.outputs.npm_tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Checkout main for version sync
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Sync version on main branch
+        run: npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version
+
+      - name: Commit and push version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo "No version changes to commit"
+            exit 0
+          fi
+          git commit -m "chore: sync version with tag"
+          git push origin HEAD:main

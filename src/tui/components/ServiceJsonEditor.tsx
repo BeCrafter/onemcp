@@ -8,7 +8,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { ServiceDefinition } from '../../types/service.js';
-import { FileImportDialog } from './FileImportDialog.js';
 
 export interface ServiceJsonEditorProps {
   /** Initial JSON content (for editing existing service) */
@@ -203,7 +202,6 @@ export const ServiceJsonEditor: React.FC<ServiceJsonEditorProps> = ({
   const [jsonText, setJsonText] = useState<string>(initialJson || '');
   const [cursorPosition, setCursorPosition] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
-  const [showFileImport, setShowFileImport] = useState(false);
   const [validationResult, setValidationResult] = useState<ValidationResult>({ valid: true, errors: [] });
 
   // Validate JSON on change
@@ -226,12 +224,6 @@ export const ServiceJsonEditor: React.FC<ServiceJsonEditorProps> = ({
     // Toggle help
     if (input === '?' || (key as any).f1) {
       setShowHelp(!showHelp);
-      return;
-    }
-
-    // Show file import dialog
-    if (input === 'i' && key.ctrl) {
-      setShowFileImport(true);
       return;
     }
 
@@ -274,22 +266,6 @@ export const ServiceJsonEditor: React.FC<ServiceJsonEditorProps> = ({
     }
   });
 
-  // Handle file import
-  const handleFileImport = (content: string) => {
-    setJsonText(content);
-    setShowFileImport(false);
-  };
-
-  // Render file import dialog
-  if (showFileImport) {
-    return (
-      <FileImportDialog
-        onImport={handleFileImport}
-        onCancel={() => setShowFileImport(false)}
-      />
-    );
-  }
-
   // Render help screen
   if (showHelp) {
     return (
@@ -301,7 +277,6 @@ export const ServiceJsonEditor: React.FC<ServiceJsonEditorProps> = ({
         <Box flexDirection="column" borderStyle="single" padding={1} marginBottom={1}>
           <Text bold color="yellow">Keyboard Shortcuts:</Text>
           <Text>  Ctrl+S - Save and submit</Text>
-          <Text>  Ctrl+I - Import from file</Text>
           <Text>  Ctrl+E - Load example template</Text>
           <Text>  Ctrl+L - Clear editor</Text>
           <Text>  ? or F1 - Toggle this help</Text>
@@ -405,7 +380,7 @@ export const ServiceJsonEditor: React.FC<ServiceJsonEditorProps> = ({
       {/* Keyboard shortcuts */}
       <Box borderStyle="single" borderColor="gray" paddingX={1}>
         <Text dimColor>
-          Ctrl+S: Save | Ctrl+I: Import | Ctrl+E: Example | Ctrl+L: Clear | ?: Help | Esc: Cancel
+          Ctrl+S: Save | Ctrl+E: Example | Ctrl+L: Clear | ?: Help | Esc: Cancel
         </Text>
       </Box>
     </Box>

@@ -49,7 +49,6 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
           <Text><Text color="cyan">Enter</Text> - Confirm field and move to next</Text>
           <Text><Text color="cyan">Ctrl+A</Text> - Toggle advanced options</Text>
           <Text><Text color="cyan">Ctrl+S</Text> - Save service</Text>
-          <Text><Text color="cyan">Ctrl+M</Text> - Switch to JSON mode</Text>
           <Text><Text color="cyan">Esc</Text> - Cancel and return</Text>
         </Box>
       </Box>
@@ -59,7 +58,6 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
         <Box flexDirection="column" marginLeft={2}>
           <Text><Text color="cyan">Enter</Text> - Next step</Text>
           <Text><Text color="cyan">↑/↓</Text> - Select option (for dropdowns)</Text>
-          <Text><Text color="cyan">Ctrl+M</Text> - Switch to JSON mode</Text>
           <Text><Text color="cyan">p</Text> - Preview configuration (at confirm step)</Text>
           <Text><Text color="cyan">Esc</Text> - Cancel and return</Text>
         </Box>
@@ -81,8 +79,6 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
         <Text bold color="yellow">JSON Editor</Text>
         <Box flexDirection="column" marginLeft={2}>
           <Text><Text color="cyan">Ctrl+S</Text> - Save JSON</Text>
-          <Text><Text color="cyan">Ctrl+I</Text> - Import from file</Text>
-          <Text><Text color="cyan">Ctrl+M</Text> - Switch to form mode</Text>
           <Text><Text color="cyan">Esc</Text> - Cancel and return</Text>
         </Box>
       </Box>

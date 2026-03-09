@@ -82,15 +82,7 @@ The JSON editor supports three different formats:
 }
 ```
 
-### 4. File Import
-
-Import JSON configuration from a file:
-
-1. Press `Ctrl+I` in the JSON editor
-2. Enter the file path (supports `~` for home directory)
-3. The file content will be loaded and validated
-
-### 5. Example Templates
+### 4. Example Templates
 
 Press `Ctrl+E` to load an example template with common service configurations.
 
@@ -98,14 +90,10 @@ Press `Ctrl+E` to load an example template with common service configurations.
 
 ### JSON Editor
 - `Ctrl+S` - Save and submit configuration
-- `Ctrl+I` - Import from file
 - `Ctrl+E` - Load example template
 - `Ctrl+L` - Clear editor
 - `?` or `F1` - Toggle help screen
 - `Esc` - Cancel and return
-
-### Mode Switching
-- `Ctrl+M` - Switch between Form and JSON modes (from either mode)
 
 ## Validation Rules
 
@@ -154,14 +142,5 @@ The JSON editor provides detailed error messages:
 ## Tips
 
 1. **Start with an example** - Press `Ctrl+E` to see a working template
-2. **Import existing configs** - Use `Ctrl+I` to load from files
-3. **Validate as you type** - Watch the validation status in real-time
-4. **Use mcpServers format** - Compatible with standard MCP configurations
-5. **Switch modes freely** - Use `Ctrl+M` to toggle between form and JSON
-
-## Integration with Form Mode
-
-- Data is preserved when switching between modes
-- Form data is automatically converted to JSON format
-- JSON is parsed and populated into form fields
-- Both modes validate using the same rules
+2. **Validate as you type** - Watch the validation status in real-time
+3. **Use mcpServers format** - Compatible with standard MCP configurations

@@ -11,7 +11,6 @@ import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import SelectInput from 'ink-select-input';
 import type { ServiceDefinition, TransportType } from '../../types/service.js';
-import { ServiceJsonEditor } from './ServiceJsonEditor.js';
 
 export interface ServiceFormProps {
   /** Existing service to edit (undefined for new service) */
@@ -20,8 +19,6 @@ export interface ServiceFormProps {
   onSubmit: (service: ServiceDefinition) => void;
   /** Callback when form is cancelled */
   onCancel: () => void;
-  /** Initial mode (form or json) */
-  initialMode?: 'form' | 'json';
 }
 
 /**
@@ -236,10 +233,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
   service,
   onSubmit,
   onCancel,
-  initialMode = 'form',
 }) => {
-  const [mode, setMode] = useState<'form' | 'json'>(initialMode);
-  
   // Initialize form data from existing service or defaults
   const [formData, setFormData] = useState<FormData>(() => {
     if (service) {
@@ -281,28 +275,6 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
   // Calculate fields based on quick mode
   const fields = getFieldOrder(formData.transport, quickMode);
 
-  // Convert form data to JSON for JSON mode
-  const formDataToJson = (): string => {
-    const serviceObj = formDataToService(formData);
-    return JSON.stringify({ [serviceObj.name || 'service']: serviceObj }, null, 2);
-  };
-
-  // Handle JSON mode submission
-  const handleJsonSubmit = (services: ServiceDefinition[]) => {
-    if (services.length === 1 && services[0]) {
-      onSubmit(services[0]);
-    } else if (services.length > 1) {
-      // For bulk import, submit the first service and notify about others
-      // In a real implementation, this would need to handle multiple services
-      onSubmit(services[0]!);
-    }
-  };
-
-  // Handle mode toggle
-  const toggleMode = () => {
-    setMode(mode === 'form' ? 'json' : 'form');
-  };
-
   // Handle field navigation
   const goToNextField = () => {
     const currentIndex = fields.indexOf(currentField);
@@ -336,12 +308,6 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
   useInput((input, key) => {
     if (key.escape) {
       onCancel();
-      return;
-    }
-
-    // Handle mode toggle (Ctrl+M)
-    if (input === 'm' && key.ctrl) {
-      toggleMode();
       return;
     }
 
@@ -480,22 +446,6 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
   // Get current field error
   const currentError = errors.find(e => e.field === currentField);
 
-  // Render JSON mode
-  if (mode === 'json') {
-    return (
-      <Box flexDirection="column">
-        <ServiceJsonEditor
-          initialJson={service ? formDataToJson() : ''}
-          onSubmit={handleJsonSubmit}
-          onCancel={onCancel}
-        />
-        <Box borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
-          <Text dimColor>Ctrl+M: Switch to Form Mode</Text>
-        </Box>
-      </Box>
-    );
-  }
-
   // Render preview
   if (showPreview) {
     const previewService = formDataToService(formData);
@@ -589,8 +539,8 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
       <Box borderStyle="single" borderColor="gray" paddingX={1}>
         <Text dimColor>
           {currentField === 'confirm' 
-            ? '↑/↓: Select | Enter: Confirm | p: Preview | Ctrl+M: JSON Mode | Esc: Cancel'
-            : 'Enter: Next field | Ctrl+M: JSON Mode | Esc: Cancel'}
+            ? '↑/↓: Select | Enter: Confirm | p: Preview | Esc: Cancel'
+            : 'Enter: Next field | Esc: Cancel'}
         </Text>
       </Box>
     </Box>
