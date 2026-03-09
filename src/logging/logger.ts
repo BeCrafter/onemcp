@@ -58,7 +58,11 @@ export class Logger {
     };
 
     // Create targets for multiple outputs
-    const targets: any[] = [];
+    const targets: Array<{
+      target: string;
+      level: LogLevel;
+      options: Record<string, unknown>;
+    }> = [];
 
     // Console output
     if (this.config.console) {
@@ -94,10 +98,19 @@ export class Logger {
     }
 
     // If multiple targets, use pino.transport
+    // Note: pino.transport returns ThreadStream which is typed as 'any' in pino's own type definitions
+    // This is a known limitation of the pino library's type system
     if (targets.length > 1) {
-      return pino(options, pino.transport({ targets }));
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any -- pino.transport returns ThreadStream (any) which is compatible
+      return pino(options, pino.transport({ targets } as any));
     } else if (targets.length === 1) {
-      return pino(options, pino.transport(targets[0]));
+      const target = targets[0];
+      if (target) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any -- pino.transport returns ThreadStream (any) which is compatible
+        return pino(options, pino.transport(target as any));
+      }
+      // Fallback if somehow target is undefined even though length is 1
+      return pino(options);
     } else {
       // No output configured, use default
       return pino(options);

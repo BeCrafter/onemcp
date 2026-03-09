@@ -8,7 +8,8 @@ import { ServiceRegistry } from '../../../src/registry/service-registry.js';
 import { ConnectionPool } from '../../../src/pool/connection-pool.js';
 import { MemoryStorageAdapter } from '../../../src/storage/memory.js';
 import { FileConfigProvider } from '../../../src/config/file-provider.js';
-import type { ServiceDefinition, Connection } from '../../../src/types/service.js';
+import type { ServiceDefinition } from '../../../src/types/service.js';
+import type { Connection } from '../../../src/pool/connection.js';
 
 describe('HealthMonitor', () => {
   let healthMonitor: HealthMonitor;

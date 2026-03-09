@@ -27,7 +27,7 @@ describe('Configuration Hot-Reload Integration', () => {
     mode: 'cli',
     logLevel: 'INFO',
     configDir: '',
-    services: [
+    mcpServers: [
       {
         name: 'test-service',
         transport: 'stdio',
@@ -174,6 +174,7 @@ describe('Configuration Hot-Reload Integration', () => {
 
     // Act - Write config with missing required field
     const invalidConfig = { ...validConfig };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Deleting property for test purposes
     delete (invalidConfig as any).connectionPool;
     await fs.writeFile(configPath, JSON.stringify(invalidConfig, null, 2));
     await new Promise((resolve) => setTimeout(resolve, 800));

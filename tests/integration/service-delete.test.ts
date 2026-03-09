@@ -36,7 +36,7 @@ describe('Service Deletion Integration', () => {
       port: 3000,
       logLevel: 'INFO',
       configDir: tempDir,
-      services: [
+      mcpServers: [
         {
           name: 'test-service-1',
           enabled: true,
@@ -128,12 +128,12 @@ describe('Service Deletion Integration', () => {
     // Verify service removed from registry
     const servicesAfterDelete = await registry.list();
     expect(servicesAfterDelete).toHaveLength(1);
-    expect(servicesAfterDelete[0].name).toBe('test-service-2');
+    expect(servicesAfterDelete[0]?.name).toBe('test-service-2');
 
     // Verify service removed from config file
     const savedConfig = await provider.load();
-    expect(savedConfig.services).toHaveLength(1);
-    expect(savedConfig.services[0].name).toBe('test-service-2');
+    expect(savedConfig.mcpServers).toHaveLength(1);
+    expect(savedConfig.mcpServers[0]?.name).toBe('test-service-2');
   });
 
   it('should delete multiple services sequentially', async () => {
@@ -142,7 +142,7 @@ describe('Service Deletion Integration', () => {
 
     let services = await registry.list();
     expect(services).toHaveLength(1);
-    expect(services[0].name).toBe('test-service-2');
+    expect(services[0]?.name).toBe('test-service-2');
 
     // Delete second service
     await registry.unregister('test-service-2');
@@ -152,7 +152,7 @@ describe('Service Deletion Integration', () => {
 
     // Verify config file is empty
     const savedConfig = await provider.load();
-    expect(savedConfig.services).toHaveLength(0);
+    expect(savedConfig.mcpServers).toHaveLength(0);
   });
 
   it('should handle deleting non-existent service gracefully', async () => {
@@ -164,7 +164,7 @@ describe('Service Deletion Integration', () => {
     expect(services).toHaveLength(2);
 
     const savedConfig = await provider.load();
-    expect(savedConfig.services).toHaveLength(2);
+    expect(savedConfig.mcpServers).toHaveLength(2);
   });
 
   it('should emit serviceUnregistered event on deletion', async () => {

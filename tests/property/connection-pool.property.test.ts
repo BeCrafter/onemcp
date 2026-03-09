@@ -9,7 +9,7 @@
  * **Validates: Requirements 6.1, 6.5**
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fc from 'fast-check';
 import { ConnectionPool } from '../../src/pool/connection-pool.js';
 import type { ServiceDefinition, ConnectionPoolConfig } from '../../src/types/service.js';
@@ -65,13 +65,11 @@ const stdioServiceArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
       .map((s) => s.trim()),
     transport: fc.constant('stdio' as const),
     command: fc.constant('test-command'),
-    args: fc.option(fc.array(fc.string(), { maxLength: 5 }), { nil: undefined }),
-    env: fc.option(fc.dictionary(fc.string({ minLength: 1 }), fc.string(), { maxKeys: 5 }), {
-      nil: undefined,
-    }),
+    args: fc.array(fc.string(), { maxLength: 5 }),
+    env: fc.dictionary(fc.string({ minLength: 1 }), fc.string(), { maxKeys: 5 }),
     enabled: fc.constant(true),
-    tags: fc.option(fc.array(fc.string(), { maxLength: 3 }), { nil: undefined }),
-    connectionPool: fc.option(connectionPoolConfigArbitrary(), { nil: undefined }),
+    tags: fc.array(fc.string(), { maxLength: 3 }),
+    connectionPool: connectionPoolConfigArbitrary(),
   });
 
 /**
@@ -86,8 +84,8 @@ const httpServiceArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
     transport: fc.constantFrom('http' as const, 'sse' as const),
     url: fc.webUrl({ validSchemes: ['http', 'https'] }),
     enabled: fc.constant(true),
-    tags: fc.option(fc.array(fc.string(), { maxLength: 3 }), { nil: undefined }),
-    connectionPool: fc.option(connectionPoolConfigArbitrary(), { nil: undefined }),
+    tags: fc.array(fc.string(), { maxLength: 3 }),
+    connectionPool: connectionPoolConfigArbitrary(),
   });
 
 /**
@@ -95,15 +93,6 @@ const httpServiceArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
  */
 const serviceDefinitionArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
   fc.oneof(stdioServiceArbitrary(), httpServiceArbitrary());
-
-/**
- * Generate a sequence of acquire/release operations
- */
-const operationSequenceArbitrary = (maxOps: number = 20) =>
-  fc.array(fc.constantFrom('acquire' as const, 'release' as const), {
-    minLength: 1,
-    maxLength: maxOps,
-  });
 
 // ============================================================================
 // Property 9: Connection Pool Reuse
@@ -603,7 +592,6 @@ describe('Feature: onemcp-system, Property 10: Connection pool limit enforcement
           expect(statsWithQueue.waiting).toBe(queueSize);
 
           // Release connections one by one
-          const fulfilledConnections = [];
           for (let i = 0; i < queueSize; i++) {
             pool.release(connections[i % maxConnections]!);
 

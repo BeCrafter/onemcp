@@ -29,7 +29,7 @@ describe('Server Mode Integration Tests', () => {
       port: testPort,
       logLevel: 'ERROR', // Reduce noise in tests
       configDir: '/tmp/test-onemcp',
-      services: [],
+      mcpServers: [],
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,
@@ -147,15 +147,18 @@ describe('Server Mode Integration Tests', () => {
       expect(data).toHaveProperty('timestamp');
       expect(data).toHaveProperty('services');
       expect(data).toHaveProperty('sessions');
-      expect(Array.isArray(data.services)).toBe(true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Checking JSON response structure in test
+      expect(Array.isArray((data as any).services)).toBe(true);
     });
 
     it('should return healthy status when all services are healthy', async () => {
       await runner.start();
 
       const response = await fetch(`http://localhost:${testPort}/health`);
-      const data = await response.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment -- Parsing JSON response in test
+      const data = (await response.json()) as any;
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Accessing JSON response property in test
       expect(data.status).toBe('healthy');
       expect(response.status).toBe(200);
     });
@@ -198,9 +201,12 @@ describe('Server Mode Integration Tests', () => {
       });
 
       const response = await fetch(`http://localhost:${testPort}/diagnostics`);
-      const data = await response.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment -- Parsing JSON response in test
+      const data = (await response.json()) as any;
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Accessing JSON response property in test
       expect(data.sessions.active).toBeGreaterThan(0);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Accessing JSON response property in test
       expect(Array.isArray(data.sessions.list)).toBe(true);
     });
   });
@@ -249,7 +255,9 @@ describe('Server Mode Integration Tests', () => {
 
       // Check diagnostics to verify multiple sessions
       const diagResponse = await fetch(`http://localhost:${testPort}/diagnostics`);
-      const diagData = await diagResponse.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment -- Parsing JSON response in test
+      const diagData = (await diagResponse.json()) as any;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Accessing JSON response property in test
       expect(diagData.sessions.active).toBeGreaterThanOrEqual(5);
     });
 
@@ -348,7 +356,7 @@ describe('Server Mode Integration Tests', () => {
       });
 
       expect(response.ok).toBe(true);
-      const data = await response.json();
+      const data = (await response.json()) as any;
 
       expect(data).toHaveProperty('jsonrpc', '2.0');
       expect(data).toHaveProperty('id', 2);
@@ -373,7 +381,7 @@ describe('Server Mode Integration Tests', () => {
       });
 
       expect(response.status).toBe(400);
-      const data = await response.json();
+      const data = (await response.json()) as any;
 
       expect(data).toHaveProperty('jsonrpc', '2.0');
       expect(data).toHaveProperty('error');
@@ -393,7 +401,7 @@ describe('Server Mode Integration Tests', () => {
       });
 
       expect(response.status).toBe(400);
-      const data = await response.json();
+      const data = (await response.json()) as any;
 
       expect(data).toHaveProperty('jsonrpc', '2.0');
       expect(data).toHaveProperty('error');
@@ -421,7 +429,7 @@ describe('Server Mode Integration Tests', () => {
 
       // Check diagnostics
       const diagResponse = await fetch(`http://localhost:${testPort}/diagnostics`);
-      const diagData = await diagResponse.json();
+      const diagData = (await diagResponse.json()) as any;
 
       expect(diagData.sessions.active).toBeGreaterThan(0);
     });
@@ -463,7 +471,7 @@ describe('Server Mode Integration Tests', () => {
 
       // Check diagnostics - should still have the same session
       const diagResponse = await fetch(`http://localhost:${testPort}/diagnostics`);
-      const diagData = await diagResponse.json();
+      const diagData = (await diagResponse.json()) as any;
 
       const session = diagData.sessions.list.find((s: any) => s.id === sessionId);
       expect(session).toBeDefined();
@@ -538,7 +546,7 @@ describe('Server Mode Integration Tests', () => {
 
       // Check diagnostics to verify multiple sessions
       const diagResponse = await fetch(`http://localhost:${testPort}/diagnostics`);
-      const diagData = await diagResponse.json();
+      const diagData = (await diagResponse.json()) as any;
       expect(diagData.sessions.active).toBeGreaterThanOrEqual(10);
     });
   });

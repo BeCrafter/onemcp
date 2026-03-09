@@ -62,7 +62,7 @@ async function createTestConfigProvider(): Promise<ConfigProvider> {
     mode: 'cli',
     logLevel: 'INFO',
     configDir: '/tmp/test-health-config',
-    services: [],
+    mcpServers: [],
     connectionPool: {
       maxConnections: 5,
       idleTimeout: 60000,
@@ -99,7 +99,7 @@ async function createTestConfigProvider(): Promise<ConfigProvider> {
 /**
  * Create a mock connection
  */
-function createMockConnection(id: string): Connection {
+function createMockConnection(id: string) {
   return {
     id,
     transport: {
@@ -108,7 +108,7 @@ function createMockConnection(id: string): Connection {
       close: vi.fn().mockResolvedValue(undefined),
       getType: () => 'stdio',
     } as any,
-    state: 'idle',
+    state: 'idle' as const,
     lastUsed: new Date(),
     createdAt: new Date(),
   };
@@ -135,9 +135,9 @@ const serviceDefinitionArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
     name: serviceNameArbitrary(),
     transport: fc.constant('stdio' as const),
     command: fc.constant('test-command'),
-    args: fc.option(fc.array(fc.string(), { maxLength: 3 }), { nil: undefined }),
+    args: fc.array(fc.string(), { maxLength: 3 }),
     enabled: fc.constant(true),
-    tags: fc.option(fc.array(fc.string(), { maxLength: 3 }), { nil: undefined }),
+    tags: fc.array(fc.string(), { maxLength: 3 }),
     connectionPool: fc.record({
       maxConnections: fc.integer({ min: 1, max: 5 }),
       idleTimeout: fc.integer({ min: 1000, max: 60000 }),

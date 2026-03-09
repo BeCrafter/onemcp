@@ -5,12 +5,9 @@ import { ErrorPropagation } from '../../src/errors/error-propagation.js';
 import { ErrorRecovery } from '../../src/errors/error-recovery.js';
 import { TimeoutHandler } from '../../src/errors/timeout-handler.js';
 import {
-  McpRouterError,
   ToolNotFoundError,
-  ToolDisabledError,
   ServiceUnavailableError,
   TimeoutError,
-  ValidationError,
 } from '../../src/errors/custom-errors.js';
 import { ErrorCode } from '../../src/types/jsonrpc.js';
 import type { RequestContext } from '../../src/types/context.js';
@@ -65,15 +62,37 @@ const requestIdArbitrary = (): fc.Arbitrary<string | number> =>
 /**
  * Generate request contexts
  */
-const requestContextArbitrary = (): fc.Arbitrary<RequestContext> =>
-  fc.record({
-    requestId: fc.string({ minLength: 1, maxLength: 50 }),
-    correlationId: fc.string({ minLength: 1, maxLength: 50 }),
-    sessionId: fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
-    agentId: fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
-    timestamp: fc.date(),
-    tagFilter: fc.constant(undefined),
-  });
+const requestContextArbitrary = (): fc.Arbitrary<RequestContext> => {
+  // Create a custom arbitrary that properly handles optional properties with exactOptionalPropertyTypes
+  return fc
+    .tuple(
+      fc.string({ minLength: 1, maxLength: 50 }), // requestId
+      fc.string({ minLength: 1, maxLength: 50 }), // correlationId
+      fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }), // sessionId
+      fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }), // agentId
+      fc.date(), // timestamp
+      fc.option(
+        fc.record({
+          tags: fc.array(fc.string({ minLength: 1, maxLength: 20 })),
+          logic: fc.constantFrom('AND', 'OR'),
+        }),
+        { nil: undefined }
+      ) // tagFilter
+    )
+    .map(([requestId, correlationId, sessionId, agentId, timestamp, tagFilter]) => {
+      const context: RequestContext = {
+        requestId,
+        correlationId,
+        timestamp,
+      };
+
+      if (sessionId !== undefined) context.sessionId = sessionId;
+      if (agentId !== undefined) context.agentId = agentId;
+      if (tagFilter !== undefined) context.tagFilter = tagFilter;
+
+      return context;
+    });
+};
 
 /**
  * Generate service names
@@ -241,7 +260,7 @@ describe('Feature: onemcp-system, Property 23: Service crash auto-recovery', () 
         async (failuresBeforeSuccess, initialDelay) => {
           let attemptCount = 0;
 
-          const operation = async () => {
+          const operation = () => {
             attemptCount++;
             if (attemptCount < failuresBeforeSuccess) {
               throw new ServiceUnavailableError('test-service', 'Simulated failure');
@@ -255,7 +274,7 @@ describe('Feature: onemcp-system, Property 23: Service crash auto-recovery', () 
             maxDelayMs: initialDelay * 5, // Reduced multiplier
             backoffMultiplier: 2,
             jitter: false,
-            isRetryable: ErrorRecovery.isRetryableError,
+            isRetryable: (error: unknown) => ErrorRecovery.isRetryableError(error),
           });
 
           expect(result).toBe('success');
@@ -273,7 +292,7 @@ describe('Feature: onemcp-system, Property 23: Service crash auto-recovery', () 
       fc.asyncProperty(fc.integer({ min: 1, max: 3 }), async (maxRetries) => {
         let attemptCount = 0;
 
-        const operation = async () => {
+        const operation = () => {
           attemptCount++;
           throw new ServiceUnavailableError('test-service', 'Always fails');
         };
@@ -285,7 +304,7 @@ describe('Feature: onemcp-system, Property 23: Service crash auto-recovery', () 
             maxDelayMs: 50,
             backoffMultiplier: 2,
             jitter: false,
-            isRetryable: ErrorRecovery.isRetryableError,
+            isRetryable: (error: unknown) => ErrorRecovery.isRetryableError(error),
           });
 
           // Should not reach here
@@ -306,7 +325,7 @@ describe('Feature: onemcp-system, Property 23: Service crash auto-recovery', () 
       fc.asyncProperty(toolNameArbitrary(), async (toolName) => {
         let attemptCount = 0;
 
-        const operation = async () => {
+        const operation = () => {
           attemptCount++;
           throw new ToolNotFoundError(toolName);
         };
@@ -318,7 +337,7 @@ describe('Feature: onemcp-system, Property 23: Service crash auto-recovery', () 
             maxDelayMs: 50,
             backoffMultiplier: 2,
             jitter: false,
-            isRetryable: ErrorRecovery.isRetryableError,
+            isRetryable: (error: unknown) => ErrorRecovery.isRetryableError(error),
           });
 
           return false;
@@ -381,7 +400,7 @@ describe('Feature: onemcp-system, Property 23: Service crash auto-recovery', () 
       await TimeoutHandler.withTimeout(operation, {
         timeoutMs: 50,
         operationName: 'test-operation',
-        onTimeout: async () => {
+        onTimeout: () => {
           cleanupCalled = true;
         },
       });

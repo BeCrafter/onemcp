@@ -100,7 +100,7 @@ describe('ErrorRecovery', () => {
         .mockRejectedValueOnce(new Error('fail2'))
         .mockResolvedValue('success');
       const delays: number[] = [];
-      const onRetry = vi.fn((attempt, error, delay) => {
+      const onRetry = vi.fn((_attempt: number, _error: unknown, delay: number) => {
         delays.push(delay);
       });
 
@@ -125,7 +125,7 @@ describe('ErrorRecovery', () => {
         .mockRejectedValueOnce(new Error('fail2'))
         .mockResolvedValue('success');
       const delays: number[] = [];
-      const onRetry = vi.fn((attempt, error, delay) => {
+      const onRetry = vi.fn((_attempt: number, _error: unknown, delay: number) => {
         delays.push(delay);
       });
 

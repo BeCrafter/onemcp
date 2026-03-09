@@ -36,6 +36,7 @@ interface CliArgs {
  * Display help message
  */
 function displayHelp(): void {
+  // eslint-disable-next-line no-console
   console.log(`
 MCP Router System - Intelligent routing layer for MCP servers
 
@@ -111,6 +112,7 @@ For more information, visit: https://github.com/BeCrafter/onemcp
 function displayVersion(): void {
   // Read version from package.json
   // In production, this would be bundled or read from a version file
+  // eslint-disable-next-line no-console
   console.log('MCP Router System v0.1.0');
 }
 
@@ -176,10 +178,10 @@ function parseCliArgs(): CliArgs {
       dryRun: values['dry-run'],
     };
   } catch (error) {
-    console.error(
-      `Error parsing arguments: ${error instanceof Error ? error.message : String(error)}`
+    process.stderr.write(
+      `Error parsing arguments: ${error instanceof Error ? error.message : String(error)}\n`
     );
-    console.error('Use --help for usage information');
+    process.stderr.write('Use --help for usage information\n');
     process.exit(1);
   }
 }
@@ -200,7 +202,7 @@ function resolveConfigDir(args: CliArgs): string {
  * Initialize configuration directory with default structure
  */
 function initializeConfigDir(configDir: string): void {
-  console.log(`Initializing configuration directory: ${configDir}`);
+  process.stdout.write(`Initializing configuration directory: ${configDir}\n`);
 
   try {
     // Create directory structure
@@ -287,14 +289,14 @@ https://github.com/yourusername/onemcp
 
     writeFileSync(resolve(configDir, 'README.md'), readme, 'utf8');
 
-    console.log('✓ Configuration directory initialized successfully');
-    console.log(`  Config file: ${configPath}`);
-    console.log(`  Services directory: ${resolve(configDir, 'services')}`);
-    console.log(`  Logs directory: ${resolve(configDir, 'logs')}`);
-    console.log(`  Backups directory: ${resolve(configDir, 'backups')}`);
+    process.stdout.write('✓ Configuration directory initialized successfully\n');
+    process.stdout.write(`  Config file: ${configPath}\n`);
+    process.stdout.write(`  Services directory: ${resolve(configDir, 'services')}\n`);
+    process.stdout.write(`  Logs directory: ${resolve(configDir, 'logs')}\n`);
+    process.stdout.write(`  Backups directory: ${resolve(configDir, 'backups')}\n`);
   } catch (error) {
-    console.error(
-      `Failed to initialize configuration directory: ${error instanceof Error ? error.message : String(error)}`
+    process.stderr.write(
+      `Failed to initialize configuration directory: ${error instanceof Error ? error.message : String(error)}\n`
     );
     process.exit(1);
   }
@@ -304,7 +306,7 @@ https://github.com/yourusername/onemcp
  * Validate configuration
  */
 async function validateConfiguration(configDir: string): Promise<boolean> {
-  console.log(`Validating configuration in: ${configDir}`);
+  process.stdout.write(`Validating configuration in: ${configDir}\n`);
 
   try {
     const storage = new FileStorageAdapter(configDir);
@@ -320,24 +322,24 @@ async function validateConfiguration(configDir: string): Promise<boolean> {
     const validation = configProvider.validate(config);
 
     if (validation.valid) {
-      console.log('✓ Configuration is valid');
-      console.log(`  Mode: ${config.mode}`);
-      console.log(`  Services: ${config.mcpServers.length}`);
-      console.log(`  Log level: ${config.logLevel}`);
+      process.stdout.write('✓ Configuration is valid\n');
+      process.stdout.write(`  Mode: ${config.mode}\n`);
+      process.stdout.write(`  Services: ${config.mcpServers.length}\n`);
+      process.stdout.write(`  Log level: ${config.logLevel}\n`);
       if (config.mode === 'server' && config.port) {
-        console.log(`  Server port: ${config.port}`);
+        process.stdout.write(`  Server port: ${config.port}\n`);
       }
       return true;
     } else {
-      console.error('✗ Configuration validation failed:');
+      process.stderr.write('✗ Configuration validation failed:\n');
       for (const error of validation.errors) {
-        console.error(`  - ${error.field}: ${error.message}`);
+        process.stderr.write(`  - ${error.field}: ${error.message}\n`);
       }
       return false;
     }
   } catch (error) {
-    console.error(
-      `Failed to validate configuration: ${error instanceof Error ? error.message : String(error)}`
+    process.stderr.write(
+      `Failed to validate configuration: ${error instanceof Error ? error.message : String(error)}\n`
     );
     return false;
   }
@@ -377,18 +379,18 @@ function applyConfigOverrides(config: SystemConfig, args: CliArgs): SystemConfig
  * Display effective configuration
  */
 function displayEffectiveConfig(config: SystemConfig, configDir: string): void {
-  console.log('\nEffective Configuration:');
-  console.log(`  Configuration directory: ${configDir}`);
-  console.log(`  Mode: ${config.mode}`);
-  console.log(`  Log level: ${config.logLevel}`);
+  process.stdout.write('\nEffective Configuration:\n');
+  process.stdout.write(`  Configuration directory: ${configDir}\n`);
+  process.stdout.write(`  Mode: ${config.mode}\n`);
+  process.stdout.write(`  Log level: ${config.logLevel}\n`);
   if (config.mode === 'server') {
-    console.log(`  Server port: ${config.port || 3000}`);
+    process.stdout.write(`  Server port: ${config.port || 3000}\n`);
   }
-  console.log(`  Services: ${config.mcpServers.length}`);
-  console.log(`  Health checks: ${config.healthCheck.enabled ? 'enabled' : 'disabled'}`);
-  console.log(`  Audit logging: ${config.audit.enabled ? 'enabled' : 'disabled'}`);
-  console.log(`  Metrics: ${config.metrics?.enabled ? 'enabled' : 'disabled'}`);
-  console.log('');
+  process.stdout.write(`  Services: ${config.mcpServers.length}\n`);
+  process.stdout.write(`  Health checks: ${config.healthCheck.enabled ? 'enabled' : 'disabled'}\n`);
+  process.stdout.write(`  Audit logging: ${config.audit.enabled ? 'enabled' : 'disabled'}\n`);
+  process.stdout.write(`  Metrics: ${config.metrics?.enabled ? 'enabled' : 'disabled'}\n`);
+  process.stdout.write('\n');
 }
 
 /**
@@ -421,9 +423,9 @@ async function main(): Promise<void> {
 
   // Check if configuration directory exists
   if (!existsSync(configDir)) {
-    console.error(`Configuration directory does not exist: ${configDir}`);
-    console.error(
-      'Run with --init to create it, or specify a different directory with --config-dir'
+    process.stderr.write(`Configuration directory does not exist: ${configDir}\n`);
+    process.stderr.write(
+      'Run with --init to create it, or specify a different directory with --config-dir\n'
     );
     process.exit(1);
   }
@@ -435,7 +437,7 @@ async function main(): Promise<void> {
   }
 
   // Load configuration
-  console.log(`Loading configuration from: ${configDir}`);
+  process.stdout.write(`Loading configuration from: ${configDir}\n`);
 
   try {
     const storage = new FileStorageAdapter(configDir);
@@ -452,9 +454,9 @@ async function main(): Promise<void> {
     // Validate final configuration
     const validation = configProvider.validate(config);
     if (!validation.valid) {
-      console.error('Configuration validation failed:');
+      process.stderr.write('Configuration validation failed:\n');
       for (const error of validation.errors) {
-        console.error(`  - ${error.field}: ${error.message}`);
+        process.stderr.write(`  - ${error.field}: ${error.message}\n`);
       }
       process.exit(1);
     }
@@ -464,7 +466,7 @@ async function main(): Promise<void> {
 
     // Handle dry-run flag
     if (args.dryRun) {
-      console.log('Dry run complete. Configuration is valid.');
+      process.stdout.write('Dry run complete. Configuration is valid.\n');
       process.exit(0);
     }
 
@@ -489,13 +491,13 @@ async function main(): Promise<void> {
 
       // Set up graceful shutdown handlers
       const shutdown = async (signal: string) => {
-        console.error(`\nReceived ${signal}, shutting down gracefully...`);
+        process.stderr.write(`\nReceived ${signal}, shutting down gracefully...\n`);
         try {
           await runner.stop();
           process.exit(0);
         } catch (error) {
-          console.error(
-            `Error during shutdown: ${error instanceof Error ? error.message : String(error)}`
+          process.stderr.write(
+            `Error during shutdown: ${error instanceof Error ? error.message : String(error)}\n`
           );
           process.exit(1);
         }
@@ -515,13 +517,13 @@ async function main(): Promise<void> {
 
       // Set up graceful shutdown handlers
       const shutdown = async (signal: string) => {
-        console.error(`\nReceived ${signal}, shutting down gracefully...`);
+        process.stderr.write(`\nReceived ${signal}, shutting down gracefully...\n`);
         try {
           await runner.stop();
           process.exit(0);
         } catch (error) {
-          console.error(
-            `Error during shutdown: ${error instanceof Error ? error.message : String(error)}`
+          process.stderr.write(
+            `Error during shutdown: ${error instanceof Error ? error.message : String(error)}\n`
           );
           process.exit(1);
         }
@@ -534,11 +536,11 @@ async function main(): Promise<void> {
       await runner.start();
     }
   } catch (error) {
-    console.error(
-      `Failed to start router: ${error instanceof Error ? error.message : String(error)}`
+    process.stderr.write(
+      `Failed to start router: ${error instanceof Error ? error.message : String(error)}\n`
     );
     if (error instanceof Error && error.stack) {
-      console.error(error.stack);
+      process.stderr.write(error.stack + '\n');
     }
     process.exit(1);
   }
@@ -546,6 +548,8 @@ async function main(): Promise<void> {
 
 // Run main function
 main().catch((error) => {
-  console.error('Unexpected error:', error);
+  process.stderr.write(
+    'Unexpected error: ' + (error instanceof Error ? error.message : String(error)) + '\n'
+  );
   process.exit(1);
 });

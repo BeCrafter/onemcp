@@ -48,3 +48,4 @@ config.local.json
 .onemcp-test/
 
 backup/
+*.bak

@@ -38,7 +38,7 @@ describe('TUI Service List View Integration', () => {
       mode: 'cli',
       logLevel: 'INFO',
       configDir: tempDir,
-      services: [],
+      mcpServers: [],
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,
@@ -149,6 +149,7 @@ describe('TUI Service List View Integration', () => {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-filesystem'],
       enabled: true,
+      tags: [],
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,
@@ -161,6 +162,7 @@ describe('TUI Service List View Integration', () => {
       transport: 'sse',
       url: 'http://localhost:3001/sse',
       enabled: true,
+      tags: [],
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,
@@ -173,6 +175,7 @@ describe('TUI Service List View Integration', () => {
       transport: 'http',
       url: 'http://localhost:3002/mcp',
       enabled: true,
+      tags: [],
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,
@@ -201,6 +204,7 @@ describe('TUI Service List View Integration', () => {
       transport: 'stdio',
       command: 'node',
       enabled: true,
+      tags: [],
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,
@@ -213,6 +217,7 @@ describe('TUI Service List View Integration', () => {
       transport: 'stdio',
       command: 'node',
       enabled: false,
+      tags: [],
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,
@@ -254,7 +259,7 @@ describe('TUI Service List View Integration', () => {
 
     // Verify tags
     expect(services).toHaveLength(1);
-    expect(services[0].tags).toEqual(['production', 'critical', 'database']);
+    expect(services[0]?.tags).toEqual(['production', 'critical', 'database']);
   });
 
   it('should display services with connection pool configuration', async () => {
@@ -264,6 +269,7 @@ describe('TUI Service List View Integration', () => {
       transport: 'stdio',
       command: 'node',
       enabled: true,
+      tags: [],
       connectionPool: {
         maxConnections: 10,
         idleTimeout: 120000,
@@ -278,7 +284,7 @@ describe('TUI Service List View Integration', () => {
 
     // Verify connection pool config
     expect(services).toHaveLength(1);
-    expect(services[0].connectionPool).toEqual({
+    expect(services[0]?.connectionPool).toEqual({
       maxConnections: 10,
       idleTimeout: 120000,
       connectionTimeout: 45000,
@@ -293,6 +299,7 @@ describe('TUI Service List View Integration', () => {
         transport: 'stdio',
         command: 'node',
         enabled: true,
+        tags: [],
         connectionPool: {
           maxConnections: 5,
           idleTimeout: 60000,

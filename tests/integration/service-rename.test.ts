@@ -58,7 +58,7 @@ describe('Service Rename Integration', () => {
       port: 3000,
       logLevel: 'INFO',
       configDir: tempDir,
-      services: [originalService],
+      mcpServers: [originalService],
       connectionPool: {
         maxConnections: 10,
         idleTimeout: 60000,
@@ -116,7 +116,7 @@ describe('Service Rename Integration', () => {
     // Verify initial state
     const initialServices = await registry.list();
     expect(initialServices).toHaveLength(1);
-    expect(initialServices[0].name).toBe('original-service');
+    expect(initialServices[0]?.name).toBe('original-service');
 
     // Simulate rename: unregister old, register new
     const renamedService: ServiceDefinition = {
@@ -130,7 +130,7 @@ describe('Service Rename Integration', () => {
     // Verify only one service exists with new name
     const servicesAfterRename = await registry.list();
     expect(servicesAfterRename).toHaveLength(1);
-    expect(servicesAfterRename[0].name).toBe('renamed-service');
+    expect(servicesAfterRename[0]?.name).toBe('renamed-service');
 
     // Verify old service is gone
     const oldService = await registry.get('original-service');
@@ -143,8 +143,8 @@ describe('Service Rename Integration', () => {
 
     // Verify config file has only one service
     const savedConfig = await provider.load();
-    expect(savedConfig.services).toHaveLength(1);
-    expect(savedConfig.services[0].name).toBe('renamed-service');
+    expect(savedConfig.mcpServers).toHaveLength(1);
+    expect(savedConfig.mcpServers[0]?.name).toBe('renamed-service');
   });
 
   it('should preserve all service properties during rename', async () => {
@@ -186,7 +186,7 @@ describe('Service Rename Integration', () => {
 
     // Verify config file has only 1 service
     const savedConfig = await provider.load();
-    expect(savedConfig.services).toHaveLength(1);
+    expect(savedConfig.mcpServers).toHaveLength(1);
   });
 
   it('should handle rename with multiple services', async () => {
@@ -229,8 +229,8 @@ describe('Service Rename Integration', () => {
 
     // Verify config file
     const savedConfig = await provider.load();
-    expect(savedConfig.services).toHaveLength(2);
-    const configNames = savedConfig.services.map((s) => s.name).sort();
+    expect(savedConfig.mcpServers).toHaveLength(2);
+    const configNames = savedConfig.mcpServers.map((s) => s.name).sort();
     expect(configNames).toEqual(['another-service', 'renamed-service']);
   });
 

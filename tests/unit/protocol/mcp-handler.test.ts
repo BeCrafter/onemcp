@@ -28,7 +28,7 @@ async function createTestConfigProvider(): Promise<FileConfigProvider> {
     mode: 'cli',
     logLevel: 'INFO',
     configDir: '/test',
-    services: [],
+    mcpServers: [],
     connectionPool: {
       maxConnections: 5,
       idleTimeout: 60000,
@@ -251,7 +251,10 @@ describe('McpProtocolHandler', () => {
           namespacedName: 'service__tool1',
           serviceName: 'service',
           description: 'Tool 1',
-          inputSchema: { type: 'object' },
+          inputSchema: {
+            type: 'object' as const,
+            properties: {},
+          },
           enabled: true,
         },
         {
@@ -259,7 +262,10 @@ describe('McpProtocolHandler', () => {
           namespacedName: 'service__tool2',
           serviceName: 'service',
           description: 'Tool 2',
-          inputSchema: { type: 'object' },
+          inputSchema: {
+            type: 'object' as const,
+            properties: {},
+          },
           enabled: false,
         },
       ];
@@ -269,8 +275,8 @@ describe('McpProtocolHandler', () => {
       const result = await mcpHandler.toolsList(undefined, context);
 
       expect(result.tools).toHaveLength(2);
-      expect(result.tools[0].enabled).toBe(true);
-      expect(result.tools[1].enabled).toBe(false);
+      expect(result.tools[0]?.enabled).toBe(true);
+      expect(result.tools[1]?.enabled).toBe(false);
     });
   });
 
@@ -353,8 +359,8 @@ describe('McpProtocolHandler', () => {
       const responses = await mcpHandler.handleBatch([request], context);
 
       expect(responses).toHaveLength(1);
-      expect(responses[0].id).toBe(1);
-      expect('result' in responses[0]).toBe(true);
+      expect(responses[0]?.id).toBe(1);
+      expect('result' in (responses[0] || {})).toBe(true);
     });
 
     it('should handle multiple requests in batch', async () => {
@@ -376,8 +382,8 @@ describe('McpProtocolHandler', () => {
       const responses = await mcpHandler.handleBatch(requests, context);
 
       expect(responses).toHaveLength(2);
-      expect(responses[0].id).toBe(1);
-      expect(responses[1].id).toBe(2);
+      expect(responses[0]?.id).toBe(1);
+      expect(responses[1]?.id).toBe(2);
     });
 
     it('should continue on error (partial failure)', async () => {
@@ -407,16 +413,16 @@ describe('McpProtocolHandler', () => {
       expect(responses).toHaveLength(3);
 
       // First request should succeed
-      expect('result' in responses[0]).toBe(true);
+      expect('result' in (responses[0] || {})).toBe(true);
 
       // Second request should fail
-      expect('error' in responses[1]).toBe(true);
-      if ('error' in responses[1]) {
+      expect('error' in (responses[1] || {})).toBe(true);
+      if (responses[1] && 'error' in responses[1]) {
         expect(responses[1].error.code).toBe(ErrorCode.METHOD_NOT_FOUND);
       }
 
       // Third request should still succeed despite second failure
-      expect('result' in responses[2]).toBe(true);
+      expect('result' in (responses[2] || {})).toBe(true);
     });
 
     it('should enforce batch size limit', async () => {
@@ -451,11 +457,11 @@ describe('McpProtocolHandler', () => {
       expect(responses).toHaveLength(2);
 
       // Both should be errors
-      expect('error' in responses[0]).toBe(true);
-      expect('error' in responses[1]).toBe(true);
+      expect('error' in (responses[0] || {})).toBe(true);
+      expect('error' in (responses[1] || {})).toBe(true);
 
       // Check correlation IDs are different
-      if ('error' in responses[0] && 'error' in responses[1]) {
+      if (responses[0] && 'error' in responses[0] && responses[1] && 'error' in responses[1]) {
         const corr1 = responses[0].error.data?.correlationId;
         const corr2 = responses[1].error.data?.correlationId;
 

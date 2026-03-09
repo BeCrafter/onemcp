@@ -182,8 +182,10 @@ describe('BaseTransport', () => {
       transport.receivedMessages = messages;
 
       const received: JsonRpcMessage[] = [];
-      for await (const message of transport.receive()) {
-        received.push(message);
+      const iterator = transport.receive();
+      let result;
+      while (!(result = await iterator.next()).done) {
+        received.push(result.value);
       }
 
       expect(received).toEqual(messages);

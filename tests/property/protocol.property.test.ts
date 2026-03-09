@@ -63,23 +63,49 @@ const jsonValueArbitrary = (): fc.Arbitrary<unknown> =>
 /**
  * Generate JSON-RPC error objects
  */
-const jsonRpcErrorArbitrary = (): fc.Arbitrary<JsonRpcError> =>
-  fc.record({
-    code: fc.integer(),
-    message: fc.string({ minLength: 1, maxLength: 200 }),
-    data: fc.option(
-      fc.record({
-        correlationId: fc.option(fc.string()),
-        requestId: fc.option(fc.string()),
-        sessionId: fc.option(fc.string()),
-        serviceName: fc.option(fc.string()),
-        toolName: fc.option(fc.string()),
-        details: fc.option(jsonValueArbitrary()),
-        stack: fc.option(fc.string()),
-      }),
-      { nil: undefined }
-    ),
-  });
+const jsonRpcErrorArbitrary = (): fc.Arbitrary<JsonRpcError> => {
+  return fc
+    .tuple(
+      fc.integer(),
+      fc.string({ minLength: 1, maxLength: 200 }),
+      fc.option(
+        fc
+          .tuple(
+            fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+            fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+            fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+            fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+            fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+            fc.option(jsonValueArbitrary(), { nil: undefined }),
+            fc.option(fc.string({ minLength: 1, maxLength: 200 }), { nil: undefined })
+          )
+          .map(([correlationId, requestId, sessionId, serviceName, toolName, details, stack]) => {
+            const data: any = {};
+
+            if (correlationId !== undefined) data.correlationId = correlationId;
+            if (requestId !== undefined) data.requestId = requestId;
+            if (sessionId !== undefined) data.sessionId = sessionId;
+            if (serviceName !== undefined) data.serviceName = serviceName;
+            if (toolName !== undefined) data.toolName = toolName;
+            if (details !== undefined) data.details = details;
+            if (stack !== undefined) data.stack = stack;
+
+            return data;
+          }),
+        { nil: undefined }
+      )
+    )
+    .map(([code, message, data]) => {
+      const error: any = {
+        code,
+        message,
+      };
+
+      if (data !== undefined) error.data = data;
+
+      return error as JsonRpcError;
+    });
+};
 
 /**
  * Generate JSON-RPC request messages
@@ -355,16 +381,43 @@ describe('Feature: onemcp-system, Property 12: JSON-RPC response compliance', ()
         jsonRpcIdArbitrary(),
         fc.integer(),
         fc.string({ minLength: 1 }),
-        fc.option(jsonValueArbitrary()),
+        fc.option(
+          fc
+            .tuple(
+              fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+              fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+              fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+              fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+              fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+              fc.option(jsonValueArbitrary(), { nil: undefined }),
+              fc.option(fc.string({ minLength: 1, maxLength: 200 }), { nil: undefined })
+            )
+            .map(([correlationId, requestId, sessionId, serviceName, toolName, details, stack]) => {
+              const data: any = {};
+
+              if (correlationId !== undefined) data.correlationId = correlationId;
+              if (requestId !== undefined) data.requestId = requestId;
+              if (sessionId !== undefined) data.sessionId = sessionId;
+              if (serviceName !== undefined) data.serviceName = serviceName;
+              if (toolName !== undefined) data.toolName = toolName;
+              if (details !== undefined) data.details = details;
+              if (stack !== undefined) data.stack = stack;
+
+              return data;
+            })
+        ),
         (id, code, message, data) => {
+          const errorObj: JsonRpcError = {
+            code,
+            message,
+          };
+          if (data && Object.keys(data).length > 0) {
+            errorObj.data = data;
+          }
           const response: JsonRpcErrorResponse = {
             jsonrpc: '2.0',
             id,
-            error: {
-              code,
-              message,
-              ...(data !== undefined && { data }),
-            },
+            error: errorObj,
           };
 
           const serialized = serializer.serialize(response);

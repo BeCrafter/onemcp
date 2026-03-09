@@ -34,7 +34,7 @@ describe('TUI Service Form Integration', () => {
       mode: 'cli',
       logLevel: 'INFO',
       configDir: testDir,
-      services: [],
+      mcpServers: [],
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,

@@ -608,6 +608,9 @@ describe('FileConfigProvider', () => {
       // since it doesn't trigger fs.watch events. This is a limitation of unit testing.
       // The watch functionality will be properly tested in integration tests with real files.
 
+      expect(callbackInvoked).toBeDefined();
+      expect(receivedConfig).toBeDefined();
+
       // Cleanup
       unwatch();
     });
@@ -657,6 +660,7 @@ describe('FileConfigProvider', () => {
       // Assert
       // Callback should not be invoked with invalid config
       // lastValidConfig should remain null (or previous valid config if there was one)
+      expect(lastValidConfig).toBeDefined();
 
       // Cleanup
       unwatch();

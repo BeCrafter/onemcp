@@ -197,10 +197,8 @@ export class AuditLogger {
     }
 
     if (filter.timeRange) {
-      results = results.filter(
-        (entry) =>
-          entry.receivedAt >= filter.timeRange!.start && entry.receivedAt <= filter.timeRange!.end
-      );
+      const { start, end } = filter.timeRange;
+      results = results.filter((entry) => entry.receivedAt >= start && entry.receivedAt <= end);
     }
 
     return results;

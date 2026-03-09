@@ -3,8 +3,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createLogger, Logger } from '../../../src/logging/logger.js';
-import { existsSync, unlinkSync, mkdirSync, rmSync } from 'fs';
+import { createLogger } from '../../../src/logging/logger.js';
+import { existsSync, rmSync } from 'fs';
 import { join } from 'path';
 
 describe('Logger', () => {

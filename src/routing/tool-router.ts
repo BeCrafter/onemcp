@@ -12,6 +12,7 @@ import type { ServiceDefinition } from '../types/service.js';
 import type { ServiceRegistry } from '../registry/service-registry.js';
 import type { NamespaceManager } from '../namespace/manager.js';
 import type { ConnectionPool } from '../pool/connection-pool.js';
+import type { Connection } from '../pool/connection.js';
 import type { HealthMonitor } from '../health/health-monitor.js';
 import type { RequestContext } from '../types/context.js';
 import type {
@@ -119,7 +120,7 @@ export class ToolRouter extends EventEmitter {
       const matchAll = tagFilter.logic === 'AND';
       services = await this.serviceRegistry.findByTags(tagFilter.tags, matchAll);
     } else {
-      services = await this.serviceRegistry.list();
+      services = this.serviceRegistry.list();
     }
 
     // Filter to only enabled services
@@ -209,7 +210,7 @@ export class ToolRouter extends EventEmitter {
     const { serviceName, toolName } = this.namespaceManager.parseNamespacedName(namespacedName);
 
     // Get the service
-    const service = await this.serviceRegistry.get(serviceName);
+    const service = this.serviceRegistry.get(serviceName);
     if (!service) {
       throw new Error(`Service not found: ${serviceName}`);
     }
@@ -257,12 +258,12 @@ export class ToolRouter extends EventEmitter {
    * @returns True if tool is enabled, false if disabled
    * @throws Error if tool or service not found
    */
-  public async getToolState(namespacedName: string): Promise<boolean> {
+  public getToolState(namespacedName: string): boolean {
     // Parse the namespaced name to get service and tool names
     const { serviceName, toolName } = this.namespaceManager.parseNamespacedName(namespacedName);
 
     // Get the service
-    const service = await this.serviceRegistry.get(serviceName);
+    const service = this.serviceRegistry.get(serviceName);
     if (!service) {
       throw new Error(`Service not found: ${serviceName}`);
     }
@@ -293,26 +294,36 @@ export class ToolRouter extends EventEmitter {
       // Query tools from the service using MCP protocol
       // For now, we'll use a mock implementation since the actual MCP protocol
       // communication is not yet implemented
-      const rawTools = await this.queryToolsViaMCP(connection);
+      const rawTools: unknown[] = await this.queryToolsViaMCP(connection);
 
       // Apply namespacing and create Tool objects (Requirement 2.2)
-      const tools: Tool[] = rawTools.map((rawTool) => {
+      const tools: Tool[] = rawTools.map((rawTool: unknown) => {
+        const toolObj = rawTool as {
+          name: string;
+          description?: string;
+          inputSchema?: {
+            type: 'object';
+            properties: Record<string, unknown>;
+            required?: string[];
+          };
+        };
         const namespacedName = this.namespaceManager.generateNamespacedName(
           service.name,
-          rawTool.name
+          toolObj.name
         );
 
         // Determine if tool is enabled based on service configuration
-        const enabled = this.isToolEnabled(service, rawTool.name);
+        const enabled = this.isToolEnabled(service, toolObj.name);
 
         return {
-          name: rawTool.name,
+          name: toolObj.name,
           namespacedName,
           serviceName: service.name,
-          description: rawTool.description || '',
-          inputSchema: rawTool.inputSchema || {
+          description: toolObj.description || '',
+          inputSchema: toolObj.inputSchema || {
             type: 'object',
             properties: {},
+            required: [],
           },
           enabled,
         };
@@ -335,7 +346,7 @@ export class ToolRouter extends EventEmitter {
    * @returns Promise resolving to raw tool definitions
    * @private
    */
-  private async queryToolsViaMCP(connection: any): Promise<any[]> {
+  private async queryToolsViaMCP(connection: Connection): Promise<unknown[]> {
     // Create the JSON-RPC request for tools/list
     const request: JsonRpcRequest = {
       jsonrpc: '2.0',
@@ -349,22 +360,23 @@ export class ToolRouter extends EventEmitter {
 
     // Wait for the response
     const responseIterator = connection.transport.receive();
-    const { value: response } = await responseIterator.next();
+    const nextResult = await responseIterator.next();
+    const response = nextResult.value as JsonRpcSuccessResponse | JsonRpcErrorResponse | null;
 
     if (!response) {
       throw new Error('No response received from service for tools/list request');
     }
 
     // Check if it's an error response
-    if ('error' in response) {
-      const errorResponse = response as JsonRpcErrorResponse;
+    if ('error' in response && response) {
+      const errorResponse = response;
       throw new Error(`Failed to query tools from service: ${errorResponse.error.message}`);
     }
 
     // Check if it's a success response
-    if ('result' in response) {
-      const successResponse = response as JsonRpcSuccessResponse;
-      const result = successResponse.result as { tools?: any[] };
+    if ('result' in response && response) {
+      const successResponse = response;
+      const result = successResponse.result as { tools?: unknown[] };
 
       // Return the tools array from the result
       return result.tools || [];
@@ -480,7 +492,7 @@ export class ToolRouter extends EventEmitter {
     const { serviceName, toolName } = this.namespaceManager.parseNamespacedName(namespacedName);
 
     // Get the service
-    const service = await this.serviceRegistry.get(serviceName);
+    const service = this.serviceRegistry.get(serviceName);
     if (!service) {
       throw this.createToolError(
         ErrorCode.TOOL_NOT_FOUND,
@@ -619,7 +631,7 @@ export class ToolRouter extends EventEmitter {
     pool: ConnectionPool
   ): Promise<Tool | null> {
     // Get the service
-    const service = await this.serviceRegistry.get(serviceName);
+    const service = this.serviceRegistry.get(serviceName);
     if (!service) {
       return null;
     }
@@ -688,7 +700,7 @@ export class ToolRouter extends EventEmitter {
    * @private
    */
   private async executeToolCall(
-    connection: any,
+    connection: Connection,
     toolName: string,
     params: unknown,
     context: RequestContext
@@ -711,15 +723,16 @@ export class ToolRouter extends EventEmitter {
     // Note: In a real implementation, we would need to handle the async iterator
     // and match responses to requests by ID. For now, we'll use a simplified approach.
     const responseIterator = connection.transport.receive();
-    const { value: response } = await responseIterator.next();
+    const nextResult = await responseIterator.next();
+    const response = nextResult.value as JsonRpcSuccessResponse | JsonRpcErrorResponse | null;
 
     if (!response) {
       throw new Error('No response received from service');
     }
 
     // Check if it's an error response
-    if ('error' in response) {
-      const errorResponse = response as JsonRpcErrorResponse;
+    if ('error' in response && response) {
+      const errorResponse = response;
       throw this.createToolError(
         errorResponse.error.code,
         errorResponse.error.message,
@@ -729,8 +742,8 @@ export class ToolRouter extends EventEmitter {
     }
 
     // Check if it's a success response
-    if ('result' in response) {
-      const successResponse = response as JsonRpcSuccessResponse;
+    if ('result' in response && response) {
+      const successResponse = response;
       return successResponse.result;
     }
 

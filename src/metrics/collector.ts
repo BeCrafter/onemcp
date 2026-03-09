@@ -284,11 +284,13 @@ export class MetricsCollector {
     }
 
     if (options.startTime) {
-      filteredRecords = filteredRecords.filter((r) => r.timestamp >= options.startTime!);
+      const startTime = options.startTime;
+      filteredRecords = filteredRecords.filter((r) => r.timestamp >= startTime);
     }
 
     if (options.endTime) {
-      filteredRecords = filteredRecords.filter((r) => r.timestamp <= options.endTime!);
+      const endTime = options.endTime;
+      filteredRecords = filteredRecords.filter((r) => r.timestamp <= endTime);
     }
 
     // Create a temporary collector with filtered data
@@ -325,10 +327,12 @@ export class MetricsCollector {
       filteredErrors = filteredErrors.filter((e) => e.sessionId === options.sessionId);
     }
     if (options.startTime) {
-      filteredErrors = filteredErrors.filter((e) => e.timestamp >= options.startTime!);
+      const startTime = options.startTime;
+      filteredErrors = filteredErrors.filter((e) => e.timestamp >= startTime);
     }
     if (options.endTime) {
-      filteredErrors = filteredErrors.filter((e) => e.timestamp <= options.endTime!);
+      const endTime = options.endTime;
+      filteredErrors = filteredErrors.filter((e) => e.timestamp <= endTime);
     }
     tempCollector.errorRecords = filteredErrors;
 
@@ -421,10 +425,12 @@ export class MetricsCollector {
       // Group by tool name
       const toolMap = new Map<string, ToolCallRecord[]>();
       for (const record of serviceRecords) {
-        if (!toolMap.has(record.toolName)) {
-          toolMap.set(record.toolName, []);
+        let toolRecords = toolMap.get(record.toolName);
+        if (!toolRecords) {
+          toolRecords = [];
+          toolMap.set(record.toolName, toolRecords);
         }
-        toolMap.get(record.toolName)!.push(record);
+        toolRecords.push(record);
       }
 
       // Calculate metrics for each tool
@@ -502,15 +508,16 @@ export class MetricsCollector {
     for (const record of records) {
       const key = `${record.errorCode}-${record.errorType}`;
 
-      if (!errorMap.has(key)) {
-        errorMap.set(key, {
+      let metrics = errorMap.get(key);
+      if (!metrics) {
+        metrics = {
           errorCode: record.errorCode,
           errorType: record.errorType,
           count: 0,
-        });
+        };
+        errorMap.set(key, metrics);
       }
 
-      const metrics = errorMap.get(key)!;
       metrics.count++;
       metrics.lastOccurred = record.timestamp;
     }

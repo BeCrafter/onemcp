@@ -119,7 +119,7 @@ export class ServerModeRunner {
    */
   private async handleMcpRequest(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     if (!this.protocolHandler) {
-      reply.code(503).send({
+      void reply.code(503).send({
         jsonrpc: '2.0',
         id: null,
         error: {
@@ -169,7 +169,7 @@ export class ServerModeRunner {
         message = this.parser.parse(messageText);
       } catch (parseError) {
         // Parse error
-        reply.code(400).send({
+        void reply.code(400).send({
           jsonrpc: '2.0',
           id: null,
           error: {
@@ -208,10 +208,10 @@ export class ServerModeRunner {
           const response = await this.protocolHandler.handleRequest(jsonRpcRequest, context);
 
           // Send response
-          reply.code(200).send(response);
+          void reply.code(200).send(response);
         } catch (handlerError) {
           // Handler error
-          reply.code(500).send({
+          void reply.code(500).send({
             jsonrpc: '2.0',
             id: jsonRpcRequest.id,
             error: {
@@ -230,7 +230,7 @@ export class ServerModeRunner {
         }
       } else {
         // Not a request
-        reply.code(400).send({
+        void reply.code(400).send({
           jsonrpc: '2.0',
           id: null,
           error: {
@@ -242,7 +242,7 @@ export class ServerModeRunner {
       }
     } catch (error) {
       // Unexpected error
-      reply.code(500).send({
+      void reply.code(500).send({
         jsonrpc: '2.0',
         id: null,
         error: {
@@ -259,9 +259,9 @@ export class ServerModeRunner {
   /**
    * Handle health check requests
    */
-  private async handleHealthCheck(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  private handleHealthCheck(_request: FastifyRequest, reply: FastifyReply): void {
     try {
-      const healthStatuses = await this.healthMonitor.getAllHealthStatus();
+      const healthStatuses = this.healthMonitor.getAllHealthStatus();
       const allHealthy = healthStatuses.every((status) => status.healthy);
 
       const response = {
@@ -278,9 +278,9 @@ export class ServerModeRunner {
         },
       };
 
-      reply.code(allHealthy ? 200 : 503).send(response);
+      void reply.code(allHealthy ? 200 : 503).send(response);
     } catch (error) {
-      reply.code(500).send({
+      void reply.code(500).send({
         status: 'error',
         message: error instanceof Error ? error.message : String(error),
       });
@@ -290,11 +290,11 @@ export class ServerModeRunner {
   /**
    * Handle diagnostics requests
    */
-  private async handleDiagnostics(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  private handleDiagnostics(_request: FastifyRequest, reply: FastifyReply): void {
     try {
-      const services = await this.serviceRegistry.list();
+      const services = this.serviceRegistry.list();
       const sessions = this.sessionManager.listActiveSessions();
-      const healthStatuses = await this.healthMonitor.getAllHealthStatus();
+      const healthStatuses = this.healthMonitor.getAllHealthStatus();
 
       const response = {
         timestamp: new Date().toISOString(),
@@ -333,9 +333,9 @@ export class ServerModeRunner {
         })),
       };
 
-      reply.code(200).send(response);
+      void reply.code(200).send(response);
     } catch (error) {
-      reply.code(500).send({
+      void reply.code(500).send({
         error: 'Failed to generate diagnostics',
         message: error instanceof Error ? error.message : String(error),
       });
@@ -345,16 +345,16 @@ export class ServerModeRunner {
   /**
    * Handle metrics requests
    */
-  private async handleMetrics(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  private handleMetrics(_request: FastifyRequest, reply: FastifyReply): void {
     try {
       const metrics = this.metricsService.getSystemMetrics();
 
-      reply.code(200).send({
+      void reply.code(200).send({
         timestamp: new Date().toISOString(),
         metrics,
       });
     } catch (error) {
-      reply.code(500).send({
+      void reply.code(500).send({
         error: 'Failed to retrieve metrics',
         message: error instanceof Error ? error.message : String(error),
       });
@@ -398,7 +398,7 @@ export class ServerModeRunner {
       console.error(`Loaded ${this.config.mcpServers.length} service(s)`);
 
       // Create connection pools for all enabled services
-      await this.initializeConnectionPools();
+      this.initializeConnectionPools();
 
       // Initialize protocol handler
       this.protocolHandler = new McpProtocolHandler(this.toolRouter, {
@@ -407,16 +407,16 @@ export class ServerModeRunner {
 
       // Start health monitoring if enabled
       if (this.config.healthCheck.enabled) {
-        this.healthMonitor.startHeartbeat(this.config.healthCheck.interval);
+        void this.healthMonitor.startHeartbeat(this.config.healthCheck.interval);
         console.error('Health monitoring started');
       }
 
       // Start session cleanup
-      this.sessionManager.startAutoCleanup(60000, 300000); // Cleanup every minute, 5 min timeout
+      void this.sessionManager.startAutoCleanup(60000, 300000); // Cleanup every minute, 5 min timeout
 
       this.unwatchConfig = this.configProvider.watch((newConfig) => {
         console.error('Configuration change detected, reloading...');
-        this.reloadConfig(newConfig).catch((error) => {
+        void this.reloadConfig(newConfig).catch((error) => {
           console.error(
             `Failed to reload configuration: ${error instanceof Error ? error.message : String(error)}`
           );
@@ -446,8 +446,8 @@ export class ServerModeRunner {
   /**
    * Initialize connection pools for all enabled services
    */
-  private async initializeConnectionPools(): Promise<void> {
-    const services = await this.serviceRegistry.list();
+  private initializeConnectionPools(): void {
+    const services = this.serviceRegistry.list();
     const enabledServices = services.filter((s) => s.enabled);
 
     for (const service of enabledServices) {
@@ -478,8 +478,8 @@ export class ServerModeRunner {
     const oldServices = oldConfig.mcpServers;
     const newServices = newConfig.mcpServers;
 
-    const oldServiceNames = new Set(oldServices.map((s: any) => s.name));
-    const newServiceNames = new Set(newServices.map((s: any) => s.name));
+    const oldServiceNames = new Set(oldServices.map((s) => s.name));
+    const newServiceNames = new Set(newServices.map((s) => s.name));
 
     for (const serviceName of oldServiceNames) {
       if (!newServiceNames.has(serviceName)) {
@@ -494,7 +494,7 @@ export class ServerModeRunner {
     }
 
     for (const newService of newServices) {
-      const oldService = oldServices.find((s: any) => s.name === newService.name);
+      const oldService = oldServices.find((s) => s.name === newService.name);
       if (!oldService) {
         if (newService.enabled) {
           try {

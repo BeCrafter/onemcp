@@ -85,7 +85,7 @@ describe('CLI Mode Integration Tests', () => {
 
       // Wait for process to exit
       await new Promise<void>((resolve) => {
-        cliProcess!.once('exit', () => resolve());
+        cliProcess?.once('exit', () => resolve());
 
         // Force kill after timeout
         setTimeout(() => {
@@ -127,7 +127,7 @@ describe('CLI Mode Integration Tests', () => {
    */
   function sendRequest(process: ChildProcess, request: JsonRpcRequest): void {
     const message = JSON.stringify(request) + '\n';
-    process.stdin!.write(message);
+    process.stdin?.write(message);
   }
 
   /**
@@ -144,17 +144,19 @@ describe('CLI Mode Integration Tests', () => {
 
       const onData = (chunk: Buffer) => {
         clearTimeout(timer);
-        process.stdout!.off('data', onData);
+        process.stdout?.off('data', onData);
 
         try {
-          const response = JSON.parse(chunk.toString().trim());
+          const response = JSON.parse(chunk.toString().trim()) as
+            | JsonRpcSuccessResponse
+            | JsonRpcErrorResponse;
           resolve(response);
         } catch (error) {
-          reject(new Error(`Failed to parse response: ${error}`));
+          reject(new Error(`Failed to parse response: ${String(error)}`));
         }
       };
 
-      process.stdout!.on('data', onData);
+      process.stdout?.on('data', onData);
     });
   }
 
@@ -171,20 +173,22 @@ describe('CLI Mode Integration Tests', () => {
         const message = chunk.toString();
         if (message.includes('ready and listening')) {
           clearTimeout(timeout);
-          cliProcess!.stderr!.off('data', onStderr);
+          cliProcess?.stderr?.off('data', onStderr);
           resolve();
         }
       };
 
-      cliProcess.stderr!.on('data', onStderr);
+      if (cliProcess) {
+        cliProcess.stderr?.on('data', onStderr);
 
-      // Also handle process exit as failure
-      cliProcess.once('exit', (code) => {
-        clearTimeout(timeout);
-        if (code !== 0) {
-          reject(new Error(`CLI process exited with code ${code}`));
-        }
-      });
+        // Also handle process exit as failure
+        cliProcess.once('exit', (code) => {
+          clearTimeout(timeout);
+          if (code !== 0) {
+            reject(new Error(`CLI process exited with code ${code}`));
+          }
+        });
+      }
     });
 
     expect(cliProcess.killed).toBe(false);
@@ -197,11 +201,11 @@ describe('CLI Mode Integration Tests', () => {
     await new Promise<void>((resolve) => {
       const onStderr = (chunk: Buffer) => {
         if (chunk.toString().includes('ready and listening')) {
-          cliProcess!.stderr!.off('data', onStderr);
+          cliProcess?.stderr?.off('data', onStderr);
           resolve();
         }
       };
-      cliProcess.stderr!.on('data', onStderr);
+      cliProcess?.stderr?.on('data', onStderr);
     });
 
     // Send initialize request
@@ -228,10 +232,15 @@ describe('CLI Mode Integration Tests', () => {
     expect('result' in response).toBe(true);
 
     if ('result' in response) {
-      const result = response.result as any;
+      const result = response.result as {
+        protocolVersion: string;
+        serverInfo?: { name: string } | null;
+      };
       expect(result.protocolVersion).toBe('2024-11-05');
       expect(result.serverInfo).toBeDefined();
-      expect(result.serverInfo.name).toBe('onemcp');
+      if (result.serverInfo) {
+        expect(result.serverInfo.name).toBe('onemcp');
+      }
     }
   });
 
@@ -242,11 +251,11 @@ describe('CLI Mode Integration Tests', () => {
     await new Promise<void>((resolve) => {
       const onStderr = (chunk: Buffer) => {
         if (chunk.toString().includes('ready and listening')) {
-          cliProcess!.stderr!.off('data', onStderr);
+          cliProcess?.stderr?.off('data', onStderr);
           resolve();
         }
       };
-      cliProcess.stderr!.on('data', onStderr);
+      cliProcess?.stderr?.on('data', onStderr);
     });
 
     // Initialize first
@@ -280,26 +289,29 @@ describe('CLI Mode Integration Tests', () => {
     expect('result' in response).toBe(true);
 
     if ('result' in response) {
-      const result = response.result as any;
+      const result = response.result as { tools?: unknown[] };
       expect(result.tools).toBeDefined();
       expect(Array.isArray(result.tools)).toBe(true);
       // With no services configured, tools array should be empty
-      expect(result.tools.length).toBe(0);
+      if (Array.isArray(result.tools)) {
+        expect(result.tools.length).toBe(0);
+      }
     }
   });
 
   it('should return error for unknown method', async () => {
-    cliProcess = startCliProcess();
+    const proc = startCliProcess();
+    cliProcess = proc;
 
     // Wait for process to be ready
     await new Promise<void>((resolve) => {
       const onStderr = (chunk: Buffer) => {
         if (chunk.toString().includes('ready and listening')) {
-          cliProcess!.stderr!.off('data', onStderr);
+          proc.stderr?.off('data', onStderr);
           resolve();
         }
       };
-      cliProcess.stderr!.on('data', onStderr);
+      proc.stderr?.on('data', onStderr);
     });
 
     // Send request with unknown method
@@ -310,10 +322,10 @@ describe('CLI Mode Integration Tests', () => {
       params: {},
     };
 
-    sendRequest(cliProcess, unknownRequest);
+    sendRequest(proc, unknownRequest);
 
     // Wait for response
-    const response = await waitForResponse(cliProcess);
+    const response = await waitForResponse(proc);
 
     expect(response.jsonrpc).toBe('2.0');
     expect(response.id).toBe(1);
@@ -331,11 +343,11 @@ describe('CLI Mode Integration Tests', () => {
     await new Promise<void>((resolve) => {
       const onStderr = (chunk: Buffer) => {
         if (chunk.toString().includes('ready and listening')) {
-          cliProcess!.stderr!.off('data', onStderr);
+          cliProcess!.stderr?.off('data', onStderr);
           resolve();
         }
       };
-      cliProcess.stderr!.on('data', onStderr);
+      cliProcess!.stderr?.on('data', onStderr);
     });
 
     // Send SIGTERM
@@ -367,7 +379,7 @@ describe('CLI Mode Integration Tests', () => {
           resolve();
         }
       };
-      cliProcess.stderr!.on('data', onStderr);
+      cliProcess!.stderr!.on('data', onStderr);
     });
 
     // Send SIGINT
@@ -399,7 +411,7 @@ describe('CLI Mode Integration Tests', () => {
           resolve();
         }
       };
-      cliProcess.stderr!.on('data', onStderr);
+      cliProcess!.stderr!.on('data', onStderr);
     });
 
     // Close stdin

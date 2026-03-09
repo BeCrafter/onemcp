@@ -682,7 +682,6 @@ describe('ConnectionPool', () => {
       const httpService = {
         ...serviceDefinition,
         transport: 'http' as const,
-        command: undefined,
         url: 'http://example.com',
       };
 

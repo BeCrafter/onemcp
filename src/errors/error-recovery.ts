@@ -231,8 +231,8 @@ export class ErrorRecovery {
       backoffMultiplier: 1.5,
       jitter: true,
       onRetry: (attempt) => {
-        console.warn(
-          `Attempting to restart service ${serviceName} (attempt ${attempt}/${maxRestarts})`
+        process.stderr.write(
+          `Attempting to restart service ${serviceName} (attempt ${attempt}/${maxRestarts})\n`
         );
         if (onRestart) {
           onRestart(attempt);
@@ -276,7 +276,7 @@ export class ErrorRecovery {
           const nowHealthy = await healthCheck();
 
           if (nowHealthy) {
-            console.log(`Service recovered after ${attempt} attempts`);
+            process.stdout.write(`Service recovered after ${attempt} attempts\n`);
             return;
           }
         } else {
@@ -284,7 +284,9 @@ export class ErrorRecovery {
           return;
         }
       } catch (error) {
-        console.error(`Recovery attempt ${attempt} failed:`, error);
+        process.stderr.write(
+          `Recovery attempt ${attempt} failed: ${error instanceof Error ? error.message : String(error)}\n`
+        );
       }
 
       // Wait before next attempt

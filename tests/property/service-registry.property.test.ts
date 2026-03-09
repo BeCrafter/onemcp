@@ -9,7 +9,7 @@
  * **Validates: Requirements 1.11, 13.5**
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import * as fc from 'fast-check';
 import { ServiceRegistry } from '../../src/registry/service-registry.js';
 import type { ServiceDefinition } from '../../src/types/service.js';
@@ -20,12 +20,6 @@ import { FileConfigProvider } from '../../src/config/file-provider.js';
 // ============================================================================
 // Arbitrary Generators
 // ============================================================================
-
-/**
- * Generate valid transport types
- */
-const transportTypeArbitrary = (): fc.Arbitrary<'stdio' | 'sse' | 'http'> =>
-  fc.constantFrom('stdio' as const, 'sse' as const, 'http' as const);
 
 /**
  * Generate valid service names
@@ -63,17 +57,12 @@ const serviceDefinitionArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
       command: fc
         .string({ minLength: 1, maxLength: 100 })
         .filter((s) => !s.includes('\0') && s.trim().length > 0),
-      args: fc.option(fc.array(fc.string(), { maxLength: 10 }), { nil: undefined }),
-      env: fc.option(fc.dictionary(fc.string({ minLength: 1 }), fc.string(), { maxKeys: 10 }), {
-        nil: undefined,
-      }),
+      args: fc.array(fc.string(), { maxLength: 10 }),
+      env: fc.dictionary(fc.string({ minLength: 1 }), fc.string(), { maxKeys: 10 }),
       enabled: fc.boolean(),
-      tags: fc.option(fc.array(fc.string(), { maxLength: 5 }), { nil: undefined }),
-      connectionPool: fc.option(connectionPoolConfigArbitrary(), { nil: undefined }),
-      toolStates: fc.option(
-        fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 10 }),
-        { nil: undefined }
-      ),
+      tags: fc.array(fc.string(), { maxLength: 5 }),
+      connectionPool: connectionPoolConfigArbitrary(),
+      toolStates: fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 10 }),
     }),
     // SSE transport service
     fc.record({
@@ -81,12 +70,9 @@ const serviceDefinitionArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
       transport: fc.constant('sse' as const),
       url: urlArbitrary(),
       enabled: fc.boolean(),
-      tags: fc.option(fc.array(fc.string(), { maxLength: 5 }), { nil: undefined }),
-      connectionPool: fc.option(connectionPoolConfigArbitrary(), { nil: undefined }),
-      toolStates: fc.option(
-        fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 10 }),
-        { nil: undefined }
-      ),
+      tags: fc.array(fc.string(), { maxLength: 5 }),
+      connectionPool: connectionPoolConfigArbitrary(),
+      toolStates: fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 10 }),
     }),
     // HTTP transport service
     fc.record({
@@ -94,12 +80,9 @@ const serviceDefinitionArbitrary = (): fc.Arbitrary<ServiceDefinition> =>
       transport: fc.constant('http' as const),
       url: urlArbitrary(),
       enabled: fc.boolean(),
-      tags: fc.option(fc.array(fc.string(), { maxLength: 5 }), { nil: undefined }),
-      connectionPool: fc.option(connectionPoolConfigArbitrary(), { nil: undefined }),
-      toolStates: fc.option(
-        fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 10 }),
-        { nil: undefined }
-      ),
+      tags: fc.array(fc.string(), { maxLength: 5 }),
+      connectionPool: connectionPoolConfigArbitrary(),
+      toolStates: fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 10 }),
     })
   );
 
@@ -118,7 +101,7 @@ async function createTestConfigProvider(): Promise<ConfigProvider> {
     mode: 'cli',
     logLevel: 'INFO',
     configDir: '/tmp/test-config',
-    services: [],
+    mcpServers: [],
     connectionPool: {
       maxConnections: 5,
       idleTimeout: 60000,
@@ -227,9 +210,15 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
             name,
             transport: 'stdio',
             command,
-            args,
-            env,
+            args: args || [],
+            env: env || {},
             enabled,
+            tags: [],
+            connectionPool: {
+              maxConnections: 5,
+              idleTimeout: 60000,
+              connectionTimeout: 30000,
+            },
           };
 
           await registry.register(service);
@@ -257,6 +246,12 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
             transport,
             url,
             enabled,
+            tags: [],
+            connectionPool: {
+              maxConnections: 5,
+              idleTimeout: 60000,
+              connectionTimeout: 30000,
+            },
           };
 
           await registry.register(service);
@@ -275,7 +270,7 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
     await fc.assert(
       fc.asyncProperty(
         serviceDefinitionArbitrary(),
-        fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { minLength: 1, maxKeys: 20 }),
+        fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 20 }),
         async (baseDef, toolStates) => {
           const service = { ...baseDef, toolStates };
 
@@ -325,7 +320,12 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
           transport: 'stdio',
           command: 'test',
           enabled,
-          // No optional fields
+          tags: [],
+          connectionPool: {
+            maxConnections: 5,
+            idleTimeout: 60000,
+            connectionTimeout: 30000,
+          },
         };
 
         await registry.register(service);
@@ -421,6 +421,11 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
             command: 'test',
             enabled: true,
             tags: [...allTags],
+            connectionPool: {
+              maxConnections: 5,
+              idleTimeout: 60000,
+              connectionTimeout: 30000,
+            },
           });
 
           // Services with subsets of tags
@@ -431,6 +436,11 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
               command: 'test',
               enabled: true,
               tags: allTags.slice(0, i), // Missing some tags
+              connectionPool: {
+                maxConnections: 5,
+                idleTimeout: 60000,
+                connectionTimeout: 30000,
+              },
             });
           }
 
@@ -528,6 +538,11 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
             command: 'test',
             enabled: true,
             tags: [],
+            connectionPool: {
+              maxConnections: 5,
+              idleTimeout: 60000,
+              connectionTimeout: 30000,
+            },
           };
 
           await registry.register(service);
@@ -614,6 +629,11 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
               command: 'test',
               enabled: true,
               tags,
+              connectionPool: {
+                maxConnections: 5,
+                idleTimeout: 60000,
+                connectionTimeout: 30000,
+              },
             });
           }
 
@@ -690,6 +710,11 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
             command: 'test',
             enabled: true,
             tags,
+            connectionPool: {
+              maxConnections: 5,
+              idleTimeout: 60000,
+              connectionTimeout: 30000,
+            },
           };
 
           await registry.register(service);

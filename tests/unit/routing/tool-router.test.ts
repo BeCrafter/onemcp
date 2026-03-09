@@ -21,7 +21,7 @@ function createMockConfigProvider(): ConfigProvider {
     mode: 'cli' as const,
     logLevel: 'INFO' as const,
     configDir: '/test/config',
-    services: [],
+    mcpServers: [],
     connectionPool: {
       maxConnections: 5,
       idleTimeout: 60000,
@@ -1120,12 +1120,6 @@ describe('ToolRouter', () => {
 
       // Mark service as unhealthy
       healthMonitor.emit('serviceUnhealthy', 'test-service');
-
-      const context: RequestContext = {
-        requestId: 'test-request-id',
-        correlationId: 'test-correlation-id',
-        timestamp: new Date(),
-      };
 
       // Note: This test may need adjustment based on actual health check implementation
       // For now, we'll just verify the error handling logic exists

@@ -3,7 +3,7 @@
  * Feature: onemcp-system
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import {
   createLogger,
@@ -13,6 +13,7 @@ import {
   DEFAULT_SENSITIVE_PATTERNS,
 } from '../../src/logging/index.js';
 import { AuditLogEntry } from '../../src/types/audit.js';
+import type { RequestLogContext } from '../../src/logging/index.js';
 
 describe('Property 16: Log contains correlation ID', () => {
   it('should include correlation ID in all log entries for any request', async () => {
@@ -21,8 +22,8 @@ describe('Property 16: Log contains correlation ID', () => {
         fc.record({
           requestId: fc.uuid(),
           correlationId: fc.uuid(),
-          sessionId: fc.option(fc.uuid()),
-          agentId: fc.option(fc.string({ minLength: 1, maxLength: 50 })),
+          sessionId: fc.option(fc.uuid(), { nil: undefined }),
+          agentId: fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
           toolName: fc.string({ minLength: 1, maxLength: 100 }),
           serviceName: fc.string({ minLength: 1, maxLength: 50 }),
         }),
@@ -53,8 +54,18 @@ describe('Property 16: Log contains correlation ID', () => {
             logTiming: true,
           });
 
+          // Create a properly typed context for RequestLogContext
+          const typedContext: RequestLogContext = {
+            requestId: context.requestId,
+            correlationId: context.correlationId,
+            toolName: context.toolName,
+            serviceName: context.serviceName,
+            ...(context.sessionId !== undefined && { sessionId: context.sessionId }),
+            ...(context.agentId !== undefined && { agentId: context.agentId }),
+          };
+
           // Log a request
-          requestLogger.logRequestReceived(context);
+          requestLogger.logRequestReceived(typedContext);
 
           // Verify correlation ID is present
           expect(logs.length).toBeGreaterThan(0);
@@ -326,7 +337,7 @@ describe('Audit Log Query Properties', () => {
           }),
           { minLength: 5, maxLength: 20 }
         ),
-        fc.constantFrom('success', 'error', 'timeout'),
+        fc.constantFrom<'success' | 'error' | 'timeout'>('success', 'error', 'timeout'),
         async (entries, targetStatus) => {
           const logger = createLogger({
             level: 'info',
@@ -421,14 +432,20 @@ describe('Log Export Properties', () => {
           const exported = auditLogger.exportLogs(undefined, 'json');
 
           // Should be valid JSON
-          const parsed = JSON.parse(exported);
+          const parsed: AuditLogEntry[] = JSON.parse(exported);
           expect(Array.isArray(parsed)).toBe(true);
           expect(parsed.length).toBe(entries.length);
 
           // Verify all entries are present
           for (let i = 0; i < entries.length; i++) {
-            expect(parsed[i].requestId).toBe(entries[i].requestId);
-            expect(parsed[i].correlationId).toBe(entries[i].correlationId);
+            const entry = parsed[i];
+            const originalEntry = entries[i];
+            expect(entry).toBeDefined();
+            expect(originalEntry).toBeDefined();
+            if (entry && originalEntry) {
+              expect(entry.requestId).toBe(originalEntry.requestId);
+              expect(entry.correlationId).toBe(originalEntry.correlationId);
+            }
           }
         }
       ),

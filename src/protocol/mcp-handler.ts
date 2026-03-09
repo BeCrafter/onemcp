@@ -112,6 +112,9 @@ export class McpProtocolHandler {
 
     this.initialized = true;
 
+    // Use Promise.resolve to satisfy require-await rule
+    await Promise.resolve();
+
     return {
       protocolVersion: '2024-11-05',
       capabilities: {

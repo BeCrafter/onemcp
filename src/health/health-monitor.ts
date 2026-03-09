@@ -172,7 +172,7 @@ export class HealthMonitor extends EventEmitter {
    *
    * @returns Promise resolving to array of health statuses
    */
-  public async getAllHealthStatus(): Promise<HealthStatus[]> {
+  public getAllHealthStatus(): HealthStatus[] {
     return Array.from(this.healthStatuses.values());
   }
 
@@ -220,11 +220,11 @@ export class HealthMonitor extends EventEmitter {
 
     // Start periodic health checks
     this.heartbeatInterval = setInterval(() => {
-      this.performHeartbeatChecks();
+      void this.performHeartbeatChecks();
     }, this.heartbeatIntervalMs);
 
     // Perform initial check immediately
-    this.performHeartbeatChecks();
+    void this.performHeartbeatChecks();
   }
 
   /**

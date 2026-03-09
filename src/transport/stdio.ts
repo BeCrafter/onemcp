@@ -137,8 +137,10 @@ export class StdioTransport extends BaseTransport {
   private enqueueMessage(message: JsonRpcMessage): void {
     if (this.resolveQueue.length > 0) {
       // If there's a waiting receiver, resolve it immediately
-      const resolve = this.resolveQueue.shift()!;
-      resolve({ value: message, done: false });
+      const resolve = this.resolveQueue.shift();
+      if (resolve) {
+        resolve({ value: message, done: false });
+      }
     } else {
       // Otherwise, add to message queue
       this.messageQueue.push(message);
@@ -152,8 +154,10 @@ export class StdioTransport extends BaseTransport {
     this.receiveClosed = true;
     // Resolve all waiting receivers with done
     while (this.resolveQueue.length > 0) {
-      const resolve = this.resolveQueue.shift()!;
-      resolve({ value: undefined, done: true });
+      const resolve = this.resolveQueue.shift();
+      if (resolve) {
+        resolve({ value: undefined, done: true });
+      }
     }
   }
 
@@ -172,8 +176,10 @@ export class StdioTransport extends BaseTransport {
     // Reject all waiting receivers
     const error = new TransportError(`Process exited with ${exitInfo}`, 'PROCESS_EXITED');
     while (this.rejectQueue.length > 0) {
-      const reject = this.rejectQueue.shift()!;
-      reject(error);
+      const reject = this.rejectQueue.shift();
+      if (reject) {
+        reject(error);
+      }
     }
   }
 
@@ -194,7 +200,11 @@ export class StdioTransport extends BaseTransport {
       const serialized = JSON.stringify(message) + '\n';
 
       return new Promise<void>((resolve, reject) => {
-        this.process!.stdin!.write(serialized, (error) => {
+        if (!this.process || !this.process.stdin) {
+          reject(new TransportError('Process or stdin not available', 'STDIN_UNAVAILABLE'));
+          return;
+        }
+        this.process.stdin.write(serialized, (error) => {
           if (error) {
             reject(
               new TransportError(
@@ -224,8 +234,10 @@ export class StdioTransport extends BaseTransport {
     while (true) {
       // If there are queued messages, yield them first
       if (this.messageQueue.length > 0) {
-        const message = this.messageQueue.shift()!;
-        yield message;
+        const message = this.messageQueue.shift();
+        if (message) {
+          yield message;
+        }
         continue;
       }
 
@@ -257,6 +269,11 @@ export class StdioTransport extends BaseTransport {
     }
 
     return new Promise<void>((resolve, reject) => {
+      if (!this.process) {
+        reject(new TransportError('Process is null', 'PROCESS_NULL'));
+        return;
+      }
+
       const timeout = setTimeout(() => {
         // Force kill if graceful shutdown takes too long
         if (this.process && !this.process.killed) {
@@ -265,19 +282,19 @@ export class StdioTransport extends BaseTransport {
         reject(new TransportError('Process termination timeout', 'CLOSE_TIMEOUT'));
       }, 5000); // 5 second timeout
 
-      this.process!.once('exit', () => {
+      this.process.once('exit', () => {
         clearTimeout(timeout);
         this.process = null;
         resolve();
       });
 
       // Try graceful shutdown first
-      if (this.process!.stdin && !this.process!.stdin.destroyed) {
-        this.process!.stdin.end();
+      if (this.process.stdin && !this.process.stdin.destroyed) {
+        this.process.stdin.end();
       }
 
       // Send SIGTERM
-      this.process!.kill('SIGTERM');
+      this.process.kill('SIGTERM');
     });
   }
 }

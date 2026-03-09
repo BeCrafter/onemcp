@@ -210,20 +210,25 @@ describe('TUI JSON Mode', () => {
         },
       };
 
-      const services: ServiceDefinition[] = Object.entries(mcpServers).map(([name, config]) => ({
-        name,
-        transport: config.transport,
-        command: config.command,
-        args: config.args,
-        env: config.env,
-        tags: config.tags,
-        enabled: config.enabled,
-        connectionPool: config.connectionPool || {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      }));
+      const services: ServiceDefinition[] = Object.entries(mcpServers).map(([name, config]) => {
+        return {
+          name,
+          transport: config.transport as 'stdio',
+          command: 'command' in config ? config.command : '',
+          args: 'args' in config ? config.args : [],
+          env: 'env' in config ? (config.env as Record<string, string>) : {},
+          tags: 'tags' in config ? config.tags : [],
+          enabled: 'enabled' in config ? (config.enabled as boolean) : true,
+          connectionPool:
+            'connectionPool' in config
+              ? (config.connectionPool as any)
+              : {
+                  maxConnections: 5,
+                  idleTimeout: 60000,
+                  connectionTimeout: 30000,
+                },
+        };
+      });
 
       expect(services).toHaveLength(2);
       expect(services[0]?.name).toBe('filesystem');
@@ -244,7 +249,7 @@ describe('TUI JSON Mode', () => {
 
       const services: ServiceDefinition[] = Object.entries(mcpServers).map(([name, config]) => ({
         name,
-        transport: config.transport,
+        transport: config.transport as 'http',
         url: config.url,
         tags: config.tags,
         enabled: config.enabled,
@@ -277,7 +282,7 @@ describe('TUI JSON Mode', () => {
 
       const services: ServiceDefinition[] = Object.entries(mcpServers).map(([name, config]) => ({
         name,
-        transport: config.transport,
+        transport: config.transport as 'stdio',
         command: config.command,
         args: config.args,
         toolStates: config.toolStates,
@@ -291,8 +296,8 @@ describe('TUI JSON Mode', () => {
       }));
 
       expect(services[0]?.toolStates).toBeDefined();
-      expect(services[0]?.toolStates?.read_file).toBe(true);
-      expect(services[0]?.toolStates?.write_file).toBe(false);
+      expect(services[0]?.toolStates?.['read_file']).toBe(true);
+      expect(services[0]?.toolStates?.['write_file']).toBe(false);
       expect(services[0]?.toolStates?.['*_directory']).toBe(true);
     });
   });
@@ -363,20 +368,43 @@ describe('TUI JSON Mode', () => {
         },
       };
 
-      const services: ServiceDefinition[] = Object.entries(mcpServers).map(([name, config]) => ({
-        name,
-        transport: config.transport,
-        command: config.command,
-        args: config.args,
-        url: config.url,
-        enabled: config.enabled !== false,
-        tags: [],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      }));
+      const services: ServiceDefinition[] = Object.entries(mcpServers).map(([name, config]) => {
+        const transportType =
+          'url' in config && config.url
+            ? (config.transport as 'http')
+            : (config.transport as 'stdio');
+
+        if (transportType === 'stdio') {
+          return {
+            name,
+            transport: transportType,
+            command: 'command' in config ? config.command : '',
+            args: 'args' in config ? config.args : [],
+            env: 'env' in config ? (config.env as Record<string, string>) : {},
+            enabled: 'enabled' in config ? (config.enabled as boolean) : true,
+            tags: 'tags' in config ? (config.tags as string[]) : [],
+            connectionPool: {
+              maxConnections: 5,
+              idleTimeout: 60000,
+              connectionTimeout: 30000,
+            },
+          };
+        } else {
+          return {
+            name,
+            transport: transportType,
+            url: 'url' in config ? config.url : '',
+            headers: 'headers' in config ? (config.headers as Record<string, string>) : {},
+            enabled: 'enabled' in config ? (config.enabled as boolean) : true,
+            tags: 'tags' in config ? (config.tags as string[]) : [],
+            connectionPool: {
+              maxConnections: 5,
+              idleTimeout: 60000,
+              connectionTimeout: 30000,
+            },
+          };
+        }
+      });
 
       expect(services).toHaveLength(3);
       expect(services[0]?.name).toBe('service1');

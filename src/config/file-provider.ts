@@ -13,6 +13,7 @@ import type {
   ValidationResult,
   ValidationError,
 } from '../types/config.js';
+import type { ServiceDefinition } from '../types/service.js';
 import type { StorageAdapter } from '../types/storage.js';
 
 /**
@@ -316,20 +317,25 @@ export class FileConfigProvider implements ConfigProvider {
 
       let config: SystemConfig;
       try {
-        const parsed = JSON.parse(configData);
+        const parsed: unknown = JSON.parse(configData);
         if (typeof parsed !== 'object' || parsed === null) {
           throw new Error('Configuration JSON is not an object');
         }
-        
+
+        const parsedRecord = parsed as Record<string, unknown>;
+
         const processed = {
-          ...parsed,
-          mcpServers: parsed.mcpServers || parsed.services || []
+          ...parsedRecord,
+          mcpServers:
+            (parsedRecord['mcpServers'] as ServiceDefinition[]) ||
+            (parsedRecord['services'] as ServiceDefinition[]) ||
+            [],
         };
-        
+
         if ('services' in processed) {
-          delete (processed as any).services;
+          delete processed['services'];
         }
-        
+
         config = processed as SystemConfig;
       } catch (error) {
         throw new Error(

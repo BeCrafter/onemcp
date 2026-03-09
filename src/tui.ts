@@ -45,6 +45,7 @@ interface TuiArgs {
  * Display help message
  */
 function displayHelp(): void {
+  // eslint-disable-next-line no-console
   console.log(`
 MCP Router System - Terminal User Interface
 
@@ -95,6 +96,7 @@ For more information, visit: https://github.com/BeCrafter/onemcp
  * Display version information
  */
 function displayVersion(): void {
+  // eslint-disable-next-line no-console
   console.log('MCP Router System TUI v0.1.0');
 }
 
@@ -128,10 +130,10 @@ function parseCliArgs(): TuiArgs {
       version: values.version,
     };
   } catch (error) {
-    console.error(
-      `Error parsing arguments: ${error instanceof Error ? error.message : String(error)}`
+    process.stderr.write(
+      `Error parsing arguments: ${error instanceof Error ? error.message : String(error)}\n`
     );
-    console.error('Use --help for usage information');
+    process.stderr.write('Use --help for usage information\n');
     process.exit(1);
   }
 }
@@ -167,13 +169,13 @@ async function main(): Promise<void> {
   const configDir = resolveConfigDir(args);
 
   if (!existsSync(configDir)) {
-    console.error(`Configuration directory does not exist: ${configDir}`);
-    console.error('');
-    console.error('Please initialize the configuration directory first:');
-    console.error(`  onemcp --init --config-dir ${configDir}`);
-    console.error('');
-    console.error('Or use the default directory:');
-    console.error('  onemcp --init');
+    process.stderr.write(`Configuration directory does not exist: ${configDir}\n`);
+    process.stderr.write('\n');
+    process.stderr.write('Please initialize the configuration directory first:\n');
+    process.stderr.write(`  onemcp --init --config-dir ${configDir}\n`);
+    process.stderr.write('\n');
+    process.stderr.write('Or use the default directory:\n');
+    process.stderr.write('  onemcp --init\n');
     process.exit(1);
   }
 
@@ -191,7 +193,9 @@ async function main(): Promise<void> {
 const isTuiDirectCall = process.argv[1]?.includes('tui');
 if (isTuiDirectCall) {
   main().catch((error) => {
-    console.error('Unexpected error:', error);
+    process.stderr.write(
+      'Unexpected error: ' + (error instanceof Error ? error.message : String(error)) + '\n'
+    );
     process.exit(1);
   });
 }

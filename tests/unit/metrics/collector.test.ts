@@ -9,7 +9,7 @@
  * - 34.5: Support configurable collection interval and retention period
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { MetricsCollector } from '../../../src/metrics/collector.js';
 import type { MetricsConfig, ConnectionPoolMetrics } from '../../../src/types/index.js';
 
@@ -105,7 +105,7 @@ describe('MetricsCollector', () => {
 
       const toolMetrics = collector.getToolMetrics('read_file');
       expect(toolMetrics).toHaveLength(1);
-      expect(toolMetrics[0].callCount).toBe(2);
+      expect(toolMetrics[0]?.callCount).toBe(2);
     });
   });
 
@@ -262,7 +262,7 @@ describe('MetricsCollector', () => {
 
       const metrics = collector.getSystemMetrics();
       expect(metrics.sessions).toHaveLength(1);
-      expect(metrics.sessions[0].sessionId).toBe('session2');
+      expect(metrics.sessions[0]?.sessionId).toBe('session2');
     });
   });
 
@@ -279,7 +279,7 @@ describe('MetricsCollector', () => {
       const metrics = collector.queryMetrics({ serviceName: 'filesystem' });
       expect(metrics.totalRequests).toBe(2);
       expect(metrics.services).toHaveLength(1);
-      expect(metrics.services[0].serviceName).toBe('filesystem');
+      expect(metrics.services[0]?.serviceName).toBe('filesystem');
     });
 
     it('should query metrics by tool', () => {
@@ -291,7 +291,7 @@ describe('MetricsCollector', () => {
       const metrics = collector.queryMetrics({ sessionId: 'session1' });
       expect(metrics.totalRequests).toBe(2);
       expect(metrics.sessions).toHaveLength(1);
-      expect(metrics.sessions[0].sessionId).toBe('session1');
+      expect(metrics.sessions[0]?.sessionId).toBe('session1');
     });
 
     it('should query metrics by time range', async () => {

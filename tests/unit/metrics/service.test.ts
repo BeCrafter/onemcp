@@ -86,13 +86,13 @@ describe('MetricsService', () => {
     it('should get metrics for specific tool', () => {
       const toolMetrics = service.getToolMetrics('read_file');
       expect(toolMetrics).toHaveLength(1);
-      expect(toolMetrics[0].callCount).toBe(2);
+      expect(toolMetrics[0]?.callCount).toBe(2);
     });
 
     it('should get metrics for tool in specific service', () => {
       const toolMetrics = service.getToolMetrics('read_file', 'filesystem');
       expect(toolMetrics).toHaveLength(1);
-      expect(toolMetrics[0].serviceName).toBe('filesystem');
+      expect(toolMetrics[0]?.serviceName).toBe('filesystem');
     });
 
     it('should aggregate metrics by tool', () => {
@@ -154,10 +154,10 @@ describe('MetricsService', () => {
     it('should get top tools by call count', () => {
       const topTools = service.getTopToolsByCallCount(2);
       expect(topTools).toHaveLength(2);
-      expect(topTools[0].toolName).toBe('tool_c');
-      expect(topTools[0].callCount).toBe(10);
-      expect(topTools[1].toolName).toBe('tool_a');
-      expect(topTools[1].callCount).toBe(5);
+      expect(topTools[0]?.toolName).toBe('tool_c');
+      expect(topTools[0]?.callCount).toBe(10);
+      expect(topTools[1]?.toolName).toBe('tool_a');
+      expect(topTools[1]?.callCount).toBe(5);
     });
 
     it('should get top tools by error rate', () => {
@@ -165,17 +165,17 @@ describe('MetricsService', () => {
       expect(topTools).toHaveLength(2);
       // tool_b has 2/3 = 66.7% error rate
       // tool_a has 1/5 = 20% error rate
-      expect(topTools[0].toolName).toBe('tool_b');
-      expect(topTools[1].toolName).toBe('tool_a');
+      expect(topTools[0]?.toolName).toBe('tool_b');
+      expect(topTools[1]?.toolName).toBe('tool_a');
     });
 
     it('should get top tools by execution time', () => {
       const topTools = service.getTopToolsByExecutionTime(2);
       expect(topTools).toHaveLength(2);
-      expect(topTools[0].toolName).toBe('tool_b');
-      expect(topTools[0].avgExecutionTime).toBe(200);
-      expect(topTools[1].toolName).toBe('tool_a');
-      expect(topTools[1].avgExecutionTime).toBe(100);
+      expect(topTools[0]?.toolName).toBe('tool_b');
+      expect(topTools[0]?.avgExecutionTime).toBe(200);
+      expect(topTools[1]?.toolName).toBe('tool_a');
+      expect(topTools[1]?.avgExecutionTime).toBe(100);
     });
   });
 

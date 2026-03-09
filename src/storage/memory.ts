@@ -19,7 +19,7 @@ export class MemoryStorageAdapter implements StorageAdapter {
    * Read data by key
    */
   async read(key: string): Promise<string | undefined> {
-    return this.data.get(key);
+    return Promise.resolve(this.data.get(key));
   }
 
   /**
@@ -27,6 +27,7 @@ export class MemoryStorageAdapter implements StorageAdapter {
    */
   async write(key: string, value: string): Promise<void> {
     this.data.set(key, value);
+    return Promise.resolve();
   }
 
   /**
@@ -34,9 +35,10 @@ export class MemoryStorageAdapter implements StorageAdapter {
    */
   async update(key: string, value: string): Promise<void> {
     if (!this.data.has(key)) {
-      throw new Error(`Key ${key} does not exist`);
+      return Promise.reject(new Error(`Key ${key} does not exist`));
     }
     this.data.set(key, value);
+    return Promise.resolve();
   }
 
   /**
@@ -44,6 +46,7 @@ export class MemoryStorageAdapter implements StorageAdapter {
    */
   async delete(key: string): Promise<void> {
     this.data.delete(key);
+    return Promise.resolve();
   }
 
   /**
@@ -53,10 +56,10 @@ export class MemoryStorageAdapter implements StorageAdapter {
     const keys = Array.from(this.data.keys());
 
     if (prefix) {
-      return keys.filter((key) => key.startsWith(prefix));
+      return Promise.resolve(keys.filter((key) => key.startsWith(prefix)));
     }
 
-    return keys;
+    return Promise.resolve(keys);
   }
 
   /**

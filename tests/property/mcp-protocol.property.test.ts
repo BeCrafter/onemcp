@@ -14,7 +14,6 @@ import { HealthMonitor } from '../../src/health/health-monitor.js';
 import { MemoryStorageAdapter } from '../../src/storage/memory.js';
 import { FileConfigProvider } from '../../src/config/file-provider.js';
 import type { RequestContext } from '../../src/types/context.js';
-import type { ServiceDefinition } from '../../src/types/service.js';
 import type { SystemConfig } from '../../src/types/config.js';
 import type { JsonRpcRequest } from '../../src/types/jsonrpc.js';
 import { ErrorCode } from '../../src/types/jsonrpc.js';
@@ -29,7 +28,7 @@ async function createTestConfigProvider(): Promise<FileConfigProvider> {
     mode: 'cli',
     logLevel: 'INFO',
     configDir: '/test',
-    services: [],
+    mcpServers: [],
     connectionPool: {
       maxConnections: 5,
       idleTimeout: 60000,
@@ -65,27 +64,6 @@ async function createTestConfigProvider(): Promise<FileConfigProvider> {
     storageAdapter: storage,
     configDir: '/test',
   });
-}
-
-/**
- * Create test service definition
- */
-function createTestService(overrides?: Partial<ServiceDefinition>): ServiceDefinition {
-  return {
-    name: 'test-service',
-    enabled: true,
-    tags: [],
-    transport: 'stdio',
-    command: 'node',
-    args: ['test.js'],
-    env: {},
-    connectionPool: {
-      maxConnections: 5,
-      idleTimeout: 60000,
-      connectionTimeout: 30000,
-    },
-    ...overrides,
-  };
 }
 
 /**
@@ -149,7 +127,13 @@ describe('Property 18: Batch Request Partial Failure Isolation', () => {
 
           // Verify each response has the correct ID
           for (let i = 0; i < requests.length; i++) {
-            expect(responses[i].id).toBe(requests[i].id);
+            const response = responses[i];
+            const request = requests[i];
+            expect(response).toBeDefined();
+            expect(request).toBeDefined();
+            if (response && request) {
+              expect(response.id).toBe(request.id);
+            }
           }
 
           // Count successes and failures
@@ -296,7 +280,7 @@ describe('MCP Protocol Methods - Additional Properties', () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), { minLength: 1, maxLength: 5 }),
-        fc.constantFrom('AND', 'OR'),
+        fc.constantFrom<'AND' | 'OR'>('AND', 'OR'),
         async (tags, logic) => {
           const context: RequestContext = {
             requestId: 'test-request',

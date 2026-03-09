@@ -159,7 +159,10 @@ export class MetricsService {
         if (!map.has(tool.toolName)) {
           map.set(tool.toolName, []);
         }
-        map.get(tool.toolName)!.push(tool);
+        const tools = map.get(tool.toolName);
+        if (tools) {
+          tools.push(tool);
+        }
       }
     }
 
