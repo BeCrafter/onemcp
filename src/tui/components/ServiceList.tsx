@@ -68,7 +68,7 @@ const ServiceListItem: React.FC<{
   const enabledTools = totalTools - disabledTools;
 
   const endpoint = service.transport === 'stdio' 
-    ? (service.command || '') 
+    ? ((service.command || '') + (service.args?.length ? ' ' + service.args.join(' ') : ''))
     : (service.url || '');
   
   const endpointDisplay = endpoint.length > 50 

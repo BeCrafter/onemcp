@@ -31,6 +31,7 @@ type FormField =
   | 'url'
   | 'args'
   | 'env'
+  | 'headers'
   | 'tags'
   | 'enabled'
   | 'maxConnections'
@@ -59,6 +60,7 @@ interface FormData {
   url: string;
   args: string;
   env: string;
+  headers: string;
   tags: string;
   enabled: boolean;
   maxConnections: string;
@@ -126,6 +128,14 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
       label: 'URL',
       help: 'HTTP(S) URL of the MCP server',
       required: true,
+      type: 'text',
+      dependsOn: { field: 'transport', value: transport },
+    });
+    configs.push({
+      field: 'headers',
+      label: 'Headers',
+      help: 'KEY: VALUE pairs (comma-separated, optional)',
+      required: false,
       type: 'text',
       dependsOn: { field: 'transport', value: transport },
     });
@@ -260,6 +270,17 @@ function formDataToService(data: FormData): ServiceDefinition {
     }
   } else {
     service.url = data.url.trim();
+    
+    if (data.headers.trim()) {
+      service.headers = {};
+      const headerPairs = data.headers.split(',').map(h => h.trim()).filter(h => h.length > 0);
+      for (const pair of headerPairs) {
+        const [key, ...valueParts] = pair.split(':');
+        if (key && valueParts.length > 0) {
+          service.headers[key.trim()] = valueParts.join(':').trim();
+        }
+      }
+    }
   }
 
   return service;
@@ -283,6 +304,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
         url: service.url || '',
         args: service.args?.join(', ') || '',
         env: service.env ? Object.entries(service.env).map(([k, v]) => `${k}=${v}`).join(', ') : '',
+        headers: service.headers ? Object.entries(service.headers).map(([k, v]) => `${k}: ${v}`).join(', ') : '',
         tags: service.tags.join(', '),
         enabled: service.enabled,
         maxConnections: service.connectionPool.maxConnections.toString(),
@@ -297,6 +319,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
         url: '',
         args: '',
         env: '',
+        headers: '',
         tags: '',
         enabled: true,
         maxConnections: '5',
@@ -315,7 +338,10 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   // Get field configurations based on transport type
   const fieldConfigs = getFieldConfigs(formData.transport);
   const requiredFields = fieldConfigs.filter(c => c.required).map(c => c.field);
-  const optionalFields = fieldConfigs.filter(c => !c.required).map(c => c.field);
+  const connectionPoolFields: FormField[] = ['maxConnections', 'idleTimeout', 'connectionTimeout'];
+  const optionalFields = fieldConfigs
+    .filter(c => !c.required && !connectionPoolFields.includes(c.field))
+    .map(c => c.field);
 
   // Validate current field when it changes
   useEffect(() => {
@@ -352,6 +378,11 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
     return errors.length === 0;
   };
 
+  const isFieldVisible = (config: FieldConfig): boolean => {
+    const isConnectionPool = connectionPoolFields.includes(config.field);
+    return (config.required || !isConnectionPool) || (showAdvanced && isConnectionPool);
+  };
+
   // Handle field navigation
   const goToNextField = () => {
     const currentIndex = fieldConfigs.findIndex(c => c.field === currentField);
@@ -362,7 +393,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
       // Find next visible field
       for (let i = currentIndex + 1; i < fieldConfigs.length; i++) {
         const nextConfig = fieldConfigs[i];
-        if (nextConfig && (nextConfig.required || showAdvanced)) {
+        if (nextConfig && isFieldVisible(nextConfig)) {
           setCurrentField(nextConfig.field);
           return;
         }
@@ -376,7 +407,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
       // Find previous visible field
       for (let i = currentIndex - 1; i >= 0; i--) {
         const prevConfig = fieldConfigs[i];
-        if (prevConfig && (prevConfig.required || showAdvanced)) {
+        if (prevConfig && isFieldVisible(prevConfig)) {
           setCurrentField(prevConfig.field);
           return;
         }
@@ -415,11 +446,10 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
       return;
     }
 
-    // Toggle advanced options (Ctrl+A)
+    // Toggle advanced options (Ctrl+A) - for optional fields like tags, env, args
     if (input === 'a' && key.ctrl) {
       isCtrlAActive.current = true;
       setShowAdvanced(!showAdvanced);
-      // Reset after a short delay to handle any potential race conditions
       setTimeout(() => {
         isCtrlAActive.current = false;
       }, 2);
@@ -513,7 +543,8 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   const renderField = (config: FieldConfig, isCurrent: boolean) => {
     const error = fieldErrors.get(config.field);
     const hasError = touched.has(config.field) && error;
-    const isVisible = config.required || showAdvanced;
+    const isConnectionPool = connectionPoolFields.includes(config.field);
+    const isVisible = (config.required || !isConnectionPool) || (showAdvanced && isConnectionPool);
 
     if (!isVisible) {
       return null;
@@ -575,10 +606,10 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
         )}
 
         {/* Advanced options toggle */}
-        {!showAdvanced && optionalFields.length > 0 && (
+        {!showAdvanced && (
           <Box marginTop={1}>
             <Text dimColor>
-              Press Ctrl+A to show {optionalFields.length} advanced option(s)
+              Press Ctrl+A to show connection pool settings
             </Text>
           </Box>
         )}

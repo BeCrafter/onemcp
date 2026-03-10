@@ -434,6 +434,14 @@ export class ConnectionPool extends EventEmitter {
     if (!('result' in response)) {
       throw new Error('Invalid initialize response format');
     }
+
+    // Send initialized notification per MCP protocol spec
+    const initializedNotification = {
+      jsonrpc: '2.0' as const,
+      method: 'initialized',
+      params: {},
+    };
+    await connection.transport.send(initializedNotification);
   }
 
   /**

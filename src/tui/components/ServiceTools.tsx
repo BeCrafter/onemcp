@@ -34,33 +34,63 @@ interface ToolWithState extends BasicTool {
 }
 
 async function fetchToolsViaStdio(service: ServiceDefinition): Promise<Tool[]> {
+  console.log('[DEBUG] fetchToolsViaStdio START for service:', service.name);
+  console.log('[DEBUG] command:', service.command, 'args:', service.args);
+  
   if (!service.command) {
+    console.log('[DEBUG] No command, returning empty');
     return [];
   }
 
     let transport: StdioTransport | null = null;
     
     try {
+      console.log('[DEBUG] Step 1: Creating StdioTransport...');
       transport = new StdioTransport({
         command: service.command,
         args: service.args || [],
-        env: service.env || {},
+        env: service.env || [],
+      });
+      
+      // Check if already connected (event may have been emitted before listener attached)
+      if (transport.isConnected()) {
+        console.log('[DEBUG] Already connected!');
+      }
+      
+      console.log('[DEBUG] Step 2: Waiting for connected event...');
+
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Connection timeout (30s)')), 30000);
+        
+        // Handle connected event
+        const onConnected = () => {
+          console.log('[DEBUG] Connected event received!');
+          clearTimeout(timeout);
+          transport!.removeListener('error', onError);
+          resolve();
+        };
+        
+        // Handle error event
+        const onError = (err: Error) => {
+          console.log('[DEBUG] Error event:', err.message);
+          clearTimeout(timeout);
+          transport!.removeListener('connected', onConnected);
+          reject(err);
+        };
+        
+        transport!.once('connected', onConnected);
+        transport!.once('error', onError);
+        
+        // Check immediately in case already connected
+        if (transport.isConnected()) {
+          console.log('[DEBUG] Already connected, resolving immediately');
+          clearTimeout(timeout);
+          transport.removeListener('error', onError);
+          resolve();
+        }
       });
 
-    // Wait for connection
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Connection timeout')), 10000);
-      transport!.on('connected', () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-      transport!.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
-    });
-
-    // Step 1: Send initialize request
+      console.log('[DEBUG] Step 3: Sending initialize request...');
     const initRequest = {
       jsonrpc: '2.0' as const,
       id: `init-${Date.now()}`,
@@ -74,12 +104,15 @@ async function fetchToolsViaStdio(service: ServiceDefinition): Promise<Tool[]> {
         },
       },
     };
-
+    console.log('[DEBUG] initRequest:', JSON.stringify(initRequest));
     await transport.send(initRequest);
+    console.log('[DEBUG] Initialize request sent, waiting for response...');
 
     // Wait for initialize response
+    console.log('[DEBUG] Step 4: Waiting for initialize response...');
     const initIter = transport.receive();
     const initResult = await initIter.next();
+    console.log('[DEBUG] Initialize response:', initResult.value);
     
     if (!initResult.value || initResult.value === undefined) {
       throw new Error('No response for initialize request');
@@ -88,8 +121,10 @@ async function fetchToolsViaStdio(service: ServiceDefinition): Promise<Tool[]> {
     if ('error' in initResult.value) {
       throw new Error(`Initialize failed: ${(initResult.value as any).error.message}`);
     }
+    console.log('[DEBUG] Initialize successful!');
 
     // Step 2: Send initialized notification (no response expected)
+    console.log('[DEBUG] Step 5: Sending initialized notification...');
     await transport.send({
       jsonrpc: '2.0' as const,
       method: 'initialized',
@@ -97,6 +132,7 @@ async function fetchToolsViaStdio(service: ServiceDefinition): Promise<Tool[]> {
     });
 
     // Step 3: Send tools/list request
+    console.log('[DEBUG] Step 6: Sending tools/list request...');
     const toolsRequest = {
       jsonrpc: '2.0' as const,
       id: `tools-${Date.now()}`,
@@ -107,8 +143,10 @@ async function fetchToolsViaStdio(service: ServiceDefinition): Promise<Tool[]> {
     await transport.send(toolsRequest);
 
     // Wait for tools response
+    console.log('[DEBUG] Step 7: Waiting for tools response...');
     const toolsIter = transport.receive();
     const toolsResult = await toolsIter.next();
+    console.log('[DEBUG] Tools response received:', toolsResult.value ? 'yes' : 'no');
     
     if (!toolsResult.value || toolsResult.value === undefined) {
       throw new Error('No response for tools/list request');
@@ -119,6 +157,7 @@ async function fetchToolsViaStdio(service: ServiceDefinition): Promise<Tool[]> {
     }
 
     const result = toolsResult.value as any;
+    console.log('[DEBUG] Result tools:', result.result?.tools?.length);
     if (result.result?.tools) {
       return result.result.tools.map((t: any) => ({
         name: t.name,
@@ -129,11 +168,12 @@ async function fetchToolsViaStdio(service: ServiceDefinition): Promise<Tool[]> {
 
     return [];
   } catch (err) {
-    console.error('MCP stdio error:', err);
+    console.error('[DEBUG] MCP stdio error:', err);
     throw err;
   } finally {
+    console.log('[DEBUG] Closing transport...');
     if (transport) {
-      await transport.close();
+      try { await transport.close(); } catch { /* ignore */ }
     }
   }
 }
@@ -398,12 +438,16 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
     }
   });
 
+  const endpointInfo = service.transport === 'stdio'
+    ? ((service.command || '') + (service.args?.length ? ' ' + service.args.join(' ') : ''))
+    : (service.url || 'N/A');
+
   if (loading) {
     return (
       <Box flexDirection="column" height={terminalHeight}>
         <Box flexDirection="column" marginBottom={1}>
           <Text bold color="cyan">Tools for: {service.name}</Text>
-          <Text dimColor>Transport: {service.transport} | URL: {service.url || 'N/A'}</Text>
+          <Text dimColor>Transport: {service.transport} | {endpointInfo}</Text>
         </Box>
         <Text color="cyan">Fetching tools from service...</Text>
       </Box>
@@ -430,7 +474,7 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
             </Box>
           )}
         </Box>
-        <Text dimColor>Transport: {service.transport} | URL: {service.url || 'N/A'}</Text>
+        <Text dimColor>Transport: {service.transport} | {endpointInfo}</Text>
       </Box>
 
       {error && (
@@ -443,9 +487,11 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
         <Box flexDirection="column">
           <Text color="yellow">No tools found for this service</Text>
           <Text dimColor>
-            {service.url 
-              ? 'Could not connect to service or service has no tools'
-              : 'Service URL not configured - tools can only be discovered when service is reachable'}
+            {service.transport === 'stdio'
+              ? 'Could not connect to stdio service - check command and ensure service is running'
+              : (service.url 
+                ? 'Could not connect to service or service has no tools'
+                : 'Service URL not configured - tools can only be discovered when service is reachable')}
           </Text>
           {Object.keys(toolStates).length > 0 && (
             <Box flexDirection="column" marginTop={1}>
