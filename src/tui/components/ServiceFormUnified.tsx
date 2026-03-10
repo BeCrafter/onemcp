@@ -4,10 +4,11 @@
  * Single-page progressive form for adding and editing services.
  * Shows all fields on one page with progressive disclosure for optional fields.
  * Provides inline validation and real-time preview.
+ * Handles terminal height constraints for small terminals.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import SelectInput from 'ink-select-input';
 import type { ServiceDefinition, TransportType } from '../../types/service.js';
@@ -294,6 +295,9 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   onSubmit,
   onCancel,
 }) => {
+  const { stdout } = useStdout();
+  const terminalHeight = stdout?.rows || 24;
+  
   // Initialize form data
   const [formData, setFormData] = useState<FormData>(() => {
     if (service) {
@@ -333,15 +337,40 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Map<FormField, string>>(new Map());
   const [touched, setTouched] = useState<Set<FormField>>(new Set());
+  const [scrollOffset, setScrollOffset] = useState(0);
   const isCtrlAActive = useRef(false);
 
   // Get field configurations based on transport type
   const fieldConfigs = getFieldConfigs(formData.transport);
   const requiredFields = fieldConfigs.filter(c => c.required).map(c => c.field);
   const connectionPoolFields: FormField[] = ['maxConnections', 'idleTimeout', 'connectionTimeout'];
-  const optionalFields = fieldConfigs
-    .filter(c => !c.required && !connectionPoolFields.includes(c.field))
-    .map(c => c.field);
+
+  // Calculate visible fields based on terminal height
+  const HEADER_LINES = 4;
+  const FOOTER_LINES = 3;
+  const AVAILABLE_LINES = Math.max(1, terminalHeight - HEADER_LINES - FOOTER_LINES);
+  
+  // Default to compact mode - current field expanded, others collapsed
+  const isCompactMode = true;
+  const COLLAPSED_FIELD_LINES = 1;
+  const visibleFieldCount = Math.min(
+    fieldConfigs.length,
+    Math.max(3, Math.floor(AVAILABLE_LINES / COLLAPSED_FIELD_LINES))
+  );
+
+  // Get current field config for help text
+  const currentFieldConfig = fieldConfigs.find(c => c.field === currentField);
+  const currentFieldHelp = currentFieldConfig?.help || '';
+
+  // Ensure scroll shows current field
+  useEffect(() => {
+    const currentIdx = fieldConfigs.findIndex(c => c.field === currentField);
+    if (currentIdx < scrollOffset) {
+      setScrollOffset(currentIdx);
+    } else if (currentIdx >= scrollOffset + visibleFieldCount) {
+      setScrollOffset(Math.max(0, currentIdx - visibleFieldCount + 1));
+    }
+  }, [currentField, fieldConfigs]);
 
   // Validate current field when it changes
   useEffect(() => {
@@ -384,15 +413,17 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   };
 
   // Handle field navigation
-  const goToNextField = () => {
-    const currentIndex = fieldConfigs.findIndex(c => c.field === currentField);
-    if (currentIndex < fieldConfigs.length - 1) {
+  const goToNextField = (overrideTransport?: TransportType) => {
+    const transportForFields = overrideTransport ?? formData.transport;
+    const configsForTransport = getFieldConfigs(transportForFields);
+    const currentIndex = configsForTransport.findIndex(c => c.field === currentField);
+    if (currentIndex < configsForTransport.length - 1) {
       // Mark current field as touched
       setTouched(prev => new Set(prev).add(currentField));
       
       // Find next visible field
-      for (let i = currentIndex + 1; i < fieldConfigs.length; i++) {
-        const nextConfig = fieldConfigs[i];
+      for (let i = currentIndex + 1; i < configsForTransport.length; i++) {
+        const nextConfig = configsForTransport[i];
         if (nextConfig && isFieldVisible(nextConfig)) {
           setCurrentField(nextConfig.field);
           return;
@@ -446,6 +477,16 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
       return;
     }
 
+    // Scroll up/down when form is in scroll mode
+    if (key.upArrow) {
+      setScrollOffset(prev => Math.max(0, prev - 1));
+      return;
+    }
+    if (key.downArrow) {
+      setScrollOffset(prev => Math.min(fieldConfigs.length - visibleFieldCount, prev + 1));
+      return;
+    }
+
     // Toggle advanced options (Ctrl+A) - for optional fields like tags, env, args
     if (input === 'a' && key.ctrl) {
       isCtrlAActive.current = true;
@@ -493,8 +534,10 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
         items={items}
         initialIndex={items.findIndex(i => i.value === formData.transport)}
         onSelect={(item) => {
-          setFormData({ ...formData, transport: item.value as TransportType });
+          const newTransport = item.value as TransportType;
+          setFormData({ ...formData, transport: newTransport });
           setTouched(prev => new Set(prev).add('transport'));
+          goToNextField(newTransport);
         }}
       />
     );
@@ -550,8 +593,11 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
       return null;
     }
 
+    // In compact mode, help is shown in the dedicated help area
+    const showHelp = !isCompactMode;
+
     return (
-      <Box key={config.field} flexDirection="column" marginBottom={1}>
+      <Box key={config.field} flexDirection="column" marginBottom={fieldMarginBottom}>
         <Box>
           <Text bold color={isCurrent ? 'cyan' : 'white'}>
             {isCurrent ? '▶ ' : '  '}
@@ -560,11 +606,14 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
           </Text>
         </Box>
         
-        <Box marginLeft={2}>
-          <Text dimColor>{config.help}</Text>
-        </Box>
+        {/* Help text only shown in non-compact mode (it's in dedicated area in compact mode) */}
+        {showHelp && (
+          <Box marginLeft={2}>
+            <Text dimColor>{config.help}</Text>
+          </Box>
+        )}
 
-        <Box marginLeft={2} marginTop={0}>
+        <Box marginLeft={2} marginTop={isCompactMode ? 0 : 0}>
           {isCurrent ? (
             <>
               {config.type === 'select' ? (
@@ -590,19 +639,46 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
     );
   };
 
+  // Adjust padding and margins based on terminal height for small terminals
+  const isUltraCompactMode = terminalHeight < 15;
+  const formPadding = isCompactMode ? 0 : 1;
+  const formMarginBottom = isCompactMode ? 0 : 1;
+  const fieldPadding = isCompactMode ? 0 : 1;
+  const fieldMarginBottom = isCompactMode ? (isUltraCompactMode ? 0 : 0) : 1;
+  const helpPaddingX = isCompactMode ? 0 : 1;
+
+  // Calculate visible fields based on scroll
+  const visibleConfigs = fieldConfigs.slice(scrollOffset, scrollOffset + visibleFieldCount);
+  const hasMoreAbove = scrollOffset > 0;
+  const hasMoreBelow = scrollOffset + visibleFieldCount < fieldConfigs.length;
+
   return (
-    <Box flexDirection="column" padding={1}>
+    <Box flexDirection="column" padding={formPadding}>
       {/* Header */}
-      <Box borderStyle="round" borderColor="cyan" padding={1} marginBottom={1}>
+      <Box borderStyle="round" borderColor="cyan" padding={formPadding} marginBottom={formMarginBottom}>
         <Text bold color="cyan">
           {service ? 'Edit Service' : 'Add New Service'}
         </Text>
       </Box>
 
       {/* Form fields */}
-      <Box flexDirection="column" borderStyle="single" padding={1} marginBottom={1}>
-        {fieldConfigs.map(config => 
+      <Box flexDirection="column" borderStyle="single" padding={fieldPadding} marginBottom={fieldMarginBottom}>
+        {/* Scroll indicator */}
+        {hasMoreAbove && (
+          <Box justifyContent="center">
+            <Text dimColor>▲ more above</Text>
+          </Box>
+        )}
+        
+        {visibleConfigs.map(config => 
           renderField(config, config.field === currentField)
+        )}
+
+        {/* Scroll indicator */}
+        {hasMoreBelow && (
+          <Box justifyContent="center">
+            <Text dimColor>▼ more below</Text>
+          </Box>
         )}
 
         {/* Advanced options toggle */}
@@ -615,10 +691,21 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
         )}
       </Box>
 
+      {/* Field help info - prominent display */}
+      {currentFieldHelp && (
+        <Box borderStyle="round" borderColor="yellow" paddingX={1} paddingY={0} marginBottom={formMarginBottom}>
+          <Text>
+            <Text color="yellow">💡 </Text>
+            <Text bold color="yellow">{currentFieldConfig?.label}: </Text>
+            <Text color="white">{currentFieldHelp}</Text>
+          </Text>
+        </Box>
+      )}
+
       {/* Navigation help */}
-      <Box borderStyle="single" borderColor="gray" paddingX={1}>
+      <Box borderStyle="single" borderColor="gray" paddingX={helpPaddingX} marginTop={formMarginBottom}>
         <Text dimColor>
-          Tab/Shift+Tab: Navigate | Enter: Next | Ctrl+A: Advanced | Ctrl+S: Save | Esc: Cancel
+          ↑/↓: Scroll | Tab/Enter: Next | Ctrl+A: Advanced | Ctrl+S: Save | Esc: Cancel
         </Text>
       </Box>
     </Box>

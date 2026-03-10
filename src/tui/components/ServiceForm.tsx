@@ -4,10 +4,11 @@
  * Interactive form for adding and editing services.
  * Provides step-by-step configuration with validation and helpful error messages.
  * Shows/hides fields based on transport type selection.
+ * Handles terminal height constraints for small terminals.
  */
 
 import React, { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import SelectInput from 'ink-select-input';
 import type { ServiceDefinition, TransportType } from '../../types/service.js';
@@ -234,6 +235,9 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
   onSubmit,
   onCancel,
 }) => {
+  const { stdout } = useStdout();
+  const terminalHeight = stdout?.rows || 24;
+  
   // Initialize form data from existing service or defaults
   const [formData, setFormData] = useState<FormData>(() => {
     if (service) {
@@ -276,10 +280,12 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
   const fields = getFieldOrder(formData.transport, quickMode);
 
   // Handle field navigation
-  const goToNextField = () => {
-    const currentIndex = fields.indexOf(currentField);
-    if (currentIndex < fields.length - 1) {
-      const nextField = fields[currentIndex + 1];
+  const goToNextField = (overrideTransport?: TransportType) => {
+    const transportForFields = overrideTransport ?? formData.transport;
+    const fieldsForTransport = getFieldOrder(transportForFields, quickMode);
+    const currentIndex = fieldsForTransport.indexOf(currentField);
+    if (currentIndex < fieldsForTransport.length - 1) {
+      const nextField = fieldsForTransport[currentIndex + 1];
       if (nextField) {
         setCurrentField(nextField);
       }
@@ -346,8 +352,9 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
         items={items}
         initialIndex={items.findIndex(i => i.value === formData.transport)}
         onSelect={(item) => {
-          setFormData({ ...formData, transport: item.value as TransportType });
-          goToNextField();
+          const newTransport = item.value as TransportType;
+          setFormData({ ...formData, transport: newTransport });
+          goToNextField(newTransport);
         }}
       />
     );
@@ -423,7 +430,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
         onChange={(value) => {
           setFormData({ ...formData, [field]: value });
         }}
-        onSubmit={goToNextField}
+        onSubmit={() => goToNextField()}
       />
     );
   };
@@ -492,23 +499,35 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
   }
 
   // Render form
+  // Adjust padding and margins based on terminal height for small terminals
+  const isCompactMode = terminalHeight < 18;
+  const formPadding = isCompactMode ? 0 : 1;
+  const formMarginBottom = isCompactMode ? 0 : 1;
+  const fieldPadding = isCompactMode ? 0 : 1;
+  const fieldMarginBottom = isCompactMode ? 0 : 1;
+  const helpPaddingX = isCompactMode ? 0 : 1;
+  const showProgress = !isCompactMode;
+  const showAllErrors = !isCompactMode || errors.length <= 2;
+
   return (
-    <Box flexDirection="column" padding={1}>
-      <Box borderStyle="round" borderColor="cyan" padding={1} marginBottom={1}>
+    <Box flexDirection="column" padding={formPadding}>
+      <Box borderStyle="round" borderColor="cyan" padding={formPadding} marginBottom={formMarginBottom}>
         <Text bold color="cyan">
           {service ? 'Edit Service' : 'Add New Service'}
         </Text>
       </Box>
 
-      {/* Progress indicator */}
-      <Box marginBottom={1}>
-        <Text dimColor>
-          Step {fields.indexOf(currentField) + 1} of {fields.length}
-        </Text>
-      </Box>
+      {/* Progress indicator - hidden in compact mode */}
+      {showProgress && (
+        <Box marginBottom={1}>
+          <Text dimColor>
+            Step {fields.indexOf(currentField) + 1} of {fields.length}
+          </Text>
+        </Box>
+      )}
 
       {/* Current field */}
-      <Box flexDirection="column" borderStyle="single" padding={1} marginBottom={1}>
+      <Box flexDirection="column" borderStyle="single" padding={fieldPadding} marginBottom={fieldMarginBottom}>
         <Text bold color="yellow">{getFieldLabel(currentField)}</Text>
         <Text dimColor>{getFieldHelp(currentField)}</Text>
         <Box marginTop={1}>
@@ -518,14 +537,14 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
 
       {/* Validation errors */}
       {currentError && (
-        <Box borderStyle="single" borderColor="red" padding={1} marginBottom={1}>
+        <Box borderStyle="single" borderColor="red" padding={fieldPadding} marginBottom={fieldMarginBottom}>
           <Text color="red">✗ {currentError.message}</Text>
         </Box>
       )}
 
-      {/* All validation errors */}
-      {errors.length > 0 && (
-        <Box flexDirection="column" borderStyle="single" borderColor="red" padding={1} marginBottom={1}>
+      {/* All validation errors - limited in compact mode */}
+      {(showAllErrors && errors.length > 0) && (
+        <Box flexDirection="column" borderStyle="single" borderColor="red" padding={fieldPadding} marginBottom={fieldMarginBottom}>
           <Text bold color="red">Validation Errors:</Text>
           {errors.map((error, index) => (
             <Text key={index} color="red">
@@ -536,7 +555,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
       )}
 
       {/* Navigation help */}
-      <Box borderStyle="single" borderColor="gray" paddingX={1}>
+      <Box borderStyle="single" borderColor="gray" paddingX={helpPaddingX}>
         <Text dimColor>
           {currentField === 'confirm' 
             ? '↑/↓: Select | Enter: Confirm | p: Preview | Esc: Cancel'

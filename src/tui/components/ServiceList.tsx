@@ -6,14 +6,13 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import type { ServiceDefinition } from '../../types/service.js';
 
 export interface ServiceListProps {
   services: ServiceDefinition[];
   selectedIndex: number;
   onSelect: (index: number) => void;
-  globalToolStats?: { enabled: number; total: number };
   terminalHeight?: number;
   showDetails?: boolean;
 }
@@ -78,8 +77,6 @@ const ServiceListItem: React.FC<{
   return (
     <Box
       flexDirection="row"
-      borderStyle="single"
-      borderColor={isSelected ? 'cyan' : 'gray'}
       paddingX={1}
       paddingY={0}
       marginBottom={0}
@@ -124,14 +121,17 @@ export const ServiceList: React.FC<ServiceListProps> = ({
   services,
   selectedIndex,
   onSelect,
-  globalToolStats,
   terminalHeight,
 }) => {
+  const { stdout } = useStdout();
   const effectiveTerminalHeight = terminalHeight || 24;
-  const HEADER_LINES = 3;
-  const FOOTER_LINES = 3;
-  const SERVICE_ITEM_LINES = 4;
-  const MAX_VISIBLE_SERVICES = Math.max(3, Math.floor((effectiveTerminalHeight - HEADER_LINES - FOOTER_LINES) / SERVICE_ITEM_LINES));
+  const effectiveTerminalWidth = stdout?.columns || 80;
+  const HEADER_LINES = 2;
+  const FOOTER_LINES = 2;
+  const SERVICE_ITEM_LINES = 1;
+  // Calculate visible services based on terminal height, but cap at 25 per page
+  const calculatedVisible = Math.floor((effectiveTerminalHeight - HEADER_LINES - FOOTER_LINES) / SERVICE_ITEM_LINES);
+  const MAX_VISIBLE_SERVICES = Math.min(25, Math.max(3, calculatedVisible));
   
   const [currentPage, setCurrentPage] = useState(0);
   const totalPages = Math.ceil(services.length / MAX_VISIBLE_SERVICES);
@@ -193,6 +193,7 @@ export const ServiceList: React.FC<ServiceListProps> = ({
 
   return (
     <Box flexDirection="column">
+      {/* Header */}
       <Box paddingX={1} paddingY={0}>
         <Text bold color="cyan">{services.length} Services</Text>
         <Text dimColor>: </Text>
@@ -203,26 +204,21 @@ export const ServiceList: React.FC<ServiceListProps> = ({
             <Text color="red" bold>{disabledCount} disabled</Text>
           </>
         )}
-        {globalToolStats && globalToolStats.total > 0 && (
-          <>
-            <Text dimColor> | </Text>
-            <Text color="magenta" bold>{globalToolStats.enabled}/{globalToolStats.total}</Text>
-            <Text dimColor> tools</Text>
-          </>
-        )}
       </Box>
       
-      {/* Service list */}
-      {visibleServices.map((service, index) => (
-        <ServiceListItem
-          key={service.name}
-          service={service}
-          isSelected={startIndex + index === selectedIndex}
-        />
-      ))}
+      {/* Service list with border */}
+      <Box width={effectiveTerminalWidth} flexDirection="column" borderStyle="single" borderColor="gray" marginY={0}>
+        {visibleServices.map((service, index) => (
+          <ServiceListItem
+            key={service.name}
+            service={service}
+            isSelected={startIndex + index === selectedIndex}
+          />
+        ))}
+      </Box>
       
       {totalPages > 1 && (
-        <Box marginTop={1} paddingX={2} justifyContent="center">
+        <Box marginTop={0} paddingX={2} justifyContent="center">
           <Text dimColor>
             <Text bold>{currentPage + 1}/{totalPages}</Text>
             <Text> | ↑/↓ Navigate | ←/→ Page </Text>
@@ -232,22 +228,10 @@ export const ServiceList: React.FC<ServiceListProps> = ({
       )}
       
       {/* Footer with shortcuts */}
-      <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={2} paddingY={1}>
-        <Box flexWrap="wrap">
-          <Text color="cyan" bold>↑/↓</Text><Text dimColor> Navigate </Text>
-          <Text dimColor>|</Text>
-          <Text color="cyan" bold>Enter</Text><Text dimColor> Edit </Text>
-          <Text dimColor>|</Text>
-          <Text color="cyan" bold>Space</Text><Text dimColor> Toggle </Text>
-          <Text dimColor>|</Text>
-          <Text color="cyan" bold>a</Text><Text dimColor> Add </Text>
-          <Text dimColor>|</Text>
-          <Text color="cyan" bold>d</Text><Text dimColor> Delete </Text>
-          <Text dimColor>|</Text>
-          <Text color="cyan" bold>v</Text><Text dimColor> Tools </Text>
-          <Text dimColor>|</Text>
-          <Text color="cyan" bold>q</Text><Text dimColor> Quit</Text>
-        </Box>
+      <Box width={effectiveTerminalWidth} borderStyle="single" borderColor="gray" paddingX={1} marginTop={0}>
+        <Text dimColor>
+          ↑/↓ Navigate | Enter Edit | Space Toggle | a Add | d Delete | v Tools | q Quit
+        </Text>
       </Box>
     </Box>
   );

@@ -33,6 +33,61 @@ interface ToolWithState extends BasicTool {
   enabled: boolean;
 }
 
+/**
+ * Parse command string into command and args
+ * Handles cases where users paste full commands like "npx -y chrome-devtools-mcp@latest"
+ */
+function parseCommandString(command: string): { command: string; args: string[] } {
+  const tokens: string[] = [];
+  let current = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i];
+
+    if (inSingleQuote) {
+      if (char === "'") {
+        inSingleQuote = false;
+      } else {
+        current += char;
+      }
+    } else if (inDoubleQuote) {
+      if (char === '"') {
+        inDoubleQuote = false;
+      } else {
+        current += char;
+      }
+    } else {
+      if (char === "'") {
+        inSingleQuote = true;
+      } else if (char === '"') {
+        inDoubleQuote = true;
+      } else if (char === ' ') {
+        if (current.length > 0) {
+          tokens.push(current);
+          current = '';
+        }
+      } else {
+        current += char;
+      }
+    }
+  }
+
+  if (current.length > 0) {
+    tokens.push(current);
+  }
+
+  if (tokens.length === 0) {
+    return { command: '', args: [] };
+  }
+
+  return {
+    command: tokens[0],
+    args: tokens.slice(1),
+  };
+}
+
 async function fetchToolsViaStdio(service: ServiceDefinition): Promise<Tool[]> {
   console.log('[DEBUG] fetchToolsViaStdio START for service:', service.name);
   console.log('[DEBUG] command:', service.command, 'args:', service.args);
@@ -42,14 +97,30 @@ async function fetchToolsViaStdio(service: ServiceDefinition): Promise<Tool[]> {
     return [];
   }
 
+  // Parse command string if args not provided or command contains spaces
+  let command: string;
+  let args: string[] | undefined;
+  if (service.args !== undefined && service.args.length > 0) {
+    command = service.command;
+    args = service.args;
+  } else if (service.command.includes(' ')) {
+    const parsed = parseCommandString(service.command);
+    command = parsed.command;
+    args = parsed.args.length > 0 ? parsed.args : undefined;
+  } else {
+    command = service.command;
+    args = undefined;
+  }
+  console.log('[DEBUG] Parsed command:', command, 'args:', args);
+
     let transport: StdioTransport | null = null;
     
     try {
       console.log('[DEBUG] Step 1: Creating StdioTransport...');
       transport = new StdioTransport({
-        command: service.command,
-        args: service.args || [],
-        env: service.env || [],
+        command,
+        args: args || [],
+        env: service.env || {},
       });
       
       // Check if already connected (event may have been emitted before listener attached)

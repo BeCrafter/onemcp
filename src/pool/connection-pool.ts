@@ -34,6 +34,62 @@ export class ConnectionPoolError extends Error {
 }
 
 /**
+ * Parse a command string into command and args
+ * Handles cases where users paste full commands like "npx -y chrome-devtools-mcp@latest"
+ * as a single string instead of splitting into command + args array
+ */
+function parseCommandString(command: string): { command: string; args: string[] } {
+  const tokens: string[] = [];
+  let current = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i];
+
+    if (inSingleQuote) {
+      if (char === "'") {
+        inSingleQuote = false;
+      } else {
+        current += char;
+      }
+    } else if (inDoubleQuote) {
+      if (char === '"') {
+        inDoubleQuote = false;
+      } else {
+        current += char;
+      }
+    } else {
+      if (char === "'") {
+        inSingleQuote = true;
+      } else if (char === '"') {
+        inDoubleQuote = true;
+      } else if (char === ' ') {
+        if (current.length > 0) {
+          tokens.push(current);
+          current = '';
+        }
+      } else {
+        current += char;
+      }
+    }
+  }
+
+  if (current.length > 0) {
+    tokens.push(current);
+  }
+
+  if (tokens.length === 0) {
+    return { command: '', args: [] };
+  }
+
+  return {
+    command: tokens[0],
+    args: tokens.slice(1),
+  };
+}
+
+/**
  * Request waiting in queue
  */
 interface QueuedRequest {
@@ -348,11 +404,26 @@ export class ConnectionPool extends EventEmitter {
       if (!this.service.command) {
         throw new Error(`Service ${this.service.name} requires command for stdio transport`);
       }
+      let command: string;
+      let args: string[] | undefined;
+      // If args is already provided, use it directly
+      if (this.service.args !== undefined && this.service.args.length > 0) {
+        command = this.service.command;
+        args = this.service.args;
+      } else if (this.service.command.includes(' ')) {
+        // Parse command string if it contains spaces (user pasted full command)
+        const parsed = parseCommandString(this.service.command);
+        command = parsed.command;
+        args = parsed.args.length > 0 ? parsed.args : undefined;
+      } else {
+        command = this.service.command;
+        args = undefined;
+      }
       const config: { command: string; args?: string[]; env?: Record<string, string> } = {
-        command: this.service.command,
+        command,
       };
-      if (this.service.args !== undefined) {
-        config.args = this.service.args;
+      if (args !== undefined) {
+        config.args = args;
       }
       if (this.service.env !== undefined) {
         config.env = this.service.env;

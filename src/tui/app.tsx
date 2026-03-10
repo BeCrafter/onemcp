@@ -69,24 +69,42 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
   const globalToolStats = React.useMemo(() => {
     let totalTools = 0;
     let enabledTools = 0;
+    let enabledServiceCount = 0;
 
     services.forEach(service => {
-      // Use discovered tool count if available
-      const serviceTotal = service.discoveredToolsCount ?? 
-        (service.toolStates ? Object.keys(service.toolStates).length : 0);
-      
-      totalTools += serviceTotal;
-      
-      // Count explicitly disabled tools
-      if (service.toolStates) {
-        const disabledCount = Object.entries(service.toolStates)
-          .filter(([_, enabled]) => enabled === false).length;
-        enabledTools += (serviceTotal - disabledCount);
-      } else {
-        // If no toolStates, all tools are enabled by default
-        enabledTools += serviceTotal;
+      // Only count tools from enabled services
+      if (service.enabled) {
+        enabledServiceCount++;
+        // Use discovered tool count if available and valid, otherwise assume 0
+        const serviceTotal = (service.discoveredToolsCount && service.discoveredToolsCount > 0) 
+          ? service.discoveredToolsCount 
+          : 0;
+        totalTools += serviceTotal;
+        
+        if (serviceTotal > 0) {
+          // Count explicitly disabled tools in enabled services
+          if (service.toolStates) {
+            const disabledCount = Object.values(service.toolStates)
+              .filter(enabled => enabled === false).length;
+            // Enabled tools = total - disabled (unmentioned tools are enabled by default)
+            const serviceEnabled = Math.max(0, serviceTotal - disabledCount);
+            enabledTools += serviceEnabled;
+          } else {
+            // If no toolStates, all tools are enabled by default
+            enabledTools += serviceTotal;
+          }
+        }
       }
     });
+
+    // Debug: Log enabled services for verification
+    if (enabledServiceCount > 0) {
+      const debugInfo = services
+        .filter(s => s.enabled)
+        .map(s => `${s.name}(${s.discoveredToolsCount || 0})`)
+        .join(', ');
+      console.log(`Global tool stats: ${enabledTools}/${totalTools} tools from ${enabledServiceCount} enabled services: [${debugInfo}]`);
+    }
 
     return { enabled: enabledTools, total: totalTools };
   }, [services]);
