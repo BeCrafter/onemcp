@@ -24,6 +24,15 @@ import { ErrorCode } from '../types/jsonrpc.js';
 import Ajv from 'ajv';
 import { EventEmitter } from 'events';
 
+/** Default timeout for a single service's tools/list during discovery (ms) */
+const DEFAULT_DISCOVERY_TIMEOUT_MS = 30_000;
+
+/** Cache TTL: use cached tool list only if younger than this (ms). Set to 0 to use cache until invalidated. */
+const CACHE_TTL_MS: number = 60_000;
+
+/** Max number of services to query concurrently during discovery (avoids resource exhaustion) */
+const MAX_CONCURRENT_DISCOVERY = 10;
+
 /**
  * Tool cache entry
  */
@@ -42,6 +51,8 @@ interface ToolCacheEntry {
 export class ToolRouter extends EventEmitter {
   private toolCache: ToolCacheEntry | null = null;
   private connectionPools: Map<string, ConnectionPool> = new Map();
+  /** In-flight discovery promise per tag-filter key for request coalescing */
+  private inFlightDiscovery: Map<string, Promise<Tool[]>> = new Map();
 
   constructor(
     private readonly serviceRegistry: ServiceRegistry,
@@ -107,64 +118,91 @@ export class ToolRouter extends EventEmitter {
    * @returns Promise resolving to array of discovered tools
    */
   public async discoverTools(tagFilter?: TagFilter): Promise<Tool[]> {
-    // Check cache first (Requirement 2.3)
-    if (this.toolCache && !tagFilter) {
-      return this.toolCache.tools;
+    const cacheKey = this.tagFilterKey(tagFilter);
+
+    // Use cache when no tag filter, cache exists, and not expired (Requirement 2.3)
+    if (!tagFilter && this.toolCache) {
+      const ageMs = Date.now() - this.toolCache.timestamp.getTime();
+      if (CACHE_TTL_MS === 0 || ageMs < CACHE_TTL_MS) {
+        return this.toolCache.tools;
+      }
+      this.toolCache = null;
     }
 
-    // Get all services (Requirement 2.1)
-    let services: ServiceDefinition[];
+    // Request coalescing: reuse in-flight discovery for the same tag filter
+    const inFlight = this.inFlightDiscovery.get(cacheKey);
+    if (inFlight !== undefined) {
+      return inFlight;
+    }
 
+    const promise = this.runDiscovery(tagFilter);
+    this.inFlightDiscovery.set(cacheKey, promise);
+    void promise.finally(() => {
+      this.inFlightDiscovery.delete(cacheKey);
+    });
+    return promise;
+  }
+
+  /** Stable key for tag filter for coalescing */
+  private tagFilterKey(tagFilter?: TagFilter): string {
+    if (!tagFilter) {
+      return '';
+    }
+    const tags = [...tagFilter.tags].sort();
+    return JSON.stringify({ tags, logic: tagFilter.logic });
+  }
+
+  /**
+   * Run discovery with bounded concurrency and merge results.
+   */
+  private async runDiscovery(tagFilter?: TagFilter): Promise<Tool[]> {
+    let services: ServiceDefinition[];
     if (tagFilter) {
-      // Apply tag filter (Requirements 14.1-14.5)
       const matchAll = tagFilter.logic === 'AND';
       services = await this.serviceRegistry.findByTags(tagFilter.tags, matchAll);
     } else {
       services = this.serviceRegistry.list();
     }
 
-    // Filter to only enabled services
     const enabledServices = services.filter((service) => service.enabled);
-
-    // Filter to only healthy services
     const healthyServices = enabledServices.filter((service) => {
       const healthStatus = this.healthMonitor.getHealthStatus(service.name);
-      // Include service if:
-      // 1. No health status yet (not checked), or
-      // 2. Health status is healthy
       return !healthStatus || healthStatus.healthy;
     });
 
-    // Discover tools from all healthy enabled services
+    const results = await this.runWithConcurrencyLimit(
+      healthyServices,
+      MAX_CONCURRENT_DISCOVERY,
+      async (service) => {
+        const pool = this.connectionPools.get(service.name);
+        if (!pool) {
+          return { service: service.name, tools: [] as Tool[] };
+        }
+        const serviceTools = await this.queryServiceTools(service, pool);
+        const enabledTools = serviceTools.filter((tool) => tool.enabled);
+        return { service: service.name, tools: enabledTools };
+      }
+    );
+
     const allTools: Tool[] = [];
-
-    for (const service of healthyServices) {
-      const pool = this.connectionPools.get(service.name);
-
-      if (!pool) {
-        // No connection pool registered for this service, skip
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const service = healthyServices[i];
+      if (service === undefined || result === undefined) {
         continue;
       }
-
-      try {
-        // Query tools from the service
-        const serviceTools = await this.queryServiceTools(service, pool);
-
-        // Filter out disabled tools - only return enabled tools to external clients
-        const enabledTools = serviceTools.filter((tool) => tool.enabled);
-        allTools.push(...enabledTools);
-      } catch (error) {
-        // Log error to console for debugging
+      if (result.status === 'fulfilled') {
+        allTools.push(...result.value.tools);
+      } else {
+        const reason: unknown = result.reason;
         console.error(
           `Failed to discover tools from service "${service.name}":`,
-          error instanceof Error ? error.message : String(error)
+          reason instanceof Error ? reason.message : String(reason)
         );
-        // Also emit event for programmatic handling
-        this.emit('toolDiscoveryError', service.name, error);
+        this.emit('toolDiscoveryError', service.name, reason);
       }
     }
 
-    // Cache the results if no tag filter was applied (Requirement 2.3)
     if (!tagFilter) {
       this.toolCache = {
         tools: allTools,
@@ -173,6 +211,40 @@ export class ToolRouter extends EventEmitter {
     }
 
     return allTools;
+  }
+
+  /**
+   * Run async tasks with bounded concurrency; returns settled results in order.
+   */
+  private async runWithConcurrencyLimit<T, R>(
+    items: T[],
+    limit: number,
+    fn: (item: T) => Promise<R>
+  ): Promise<Array<PromiseSettledResult<R>>> {
+    const results = new Array<PromiseSettledResult<R>>(items.length);
+    let index = 0;
+
+    const runOne = async (): Promise<void> => {
+      const i = index++;
+      if (i >= items.length) {
+        return;
+      }
+      const item = items[i];
+      if (item === undefined) {
+        return;
+      }
+      try {
+        const value = await fn(item);
+        results[i] = { status: 'fulfilled', value };
+      } catch (reason) {
+        results[i] = { status: 'rejected', reason };
+      }
+      await runOne();
+    };
+
+    const concurrency = Math.min(limit, items.length);
+    await Promise.all(Array.from({ length: concurrency }, () => runOne()));
+    return results;
   }
 
   /**
@@ -186,6 +258,7 @@ export class ToolRouter extends EventEmitter {
    */
   public invalidateCache(): void {
     this.toolCache = null;
+    this.inFlightDiscovery.clear();
     this.emit('cacheInvalidated');
   }
 
@@ -283,18 +356,42 @@ export class ToolRouter extends EventEmitter {
    * @returns Promise resolving to array of tools from the service
    * @private
    */
+  /**
+   * Run a promise with a timeout; reject with an Error if it exceeds the limit.
+   */
+  private async withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${ms}ms`));
+      }, ms);
+    });
+    try {
+      const result = await Promise.race([promise, timeoutPromise]);
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+      return result;
+    } catch (e) {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+      throw e;
+    }
+  }
+
   private async queryServiceTools(
     service: ServiceDefinition,
     pool: ConnectionPool
   ): Promise<Tool[]> {
-    // Acquire a connection
     const connection = await pool.acquire();
-
     try {
-      // Query tools from the service using MCP protocol
-      // For now, we'll use a mock implementation since the actual MCP protocol
-      // communication is not yet implemented
-      const rawTools: unknown[] = await this.queryToolsViaMCP(connection);
+      const timeoutMs = service.connectionPool?.connectionTimeout ?? DEFAULT_DISCOVERY_TIMEOUT_MS;
+      const rawTools: unknown[] = await this.withTimeout(
+        this.queryToolsViaMCP(connection),
+        timeoutMs,
+        `tools/list for ${service.name}`
+      );
 
       // Apply namespacing and create Tool objects (Requirement 2.2)
       const tools: Tool[] = rawTools.map((rawTool: unknown) => {
