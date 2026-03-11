@@ -258,12 +258,8 @@ export class CliModeRunner {
         ('result' in response && response.result !== undefined) ||
         ('error' in response && response.error !== undefined);
       const idInvalid =
-        isResponse &&
-        'id' in response &&
-        (response.id === null || response.id === undefined);
-      const out: JsonRpcMessage = idInvalid
-        ? { ...response, id: 0 }
-        : response;
+        isResponse && 'id' in response && (response.id === null || response.id === undefined);
+      const out: JsonRpcMessage = idInvalid ? { ...response, id: 0 } : response;
       const serialized = this.serializer.serialize(out);
       stdout.write(serialized + '\n');
     } catch (error) {

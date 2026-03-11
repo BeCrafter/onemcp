@@ -15,6 +15,7 @@ import type { ToolRouter } from '../routing/tool-router.js';
 import type { RequestContext, TagFilter } from '../types/context.js';
 import { ErrorCode } from '../types/jsonrpc.js';
 import { ErrorBuilder } from '../errors/error-builder.js';
+import { getPackageVersion } from '../utils/package-version.js';
 
 /**
  * MCP initialize parameters
@@ -122,7 +123,7 @@ export class McpProtocolHandler {
       },
       serverInfo: {
         name: 'onemcp',
-        version: '1.0.0',
+        version: getPackageVersion(),
       },
     };
   }

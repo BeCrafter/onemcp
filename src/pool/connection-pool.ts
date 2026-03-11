@@ -17,6 +17,7 @@ import {
 } from './connection.js';
 import { StdioTransport } from '../transport/stdio.js';
 import { HttpTransport, type HttpTransportConfig } from '../transport/http.js';
+import { getPackageVersion } from '../utils/package-version.js';
 import { EventEmitter } from 'events';
 
 /**
@@ -479,7 +480,7 @@ export class ConnectionPool extends EventEmitter {
         capabilities: {},
         clientInfo: {
           name: 'onemcp',
-          version: '1.0.0',
+          version: getPackageVersion(),
         },
       },
     };

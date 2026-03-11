@@ -351,12 +351,13 @@ describe('CLI Mode Integration Tests', () => {
     });
 
     // Request with id: null is invalid per our parser, so we get parse error; response must have valid id
-    const invalidRequest = JSON.stringify({
-      jsonrpc: '2.0',
-      id: null,
-      method: 'unknown/method',
-      params: {},
-    }) + '\n';
+    const invalidRequest =
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: null,
+        method: 'unknown/method',
+        params: {},
+      }) + '\n';
     proc.stdin?.write(invalidRequest);
 
     const response = await waitForResponse(proc);
