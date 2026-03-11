@@ -99,20 +99,17 @@ export class HealthMonitor extends EventEmitter {
     }
 
     const previousStatus = this.healthStatuses.get(serviceName);
-    let connection;
+    let connection: Awaited<ReturnType<ConnectionPool['acquire']>> | undefined;
 
     try {
-      // Attempt to acquire a connection
       connection = await pool.acquire();
 
-      // Check if connection is healthy
       const isHealthy = pool.isConnectionHealthy(connection);
 
       if (!isHealthy) {
         throw new Error('Connection is not healthy');
       }
 
-      // Health check passed
       const status: HealthStatus = {
         serviceName,
         healthy: true,
@@ -120,7 +117,6 @@ export class HealthMonitor extends EventEmitter {
         consecutiveFailures: 0,
       };
 
-      // Check if health status changed from unhealthy to healthy
       const wasUnhealthy = previousStatus && !previousStatus.healthy;
 
       this.healthStatuses.set(serviceName, status);
@@ -130,9 +126,10 @@ export class HealthMonitor extends EventEmitter {
         this.emit('serviceRecovered', serviceName);
       }
 
+      pool.release(connection);
+      connection = undefined;
       return status;
     } catch (error) {
-      // Health check failed
       const consecutiveFailures = (previousStatus?.consecutiveFailures || 0) + 1;
 
       const status: HealthStatus = {
@@ -147,7 +144,6 @@ export class HealthMonitor extends EventEmitter {
         },
       };
 
-      // Check if health status changed from healthy to unhealthy
       const wasHealthy = !previousStatus || previousStatus.healthy;
 
       this.healthStatuses.set(serviceName, status);
@@ -157,10 +153,17 @@ export class HealthMonitor extends EventEmitter {
         this.emit('serviceFailed', serviceName);
       }
 
+      if (connection !== undefined) {
+        await pool.markConnectionFailed(
+          connection,
+          error instanceof Error ? error : new Error(String(error))
+        );
+        connection = undefined;
+      }
+
       return status;
     } finally {
-      // Release connection if acquired
-      if (connection) {
+      if (connection !== undefined) {
         pool.release(connection);
       }
     }
@@ -276,10 +279,13 @@ export class HealthMonitor extends EventEmitter {
       serviceNames.map(async (serviceName) => {
         const status = await this.checkHealth(serviceName);
 
-        // Check if service has exceeded failure threshold
         if (!status.healthy && status.consecutiveFailures >= this.failureThreshold) {
-          // Emit event that service is unhealthy and should be unloaded
           this.emit('serviceUnhealthy', serviceName, status);
+
+          const pool = this.connectionPools.get(serviceName);
+          if (pool !== undefined) {
+            await pool.removeUnhealthyConnections();
+          }
         }
       })
     );

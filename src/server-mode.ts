@@ -407,7 +407,10 @@ export class ServerModeRunner {
 
       // Start health monitoring if enabled
       if (this.config.healthCheck.enabled) {
-        void this.healthMonitor.startHeartbeat(this.config.healthCheck.interval);
+        void this.healthMonitor.startHeartbeat(
+          this.config.healthCheck.interval,
+          this.config.healthCheck.failureThreshold ?? 3
+        );
         console.error('Health monitoring started');
       }
 

@@ -92,7 +92,10 @@ export class CliModeRunner {
 
       // Start health monitoring if enabled
       if (this.config.healthCheck.enabled) {
-        this.healthMonitor.startHeartbeat(this.config.healthCheck.interval);
+        this.healthMonitor.startHeartbeat(
+          this.config.healthCheck.interval,
+          this.config.healthCheck.failureThreshold ?? 3
+        );
         console.error('Health monitoring started');
       }
 

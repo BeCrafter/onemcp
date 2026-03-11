@@ -357,6 +357,34 @@ export class ToolRouter extends EventEmitter {
    * @private
    */
   /**
+   * Whether an error indicates the connection is dead and should be removed from the pool.
+   */
+  private isConnectionLevelError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    if (error.name !== 'TransportError' || !('code' in error)) {
+      return false;
+    }
+    const code = (error as { code?: string }).code;
+    const connectionLevelCodes = new Set([
+      'PROCESS_EXITED',
+      'PROCESS_ERROR',
+      'PROCESS_NULL',
+      'STDIN_UNAVAILABLE',
+      'STDIN_DESTROYED',
+      'STDIN_WRITE_FAILED',
+      'TRANSPORT_CLOSED',
+      'TRANSPORT_CLOSING',
+      'TRANSPORT_ERROR',
+      'HTTP_TIMEOUT',
+      'HTTP_REQUEST_FAILED',
+      'HTTP_SEND_FAILED',
+    ]);
+    return typeof code === 'string' && connectionLevelCodes.has(code);
+  }
+
+  /**
    * Run a promise with a timeout; reject with an Error if it exceeds the limit.
    */
   private async withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -385,6 +413,7 @@ export class ToolRouter extends EventEmitter {
     pool: ConnectionPool
   ): Promise<Tool[]> {
     const connection = await pool.acquire();
+    let connectionHandled = false;
     try {
       const timeoutMs = service.connectionPool?.connectionTimeout ?? DEFAULT_DISCOVERY_TIMEOUT_MS;
       const rawTools: unknown[] = await this.withTimeout(
@@ -393,7 +422,6 @@ export class ToolRouter extends EventEmitter {
         `tools/list for ${service.name}`
       );
 
-      // Apply namespacing and create Tool objects (Requirement 2.2)
       const tools: Tool[] = rawTools.map((rawTool: unknown) => {
         const toolObj = rawTool as {
           name: string;
@@ -408,8 +436,6 @@ export class ToolRouter extends EventEmitter {
           service.name,
           toolObj.name
         );
-
-        // Determine if tool is enabled based on service configuration
         const enabled = this.isToolEnabled(service, toolObj.name);
 
         return {
@@ -427,9 +453,22 @@ export class ToolRouter extends EventEmitter {
       });
 
       return tools;
+    } catch (error) {
+      if (this.isConnectionLevelError(error)) {
+        await pool.markConnectionFailed(
+          connection,
+          error instanceof Error ? error : new Error(String(error))
+        );
+        connectionHandled = true;
+      } else {
+        pool.release(connection);
+        connectionHandled = true;
+      }
+      throw error;
     } finally {
-      // Always release the connection
-      pool.release(connection);
+      if (!connectionHandled) {
+        pool.release(connection);
+      }
     }
   }
 
@@ -656,8 +695,7 @@ export class ToolRouter extends EventEmitter {
     // Validate parameters against tool schema (Requirement 5.2)
     this.validateToolParameters(tool, params, context);
 
-    // Acquire a connection from the pool
-    let connection;
+    let connection: Connection;
     try {
       connection = await pool.acquire();
     } catch (error) {
@@ -670,11 +708,10 @@ export class ToolRouter extends EventEmitter {
       );
     }
 
+    let connectionHandled = false;
     try {
-      // Execute the tool call via MCP protocol (Requirement 5.3, 5.4)
       const result = await this.executeToolCall(connection, toolName, params, context);
 
-      // Emit success event
       this.emit('toolCallSuccess', {
         namespacedName,
         serviceName,
@@ -684,7 +721,6 @@ export class ToolRouter extends EventEmitter {
 
       return result;
     } catch (error) {
-      // Emit error event
       this.emit('toolCallError', {
         namespacedName,
         serviceName,
@@ -693,7 +729,14 @@ export class ToolRouter extends EventEmitter {
         error,
       });
 
-      // Re-throw with proper error formatting
+      if (this.isConnectionLevelError(error)) {
+        await pool.markConnectionFailed(
+          connection,
+          error instanceof Error ? error : new Error(String(error))
+        );
+        connectionHandled = true;
+      }
+
       if (error instanceof Error && 'code' in error) {
         throw error;
       }
@@ -706,8 +749,9 @@ export class ToolRouter extends EventEmitter {
         error as Error
       );
     } finally {
-      // Always release the connection back to the pool
-      pool.release(connection);
+      if (!connectionHandled) {
+        pool.release(connection);
+      }
     }
   }
 

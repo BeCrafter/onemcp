@@ -235,8 +235,17 @@ export class ConnectionPool extends EventEmitter {
 
     // For stdio transport, check if the process is still running
     if (connection.transport.getType() === 'stdio') {
-      const stdioTransport = connection.transport as { process?: { killed: boolean } };
-      if (stdioTransport.process && stdioTransport.process.killed) {
+      const stdioTransport = connection.transport as {
+        process?: { killed?: boolean; exitCode?: number | null } | null;
+      };
+      const proc = stdioTransport.process;
+      if (!proc) {
+        return false;
+      }
+      if (proc.killed) {
+        return false;
+      }
+      if (proc.exitCode !== undefined && proc.exitCode !== null) {
         return false;
       }
     }
@@ -620,6 +629,31 @@ export class ConnectionPool extends EventEmitter {
       this.emit('error', error);
     } finally {
       this.connections.delete(connection.id);
+    }
+  }
+
+  /**
+   * Remove all connections that are not healthy (e.g. dead stdio process).
+   * Call when a service is marked unhealthy so the next acquire creates fresh connections.
+   */
+  public async removeUnhealthyConnections(): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+
+    const toClose: Connection[] = [];
+    for (const connection of this.connections.values()) {
+      if (!this.isConnectionHealthy(connection)) {
+        toClose.push(connection);
+      }
+    }
+
+    for (const connection of toClose) {
+      await this.closeConnection(connection);
+    }
+
+    if (toClose.length > 0) {
+      this.processQueue();
     }
   }
 
