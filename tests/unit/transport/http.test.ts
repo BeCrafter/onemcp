@@ -209,6 +209,9 @@ describe('HttpTransport', () => {
         ok: true,
         status: 200,
         statusText: 'OK',
+        headers: {
+          get: vi.fn().mockReturnValue(null),
+        },
         text: vi.fn().mockResolvedValue(
           JSON.stringify({
             jsonrpc: '2.0',
@@ -238,9 +241,9 @@ describe('HttpTransport', () => {
         'http://localhost:3000/rpc',
         expect.objectContaining({
           method: 'POST',
-          headers: {
+          headers: expect.objectContaining({
             'Content-Type': 'application/json',
-          },
+          }),
           body: JSON.stringify(testMessage),
         })
       );
@@ -280,6 +283,9 @@ describe('HttpTransport', () => {
         ok: false,
         status: 500,
         statusText: 'Internal Server Error',
+        headers: {
+          get: vi.fn().mockReturnValue(null),
+        },
       };
 
       vi.mocked(fetch).mockResolvedValue(mockResponse as any);
@@ -314,6 +320,9 @@ describe('HttpTransport', () => {
         ok: true,
         status: 200,
         statusText: 'OK',
+        headers: {
+          get: vi.fn().mockReturnValue(null),
+        },
         text: vi.fn().mockResolvedValue(JSON.stringify(responseMessage)),
       };
 

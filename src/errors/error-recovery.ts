@@ -276,7 +276,7 @@ export class ErrorRecovery {
           const nowHealthy = await healthCheck();
 
           if (nowHealthy) {
-            process.stdout.write(`Service recovered after ${attempt} attempts\n`);
+            process.stderr.write(`Service recovered after ${attempt} attempts\n`);
             return;
           }
         } else {

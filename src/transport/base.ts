@@ -99,7 +99,37 @@ export abstract class BaseTransport extends EventEmitter implements Transport {
       throw new TransportError('Cannot receive messages: transport is closed', 'TRANSPORT_CLOSED');
     }
 
-    return this.doReceive();
+    // Wrap the iterator to handle errors and update state
+    const iterator = this.doReceive();
+    const handleError = (error: unknown) => this.handleError(error);
+
+    // Create a wrapper that handles errors and implements AsyncIterator
+    const wrappedIterator = {
+      async next(): Promise<IteratorResult<JsonRpcMessage>> {
+        try {
+          return await iterator.next();
+        } catch (error) {
+          handleError(error);
+          throw error;
+        }
+      },
+      async return(value?: JsonRpcMessage): Promise<IteratorResult<JsonRpcMessage>> {
+        return iterator.return
+          ? iterator.return(value)
+          : { done: true, value: value as unknown as JsonRpcMessage };
+      },
+      async throw(error?: unknown): Promise<IteratorResult<JsonRpcMessage>> {
+        handleError(error);
+        return iterator.throw
+          ? iterator.throw(error)
+          : { done: true, value: undefined as unknown as JsonRpcMessage };
+      },
+      [Symbol.asyncIterator](): AsyncIterator<JsonRpcMessage> {
+        return wrappedIterator;
+      },
+    };
+
+    return wrappedIterator;
   }
 
   /**

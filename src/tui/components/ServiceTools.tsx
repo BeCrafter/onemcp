@@ -83,7 +83,7 @@ function parseCommandString(command: string): { command: string; args: string[] 
   }
 
   return {
-    command: tokens[0],
+    command: tokens[0] || '',
     args: tokens.slice(1),
   };
 }
@@ -153,10 +153,10 @@ async function fetchToolsViaStdio(service: ServiceDefinition): Promise<Tool[]> {
         transport!.once('error', onError);
         
         // Check immediately in case already connected
-        if (transport.isConnected()) {
+        if (transport!.isConnected()) {
           console.log('[DEBUG] Already connected, resolving immediately');
           clearTimeout(timeout);
-          transport.removeListener('error', onError);
+          transport!.removeListener('error', onError);
           resolve();
         }
       });

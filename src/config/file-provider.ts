@@ -626,8 +626,8 @@ export class FileConfigProvider implements ConfigProvider {
       await this.ensureDirectory(path.join(this.configDir, 'backups'));
 
       // Create default config.json if it doesn't exist
-      const configPath = path.join(this.configDir, this.CONFIG_FILE);
-      const existingConfig = await this.storageAdapter.read(configPath);
+      // Use relative path for storage adapter (consistent with load() and save())
+      const existingConfig = await this.storageAdapter.read(this.CONFIG_FILE);
 
       if (!existingConfig) {
         const defaultConfig = this.createDefaultConfig();
@@ -635,7 +635,7 @@ export class FileConfigProvider implements ConfigProvider {
       }
 
       // Create README.md if it doesn't exist
-      const readmePath = path.join(this.configDir, 'README.md');
+      const readmePath = 'README.md';
       const existingReadme = await this.storageAdapter.read(readmePath);
 
       if (!existingReadme) {

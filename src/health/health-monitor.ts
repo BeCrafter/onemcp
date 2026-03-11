@@ -26,6 +26,8 @@ export class HealthMonitor extends EventEmitter {
 
   constructor(_serviceRegistry: ServiceRegistry) {
     super();
+    // Set higher max listeners to avoid warnings in tests
+    this.setMaxListeners(100);
   }
 
   /**

@@ -147,10 +147,11 @@ export class CliModeRunner {
    * Sends responses to stdout.
    */
   private setupStdioTransport(): void {
-    // Create readline interface for line-by-line reading
+    // Create readline interface for line-by-line reading.
+    // Use stderr for output so stdout is used only for MCP JSON-RPC messages.
     this.readline = createInterface({
       input: stdin,
-      output: stdout,
+      output: process.stderr,
       terminal: false,
     });
 
@@ -169,10 +170,10 @@ export class CliModeRunner {
           // Process the message
           await this.processMessage(message);
         } catch (error) {
-          // Send parse error response
+          // Send parse error response. Use a valid id (0) so MCP clients that require id: string|number can parse it.
           const errorResponse = {
             jsonrpc: '2.0' as const,
-            id: null, // Parse errors must have id set to null
+            id: 0,
             error: {
               code: ErrorCode.PARSE_ERROR,
               message: `Parse error: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -248,13 +249,22 @@ export class CliModeRunner {
   }
 
   /**
-   * Send a JSON-RPC response to stdout
-   *
-   * @param response - JSON-RPC response to send
+   * Send a JSON-RPC response to stdout.
+   * Normalizes id to never be null/undefined so MCP clients that require id: string|number can parse it.
    */
   private sendResponse(response: JsonRpcMessage): void {
     try {
-      const serialized = this.serializer.serialize(response);
+      const isResponse =
+        ('result' in response && response.result !== undefined) ||
+        ('error' in response && response.error !== undefined);
+      const idInvalid =
+        isResponse &&
+        'id' in response &&
+        (response.id === null || response.id === undefined);
+      const out: JsonRpcMessage = idInvalid
+        ? { ...response, id: 0 }
+        : response;
+      const serialized = this.serializer.serialize(out);
       stdout.write(serialized + '\n');
     } catch (error) {
       console.error(

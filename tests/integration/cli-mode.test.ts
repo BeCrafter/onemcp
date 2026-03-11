@@ -336,6 +336,38 @@ describe('CLI Mode Integration Tests', () => {
     }
   });
 
+  it('should never send response with id null (MCP client Zod compatibility)', async () => {
+    const proc = startCliProcess();
+    cliProcess = proc;
+
+    await new Promise<void>((resolve) => {
+      const onStderr = (chunk: Buffer) => {
+        if (chunk.toString().includes('ready and listening')) {
+          proc.stderr?.off('data', onStderr);
+          resolve();
+        }
+      };
+      proc.stderr?.on('data', onStderr);
+    });
+
+    // Request with id: null is invalid per our parser, so we get parse error; response must have valid id
+    const invalidRequest = JSON.stringify({
+      jsonrpc: '2.0',
+      id: null,
+      method: 'unknown/method',
+      params: {},
+    }) + '\n';
+    proc.stdin?.write(invalidRequest);
+
+    const response = await waitForResponse(proc);
+
+    expect(response.jsonrpc).toBe('2.0');
+    expect('error' in response).toBe(true);
+    expect(response.id).not.toBeNull();
+    expect(response.id).not.toBeUndefined();
+    expect(typeof response.id === 'string' || typeof response.id === 'number').toBe(true);
+  });
+
   it('should handle graceful shutdown on SIGTERM', async () => {
     cliProcess = startCliProcess();
 

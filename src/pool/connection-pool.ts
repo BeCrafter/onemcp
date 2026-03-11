@@ -84,7 +84,7 @@ function parseCommandString(command: string): { command: string; args: string[] 
   }
 
   return {
-    command: tokens[0],
+    command: tokens[0] || '',
     args: tokens.slice(1),
   };
 }

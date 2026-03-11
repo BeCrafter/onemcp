@@ -15,6 +15,10 @@ export interface ServiceListProps {
   onSelect: (index: number) => void;
   terminalHeight?: number;
   showDetails?: boolean;
+  globalToolStats?: {
+    enabled: number;
+    total: number;
+  };
 }
 
 /**

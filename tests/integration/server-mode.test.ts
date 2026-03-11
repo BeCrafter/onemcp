@@ -10,25 +10,36 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { ServerModeRunner } from '../../src/server-mode.js';
-import { MemoryStorageAdapter } from '../../src/storage/memory.js';
+import { FileStorageAdapter } from '../../src/storage/file.js';
 import { FileConfigProvider } from '../../src/config/file-provider.js';
 import type { SystemConfig } from '../../src/types/config.js';
 
 describe('Server Mode Integration Tests', () => {
   let runner: ServerModeRunner;
   let configProvider: FileConfigProvider;
-  let storage: MemoryStorageAdapter;
+  let storage: FileStorageAdapter;
   let config: SystemConfig;
+  let tempConfigDir: string;
   const testPort = 13000; // Use a high port to avoid conflicts
 
   beforeEach(async () => {
+    // Create a temporary directory for test files
+    tempConfigDir = path.join(
+      os.tmpdir(),
+      `onemcp-server-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await fs.promises.mkdir(tempConfigDir, { recursive: true });
+
     // Create test configuration
     config = {
       mode: 'server',
       port: testPort,
       logLevel: 'ERROR', // Reduce noise in tests
-      configDir: '/tmp/test-onemcp',
+      configDir: tempConfigDir,
       mcpServers: [],
       connectionPool: {
         maxConnections: 5,
@@ -69,16 +80,16 @@ describe('Server Mode Integration Tests', () => {
       },
     };
 
-    // Create storage and config provider
-    storage = new MemoryStorageAdapter();
+    // Create storage and config provider with FileStorageAdapter
+    storage = new FileStorageAdapter(tempConfigDir);
+    await storage.initialize();
 
-    // Store the config in memory storage with the full path that FileConfigProvider expects
-    const configPath = `${config.configDir}/config.json`;
-    await storage.write(configPath, JSON.stringify(config));
+    // Save the config to the file system
+    await storage.write('config.json', JSON.stringify(config, null, 2));
 
     configProvider = new FileConfigProvider({
       storageAdapter: storage,
-      configDir: config.configDir,
+      configDir: tempConfigDir,
     });
 
     // Create runner
@@ -88,6 +99,13 @@ describe('Server Mode Integration Tests', () => {
   afterEach(async () => {
     if (runner.isRunning()) {
       await runner.stop();
+    }
+
+    // Clean up temporary directory
+    try {
+      await fs.promises.rm(tempConfigDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
     }
   });
 

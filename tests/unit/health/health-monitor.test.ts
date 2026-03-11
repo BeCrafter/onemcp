@@ -25,7 +25,7 @@ describe('HealthMonitor', () => {
       mode: 'cli' as const,
       logLevel: 'INFO' as const,
       configDir: '/test/config',
-      services: [],
+      mcpServers: [],
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,
@@ -55,8 +55,8 @@ describe('HealthMonitor', () => {
       },
     };
 
-    // Write to the full path that FileConfigProvider expects
-    await storage.write('/test/config/config.json', JSON.stringify(defaultConfig));
+    // Write to the relative path that FileConfigProvider expects
+    await storage.write('config.json', JSON.stringify(defaultConfig));
 
     configProvider = new FileConfigProvider({
       storageAdapter: storage,

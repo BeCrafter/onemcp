@@ -161,6 +161,10 @@ export class HttpTransport extends BaseTransport {
 
   /**
    * Enqueue a received message
+   *
+   * For HTTP mode, send() completes before the caller calls receive().next(), so the
+   * response may arrive when no one is waiting. In that case we push to messageQueue
+   * so the subsequent next() will deliver it.
    */
   private enqueueMessage(message: JsonRpcMessage): void {
     if (this.resolveQueue.length > 0) {
@@ -169,6 +173,9 @@ export class HttpTransport extends BaseTransport {
       if (resolve) {
         resolve({ done: false, value: message });
       }
+    } else {
+      // No receiver waiting yet (e.g. HTTP: response arrived inside send() before receive().next())
+      this.messageQueue.push(message);
     }
   }
 

@@ -202,7 +202,7 @@ function resolveConfigDir(args: CliArgs): string {
  * Initialize configuration directory with default structure
  */
 function initializeConfigDir(configDir: string): void {
-  process.stdout.write(`Initializing configuration directory: ${configDir}\n`);
+  process.stderr.write(`Initializing configuration directory: ${configDir}\n`);
 
   try {
     // Create directory structure
@@ -289,11 +289,11 @@ https://github.com/yourusername/onemcp
 
     writeFileSync(resolve(configDir, 'README.md'), readme, 'utf8');
 
-    process.stdout.write('✓ Configuration directory initialized successfully\n');
-    process.stdout.write(`  Config file: ${configPath}\n`);
-    process.stdout.write(`  Services directory: ${resolve(configDir, 'services')}\n`);
-    process.stdout.write(`  Logs directory: ${resolve(configDir, 'logs')}\n`);
-    process.stdout.write(`  Backups directory: ${resolve(configDir, 'backups')}\n`);
+    process.stderr.write('✓ Configuration directory initialized successfully\n');
+    process.stderr.write(`  Config file: ${configPath}\n`);
+    process.stderr.write(`  Services directory: ${resolve(configDir, 'services')}\n`);
+    process.stderr.write(`  Logs directory: ${resolve(configDir, 'logs')}\n`);
+    process.stderr.write(`  Backups directory: ${resolve(configDir, 'backups')}\n`);
   } catch (error) {
     process.stderr.write(
       `Failed to initialize configuration directory: ${error instanceof Error ? error.message : String(error)}\n`
@@ -306,7 +306,7 @@ https://github.com/yourusername/onemcp
  * Validate configuration
  */
 async function validateConfiguration(configDir: string): Promise<boolean> {
-  process.stdout.write(`Validating configuration in: ${configDir}\n`);
+  process.stderr.write(`Validating configuration in: ${configDir}\n`);
 
   try {
     const storage = new FileStorageAdapter(configDir);
@@ -322,12 +322,12 @@ async function validateConfiguration(configDir: string): Promise<boolean> {
     const validation = configProvider.validate(config);
 
     if (validation.valid) {
-      process.stdout.write('✓ Configuration is valid\n');
-      process.stdout.write(`  Mode: ${config.mode}\n`);
-      process.stdout.write(`  Services: ${config.mcpServers.length}\n`);
-      process.stdout.write(`  Log level: ${config.logLevel}\n`);
+      process.stderr.write('✓ Configuration is valid\n');
+      process.stderr.write(`  Mode: ${config.mode}\n`);
+      process.stderr.write(`  Services: ${config.mcpServers.length}\n`);
+      process.stderr.write(`  Log level: ${config.logLevel}\n`);
       if (config.mode === 'server' && config.port) {
-        process.stdout.write(`  Server port: ${config.port}\n`);
+        process.stderr.write(`  Server port: ${config.port}\n`);
       }
       return true;
     } else {
@@ -377,20 +377,21 @@ function applyConfigOverrides(config: SystemConfig, args: CliArgs): SystemConfig
 
 /**
  * Display effective configuration
+ * Uses stderr so that in CLI (stdio) mode stdout is reserved for MCP JSON-RPC only.
  */
 function displayEffectiveConfig(config: SystemConfig, configDir: string): void {
-  process.stdout.write('\nEffective Configuration:\n');
-  process.stdout.write(`  Configuration directory: ${configDir}\n`);
-  process.stdout.write(`  Mode: ${config.mode}\n`);
-  process.stdout.write(`  Log level: ${config.logLevel}\n`);
+  process.stderr.write('\nEffective Configuration:\n');
+  process.stderr.write(`  Configuration directory: ${configDir}\n`);
+  process.stderr.write(`  Mode: ${config.mode}\n`);
+  process.stderr.write(`  Log level: ${config.logLevel}\n`);
   if (config.mode === 'server') {
-    process.stdout.write(`  Server port: ${config.port || 3000}\n`);
+    process.stderr.write(`  Server port: ${config.port || 3000}\n`);
   }
-  process.stdout.write(`  Services: ${config.mcpServers.length}\n`);
-  process.stdout.write(`  Health checks: ${config.healthCheck.enabled ? 'enabled' : 'disabled'}\n`);
-  process.stdout.write(`  Audit logging: ${config.audit.enabled ? 'enabled' : 'disabled'}\n`);
-  process.stdout.write(`  Metrics: ${config.metrics?.enabled ? 'enabled' : 'disabled'}\n`);
-  process.stdout.write('\n');
+  process.stderr.write(`  Services: ${config.mcpServers.length}\n`);
+  process.stderr.write(`  Health checks: ${config.healthCheck.enabled ? 'enabled' : 'disabled'}\n`);
+  process.stderr.write(`  Audit logging: ${config.audit.enabled ? 'enabled' : 'disabled'}\n`);
+  process.stderr.write(`  Metrics: ${config.metrics?.enabled ? 'enabled' : 'disabled'}\n`);
+  process.stderr.write('\n');
 }
 
 /**
@@ -436,8 +437,10 @@ async function main(): Promise<void> {
     process.exit(valid ? 0 : 1);
   }
 
-  // Load configuration
-  process.stdout.write(`Loading configuration from: ${configDir}\n`);
+  // When explicitly starting in CLI mode, skip loading banner so stdout is not touched before MCP
+  if (args.mode !== 'cli') {
+    process.stderr.write(`Loading configuration from: ${configDir}\n`);
+  }
 
   try {
     const storage = new FileStorageAdapter(configDir);
@@ -461,12 +464,14 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    // Display effective configuration
-    displayEffectiveConfig(config, configDir);
+    // Display effective configuration only when not in CLI mode (CLI reserves stdout for MCP JSON-RPC only)
+    if (config.mode !== 'cli') {
+      displayEffectiveConfig(config, configDir);
+    }
 
     // Handle dry-run flag
     if (args.dryRun) {
-      process.stdout.write('Dry run complete. Configuration is valid.\n');
+      process.stderr.write('Dry run complete. Configuration is valid.\n');
       process.exit(0);
     }
 

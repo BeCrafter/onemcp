@@ -2,14 +2,20 @@
  * Unit tests for FileConfigProvider
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { FileConfigProvider } from '../../../src/config/file-provider.js';
 import { MemoryStorageAdapter } from '../../../src/storage/memory.js';
+import { FileStorageAdapter } from '../../../src/storage/file.js';
 import type { SystemConfig } from '../../../src/types/config.js';
 
 describe('FileConfigProvider', () => {
   let storage: MemoryStorageAdapter;
   let provider: FileConfigProvider;
+  let fileSystemStorage: FileStorageAdapter | null = null;
+  let tempConfigDir: string | null = null;
 
   const validConfig: SystemConfig = {
     mode: 'cli',
@@ -60,13 +66,54 @@ describe('FileConfigProvider', () => {
     },
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     storage = new MemoryStorageAdapter();
     provider = new FileConfigProvider({
       storageAdapter: storage,
       configDir: '/test/config',
     });
   });
+
+  afterEach(async () => {
+    // Clean up temporary directory if it was created
+    if (tempConfigDir && fileSystemStorage) {
+      try {
+        await fs.promises.rm(tempConfigDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+      tempConfigDir = null;
+      fileSystemStorage = null;
+    }
+  });
+
+  /**
+   * Helper function to set up a real file system for watch() tests
+   */
+  async function setupFileSystemProvider(): Promise<{
+    fsProvider: FileConfigProvider;
+    fsStorage: FileStorageAdapter;
+    fsConfigDir: string;
+  }> {
+    const fsConfigDir = path.join(
+      os.tmpdir(),
+      `onemcp-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await fs.promises.mkdir(fsConfigDir, { recursive: true });
+
+    const fsStorage = new FileStorageAdapter(fsConfigDir);
+    await fsStorage.initialize();
+
+    const fsProvider = new FileConfigProvider({
+      storageAdapter: fsStorage,
+      configDir: fsConfigDir,
+    });
+
+    tempConfigDir = fsConfigDir;
+    fileSystemStorage = fsStorage;
+
+    return { fsProvider, fsStorage, fsConfigDir };
+  }
 
   describe('load()', () => {
     it('should load valid configuration from storage', async () => {
@@ -584,99 +631,122 @@ describe('FileConfigProvider', () => {
     });
 
     it('should invoke callback when configuration changes', async () => {
-      // Arrange
-      await storage.write('config.json', JSON.stringify(validConfig));
+      // Arrange - Set up real file system
+      const { fsProvider, fsConfigDir } = await setupFileSystemProvider();
+
+      // Create initial config file
+      await fsProvider.save(validConfig);
 
       let callbackInvoked = false;
       let receivedConfig: SystemConfig | null = null;
 
-      const unwatch = provider.watch((config) => {
+      const unwatch = fsProvider.watch((config) => {
         callbackInvoked = true;
         receivedConfig = config;
       });
 
-      // Act - Simulate file change by updating storage
+      // Act - Modify the config file directly to trigger fs.watch
       const updatedConfig = { ...validConfig, logLevel: 'DEBUG' as const };
-      await storage.write('config.json', JSON.stringify(updatedConfig));
+      const configPath = path.join(fsConfigDir, 'config.json');
+      await fs.promises.writeFile(configPath, JSON.stringify(updatedConfig, null, 2));
 
-      // Trigger the watcher manually since we're using memory storage
-      // In real scenario, fs.watch would trigger this
-      await new Promise((resolve) => setTimeout(resolve, 400)); // Wait for debounce
+      // Wait for debounce and file system event
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Assert
-      // Note: This test may not work perfectly with MemoryStorageAdapter
-      // since it doesn't trigger fs.watch events. This is a limitation of unit testing.
-      // The watch functionality will be properly tested in integration tests with real files.
-
-      expect(callbackInvoked).toBeDefined();
+      expect(callbackInvoked).toBe(true);
       expect(receivedConfig).toBeDefined();
+      expect((receivedConfig as unknown as SystemConfig)?.logLevel).toBe('DEBUG');
 
       // Cleanup
       unwatch();
     });
 
     it('should debounce multiple rapid changes', async () => {
-      // Arrange
-      await storage.write('config.json', JSON.stringify(validConfig));
+      // Arrange - Set up real file system
+      const { fsProvider, fsConfigDir } = await setupFileSystemProvider();
+
+      // Create initial config file
+      await fsProvider.save(validConfig);
 
       let callbackCount = 0;
-      const unwatch = provider.watch(() => {
+      const unwatch = fsProvider.watch(() => {
         callbackCount++;
       });
 
-      // Act - Simulate multiple rapid changes
+      // Act - Make multiple rapid changes
+      const configPath = path.join(fsConfigDir, 'config.json');
       for (let i = 0; i < 5; i++) {
         const updatedConfig = { ...validConfig, logLevel: 'DEBUG' as const };
-        await storage.write('config.json', JSON.stringify(updatedConfig));
+        await fs.promises.writeFile(configPath, JSON.stringify(updatedConfig, null, 2));
+        // Small delay between writes
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
 
       // Wait for debounce period
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Assert
-      // With debouncing, callback should be invoked fewer times than changes
-      // Note: This test has limitations with MemoryStorageAdapter
+      // Assert - With debouncing, callback should be invoked only once
+      expect(callbackCount).toBeLessThanOrEqual(2);
 
       // Cleanup
       unwatch();
     });
 
     it('should maintain previous config on validation failure', async () => {
-      // Arrange
-      await storage.write('config.json', JSON.stringify(validConfig));
+      // Arrange - Set up real file system
+      const { fsProvider, fsConfigDir } = await setupFileSystemProvider();
+
+      // Create initial valid config
+      await fsProvider.save(validConfig);
 
       let lastValidConfig: SystemConfig | null = null;
-      const unwatch = provider.watch((config) => {
+      const unwatch = fsProvider.watch((config) => {
         lastValidConfig = config;
       });
 
+      // First, trigger a valid change to populate lastValidConfig
+      const validChangeConfig = { ...validConfig, logLevel: 'DEBUG' as const };
+      const configPath = path.join(fsConfigDir, 'config.json');
+      await fs.promises.writeFile(configPath, JSON.stringify(validChangeConfig, null, 2));
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Verify callback was invoked with valid config
+      expect(lastValidConfig).toBeDefined();
+      expect((lastValidConfig as unknown as SystemConfig)?.mode).toBe('cli');
+      expect((lastValidConfig as unknown as SystemConfig)?.logLevel).toBe('DEBUG');
+
       // Act - Write invalid configuration
-      const invalidConfig = { ...validConfig, mode: 'invalid' };
-      await storage.write('config.json', JSON.stringify(invalidConfig));
+      const invalidConfig = { ...validConfig, mode: 'invalid' as any };
+      await fs.promises.writeFile(configPath, JSON.stringify(invalidConfig, null, 2));
 
       // Wait for debounce
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Assert
-      // Callback should not be invoked with invalid config
-      // lastValidConfig should remain null (or previous valid config if there was one)
-      expect(lastValidConfig).toBeDefined();
+      // Assert - Callback should not be invoked with invalid config
+      // The last valid config should remain unchanged
+      expect((lastValidConfig as unknown as SystemConfig)?.mode).toBe('cli');
+      expect((lastValidConfig as unknown as SystemConfig)?.logLevel).toBe('DEBUG');
 
       // Cleanup
       unwatch();
     });
 
     it('should handle file deletion gracefully', async () => {
-      // Arrange
-      await storage.write('config.json', JSON.stringify(validConfig));
+      // Arrange - Set up real file system
+      const { fsProvider, fsConfigDir } = await setupFileSystemProvider();
 
-      const unwatch = provider.watch(() => {});
+      // Create initial config file
+      await fsProvider.save(validConfig);
+
+      const unwatch = fsProvider.watch(() => {});
 
       // Act - Delete the config file
-      await storage.delete('config.json');
+      const configPath = path.join(fsConfigDir, 'config.json');
+      await fs.promises.rm(configPath);
 
       // Wait for debounce
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Assert - Should not throw
       // The watcher should log a warning but continue running
@@ -686,32 +756,40 @@ describe('FileConfigProvider', () => {
     });
 
     it('should catch and log callback errors without crashing', async () => {
-      // Arrange
-      await storage.write('config.json', JSON.stringify(validConfig));
+      // Arrange - Set up real file system
+      const { fsProvider, fsConfigDir } = await setupFileSystemProvider();
 
-      const unwatch = provider.watch(() => {
+      // Create initial config file
+      await fsProvider.save(validConfig);
+
+      const unwatch = fsProvider.watch(() => {
         throw new Error('Callback error');
       });
 
       // Act - Trigger a change
       const updatedConfig = { ...validConfig, logLevel: 'DEBUG' as const };
-      await storage.write('config.json', JSON.stringify(updatedConfig));
+      const configPath = path.join(fsConfigDir, 'config.json');
+      await fs.promises.writeFile(configPath, JSON.stringify(updatedConfig, null, 2));
 
       // Wait for debounce
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Assert - Should not throw, watcher should continue running
+      // The error is caught and logged internally
 
       // Cleanup
       unwatch();
     });
 
     it('should stop watching after unwatch is called', async () => {
-      // Arrange
-      await storage.write('config.json', JSON.stringify(validConfig));
+      // Arrange - Set up real file system
+      const { fsProvider, fsConfigDir } = await setupFileSystemProvider();
+
+      // Create initial config file
+      await fsProvider.save(validConfig);
 
       let callbackCount = 0;
-      const unwatch = provider.watch(() => {
+      const unwatch = fsProvider.watch(() => {
         callbackCount++;
       });
 
@@ -720,10 +798,11 @@ describe('FileConfigProvider', () => {
 
       // Make changes after unwatching
       const updatedConfig = { ...validConfig, logLevel: 'DEBUG' as const };
-      await storage.write('config.json', JSON.stringify(updatedConfig));
+      const configPath = path.join(fsConfigDir, 'config.json');
+      await fs.promises.writeFile(configPath, JSON.stringify(updatedConfig, null, 2));
 
       // Wait for debounce
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Assert - Callback should not be invoked after unwatch
       expect(callbackCount).toBe(0);
@@ -904,7 +983,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const readmeData = await storage.read('/test/config/README.md');
+      const readmeData = await storage.read('README.md');
       expect(readmeData).toBeDefined();
 
       if (readmeData) {
@@ -922,31 +1001,29 @@ describe('FileConfigProvider', () => {
     it('should not overwrite existing config.json', async () => {
       // Arrange
       const existingConfig = { ...validConfig, logLevel: 'DEBUG' as const };
-      await storage.write('config.json', JSON.stringify(existingConfig));
+      // Use the same path that initialize() uses
+      await provider.save(existingConfig);
 
       // Act
       await provider.initialize();
 
       // Assert
-      const configData = await storage.read('config.json');
-      expect(configData).toBeDefined();
-
-      if (configData) {
-        const config = JSON.parse(configData);
-        expect(config.logLevel).toBe('DEBUG'); // Should preserve existing value
-      }
+      const config = await provider.load();
+      expect(config).toBeDefined();
+      // initialize() should not overwrite existing config
+      expect(config.logLevel).toBe('DEBUG');
     });
 
     it('should not overwrite existing README.md', async () => {
       // Arrange
       const existingReadme = '# Custom README\n\nThis is a custom readme.';
-      await storage.write('/test/config/README.md', existingReadme);
+      await storage.write('README.md', existingReadme);
 
       // Act
       await provider.initialize();
 
       // Assert
-      const readmeData = await storage.read('/test/config/README.md');
+      const readmeData = await storage.read('README.md');
       expect(readmeData).toBe(existingReadme); // Should preserve existing content
     });
 
@@ -960,7 +1037,7 @@ describe('FileConfigProvider', () => {
       const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
 
-      const readmeData = await storage.read('/test/config/README.md');
+      const readmeData = await storage.read('README.md');
       expect(readmeData).toBeDefined();
     });
 
@@ -1088,7 +1165,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const readmeData = await storage.read('/test/config/README.md');
+      const readmeData = await storage.read('README.md');
       expect(readmeData).toBeDefined();
 
       if (readmeData) {
@@ -1106,7 +1183,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const readmeData = await storage.read('/test/config/README.md');
+      const readmeData = await storage.read('README.md');
       expect(readmeData).toBeDefined();
 
       if (readmeData) {
@@ -1121,7 +1198,7 @@ describe('FileConfigProvider', () => {
       await provider.initialize();
 
       // Assert
-      const readmeData = await storage.read('/test/config/README.md');
+      const readmeData = await storage.read('README.md');
       expect(readmeData).toBeDefined();
 
       if (readmeData) {
