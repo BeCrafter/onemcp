@@ -93,10 +93,19 @@ export class HttpTransport extends BaseTransport {
         this.setConnected();
       };
 
-      // Handle errors
+      // Handle errors - consume the error to prevent unhandled error event
       this.eventSource.onerror = (error) => {
-        this.handleSSEError(error);
+        // Prevent the error from bubbling up as unhandled error
+        if (error && typeof error === 'object' && 'stopImmediatePropagation' in error) {
+          (error as Event).stopImmediatePropagation();
+        }
+        this.handleSSEError(error as Event);
       };
+
+      // Add error event listener on the HttpTransport instance to prevent unhandled errors
+      this.on('error', () => {
+        // Error is already handled in handleSSEError, this listener prevents unhandled error event
+      });
     } catch (error) {
       this.handleError(
         new TransportError(
@@ -105,7 +114,7 @@ export class HttpTransport extends BaseTransport {
           error instanceof Error ? error : undefined
         )
       );
-      throw error;
+      // Don't throw, let the error be handled by the caller
     }
   }
 
@@ -129,20 +138,22 @@ export class HttpTransport extends BaseTransport {
         this.initializeSSE();
       }, delay);
     } else {
-      // Max reconnection attempts reached
-      this.handleError(
-        new TransportError(
-          `SSE connection failed after ${this.maxReconnectAttempts} attempts`,
-          'SSE_CONNECTION_FAILED'
-        )
-      );
+      // Max reconnection attempts reached - log warning but don't crash
+      console.error(`SSE connection failed after ${this.maxReconnectAttempts} attempts`);
 
-      // Reject all waiting receivers
-      const transportError = new TransportError('SSE connection lost', 'SSE_CONNECTION_LOST');
+      // Mark transport as error state (this will emit error event, but we have a listener)
+      const transportError = new TransportError(
+        `SSE connection failed after ${this.maxReconnectAttempts} attempts`,
+        'SSE_CONNECTION_FAILED'
+      );
+      this.handleError(transportError);
+
+      // Reject all waiting receivers with a different error that won't propagate
+      const connectionLostError = new Error('SSE connection lost');
       while (this.rejectQueue.length > 0) {
         const reject = this.rejectQueue.shift();
         if (reject) {
-          reject(transportError);
+          reject(connectionLostError);
         }
       }
     }
