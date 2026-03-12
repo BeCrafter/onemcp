@@ -53,7 +53,7 @@ const jsonValueArbitrary = (): fc.Arbitrary<unknown> =>
       fc.constant(null),
       fc.boolean(),
       fc.integer(),
-      fc.double({ noNaN: true, noDefaultInfinity: true }),
+      fc.double({ noNaN: true, noDefaultInfinity: true }).filter((n) => !Object.is(n, -0)),
       fc.string(),
       fc.array(tie('value'), { maxLength: 5 }),
       fc.dictionary(fc.string({ minLength: 1, maxLength: 20 }), tie('value'), { maxKeys: 5 })

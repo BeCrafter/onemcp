@@ -12,10 +12,23 @@ vi.mock('../../../src/transport/stdio.js', () => {
   return {
     StdioTransport: vi.fn().mockImplementation(function (this: any) {
       this.send = vi.fn().mockResolvedValue(undefined);
-      this.receive = vi.fn();
+      this.receive = vi.fn().mockReturnValue({
+        async next() {
+          return { value: { jsonrpc: '2.0', id: 1, result: {} }, done: false };
+        },
+        async return(value?: any) {
+          return { value, done: true };
+        },
+        async throw(error?: any) {
+          throw error;
+        },
+        [Symbol.asyncIterator]() {
+          return this;
+        },
+      });
       this.close = vi.fn().mockResolvedValue(undefined);
       this.getType = vi.fn().mockReturnValue('stdio');
-      this.process = null; // Add process property for health checks
+      this.process = { killed: false, exitCode: null }; // Add process property for health checks
       return this;
     }),
   };
@@ -25,7 +38,20 @@ vi.mock('../../../src/transport/http.js', () => {
   return {
     HttpTransport: vi.fn().mockImplementation(function (this: any) {
       this.send = vi.fn().mockResolvedValue(undefined);
-      this.receive = vi.fn();
+      this.receive = vi.fn().mockReturnValue({
+        async next() {
+          return { value: { jsonrpc: '2.0', id: 1, result: {} }, done: false };
+        },
+        async return(value?: any) {
+          return { value, done: true };
+        },
+        async throw(error?: any) {
+          throw error;
+        },
+        [Symbol.asyncIterator]() {
+          return this;
+        },
+      });
       this.close = vi.fn().mockResolvedValue(undefined);
       this.getType = vi.fn().mockReturnValue('http');
       return this;
@@ -557,10 +583,23 @@ describe('ConnectionPool', () => {
       // Ensure mock is properly set up for these tests
       vi.mocked(StdioTransport).mockImplementation(function (this: any) {
         this.send = vi.fn().mockResolvedValue(undefined);
-        this.receive = vi.fn();
+        this.receive = vi.fn().mockReturnValue({
+          async next() {
+            return { value: { jsonrpc: '2.0', id: 1, result: {} }, done: false };
+          },
+          async return(value?: any) {
+            return { value, done: true };
+          },
+          async throw(error?: any) {
+            throw error;
+          },
+          [Symbol.asyncIterator]() {
+            return this;
+          },
+        });
         this.close = vi.fn().mockResolvedValue(undefined);
         this.getType = vi.fn().mockReturnValue('stdio');
-        this.process = null;
+        this.process = { killed: false, exitCode: null };
         return this;
       });
     });

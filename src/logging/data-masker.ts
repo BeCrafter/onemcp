@@ -108,10 +108,13 @@ export class DataMasker {
 
     for (const [key, value] of Object.entries(obj)) {
       if (this.isSensitiveField(key)) {
+        // Always mask sensitive fields, even if value is empty/whitespace
         masked[key] = this.maskValue(value);
       } else if (typeof value === 'object' && value !== null) {
+        // Recursively mask nested objects
         masked[key] = this.maskObject(value);
       } else {
+        // Keep non-sensitive primitive values as-is
         masked[key] = value;
       }
     }

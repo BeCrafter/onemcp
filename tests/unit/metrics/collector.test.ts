@@ -400,8 +400,9 @@ describe('MetricsCollector', () => {
 
       shortRetentionCollector.recordToolCall('read_file', 'filesystem', 100, true);
 
-      // Wait for retention period to pass
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      // Wait for retention period to pass plus collection interval
+      // Need to wait: retentionPeriod (100ms) + collectionInterval (50ms) + buffer (200ms)
+      await new Promise((resolve) => setTimeout(resolve, 350));
 
       const metrics = shortRetentionCollector.getSystemMetrics();
       // Records should be cleaned up

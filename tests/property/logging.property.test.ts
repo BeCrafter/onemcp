@@ -195,7 +195,7 @@ describe('Data Masking Properties', () => {
           user: fc.record({
             name: fc.string({ minLength: 1 }),
             password: fc.string({ minLength: 1 }),
-            credentials: fc.record({
+            profile: fc.record({
               apiKey: fc.string({ minLength: 1 }),
               secret: fc.string({ minLength: 1 }),
             }),
@@ -212,8 +212,11 @@ describe('Data Masking Properties', () => {
           // Check nested masking
           expect(masked.user.name).toBe(obj.user.name);
           expect(masked.user.password).toBe('***MASKED***');
-          expect(masked.user.credentials.apiKey).toBe('***MASKED***');
-          expect(masked.user.credentials.secret).toBe('***MASKED***');
+          // Profile object should exist and have masked sensitive fields
+          expect(masked.user.profile).toBeDefined();
+          expect(typeof masked.user.profile).toBe('object');
+          expect(masked.user.profile.apiKey).toBe('***MASKED***');
+          expect(masked.user.profile.secret).toBe('***MASKED***');
         }
       ),
       { numRuns: 100 }

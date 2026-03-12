@@ -895,8 +895,8 @@ describe('ToolRouter', () => {
       expect(writeState).toBe(false);
     });
 
-    it('should throw error if service not found', async () => {
-      await expect(toolRouter.getToolState('nonexistent__test_tool')).rejects.toThrow(
+    it('should throw error if service not found', () => {
+      expect(() => toolRouter.getToolState('nonexistent__test_tool')).toThrow(
         'Service not found: nonexistent'
       );
     });

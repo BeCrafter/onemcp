@@ -159,8 +159,12 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
         // Retrieve service
         const retrieved = await registry.get(serviceDef.name);
 
-        // Verify retrieved service equals original service
-        expect(retrieved).toEqual(serviceDef);
+        // Verify retrieved service equals original service (with deduplicated tags)
+        const expectedService = {
+          ...serviceDef,
+          tags: serviceDef.tags ? Array.from(new Set(serviceDef.tags)) : serviceDef.tags,
+        };
+        expect(retrieved).toEqual(expectedService);
 
         return true;
       }),
@@ -174,11 +178,13 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
         await registry.register(serviceDef);
         const retrieved = await registry.get(serviceDef.name);
 
-        // Verify all fields are preserved
+        // Verify all fields are preserved (with deduplicated tags)
         expect(retrieved?.name).toBe(serviceDef.name);
         expect(retrieved?.transport).toBe(serviceDef.transport);
         expect(retrieved?.enabled).toBe(serviceDef.enabled);
-        expect(retrieved?.tags).toEqual(serviceDef.tags);
+        expect(retrieved?.tags).toEqual(
+          serviceDef.tags ? Array.from(new Set(serviceDef.tags)) : serviceDef.tags
+        );
         expect(retrieved?.connectionPool).toEqual(serviceDef.connectionPool);
         expect(retrieved?.toolStates).toEqual(serviceDef.toolStates);
 
@@ -301,9 +307,13 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
           const service2 = { ...def2, name };
           await registry.register(service2);
 
-          // Retrieve should return second service
+          // Retrieve should return second service (with deduplicated tags)
           const retrieved = await registry.get(name);
-          expect(retrieved).toEqual(service2);
+          const expectedService = {
+            ...service2,
+            tags: service2.tags ? Array.from(new Set(service2.tags)) : service2.tags,
+          };
+          expect(retrieved).toEqual(expectedService);
 
           return true;
         }
@@ -411,6 +421,14 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
       fc.asyncProperty(
         fc.array(fc.string({ minLength: 1 }), { minLength: 2, maxLength: 5 }),
         async (allTags) => {
+          // Deduplicate tags to ensure unique tags
+          const uniqueTags = Array.from(new Set(allTags));
+
+          // Skip if deduplication resulted in less than 2 tags
+          if (uniqueTags.length < 2) {
+            return true;
+          }
+
           // Create services with different tag combinations
           const services: ServiceDefinition[] = [];
 
@@ -420,7 +438,7 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
             transport: 'stdio',
             command: 'test',
             enabled: true,
-            tags: [...allTags],
+            tags: [...uniqueTags],
             connectionPool: {
               maxConnections: 5,
               idleTimeout: 60000,
@@ -429,13 +447,13 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
           });
 
           // Services with subsets of tags
-          for (let i = 0; i < allTags.length; i++) {
+          for (let i = 0; i < uniqueTags.length; i++) {
             services.push({
               name: `service-subset-${i}`,
               transport: 'stdio',
               command: 'test',
               enabled: true,
-              tags: allTags.slice(0, i), // Missing some tags
+              tags: uniqueTags.slice(0, i), // Missing some tags
               connectionPool: {
                 maxConnections: 5,
                 idleTimeout: 60000,
@@ -450,7 +468,7 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
           }
 
           // Query with AND logic for all tags
-          const results = await registry.findByTags(allTags, true);
+          const results = await registry.findByTags(uniqueTags, true);
 
           // Only service-all should be returned
           expect(results).toHaveLength(1);
@@ -500,6 +518,11 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
         fc.array(serviceDefinitionArbitrary(), { minLength: 1, maxLength: 10 }),
         fc.string({ minLength: 1 }),
         async (services, uniqueTag) => {
+          // Re-initialize registry for clean state
+          configProvider = await createTestConfigProvider();
+          registry = new ServiceRegistry(configProvider);
+          await registry.initialize();
+
           // Ensure no service has the unique tag and ensure unique names
           const servicesWithoutTag = services.map((s, i) => ({
             ...s,

@@ -2,14 +2,46 @@
  * Unit tests for HealthMonitor
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { HealthMonitor } from '../../../src/health/health-monitor.js';
 import { ServiceRegistry } from '../../../src/registry/service-registry.js';
 import { ConnectionPool } from '../../../src/pool/connection-pool.js';
 import { MemoryStorageAdapter } from '../../../src/storage/memory.js';
 import { FileConfigProvider } from '../../../src/config/file-provider.js';
-import type { ServiceDefinition } from '../../../src/types/service.js';
 import type { Connection } from '../../../src/pool/connection.js';
+
+/**
+ * Create a mock connection pool for testing
+ */
+function createMockPool(overrides?: Partial<ConnectionPool>): ConnectionPool {
+  return {
+    acquire: vi.fn(),
+    release: vi.fn(),
+    isConnectionHealthy: vi.fn().mockReturnValue(true),
+    markConnectionFailed: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
+    getStats: vi.fn().mockReturnValue({ total: 0, idle: 0, active: 0 }),
+    ...overrides,
+  } as any;
+}
+
+/**
+ * Create a mock connection for testing
+ */
+function createMockConnection(id = 'test-conn-1'): Connection {
+  return {
+    id,
+    transport: {
+      send: vi.fn(),
+      receive: vi.fn(),
+      close: vi.fn(),
+      getType: () => 'stdio',
+    } as any,
+    state: 'idle',
+    lastUsed: new Date(),
+    createdAt: new Date(),
+  };
+}
 
 describe('HealthMonitor', () => {
   let healthMonitor: HealthMonitor;
@@ -67,39 +99,18 @@ describe('HealthMonitor', () => {
     healthMonitor = new HealthMonitor(serviceRegistry);
   });
 
+  afterEach(() => {
+    // Clean up health monitor
+    healthMonitor.stopHeartbeat();
+    healthMonitor.removeAllListeners();
+  });
+
   describe('registerConnectionPool', () => {
     it('should register a connection pool for a service', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
-
-      vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-      vi.spyOn(pool, 'release').mockImplementation(() => {});
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+      });
 
       const status = await healthMonitor.registerConnectionPool('test-service', pool);
 
@@ -110,37 +121,12 @@ describe('HealthMonitor', () => {
     });
 
     it('should perform initial health check on registration (Requirement 20.9)', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+      });
 
-      const pool = new ConnectionPool(service, service.connectionPool);
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
-
-      const acquireSpy = vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-      vi.spyOn(pool, 'release').mockImplementation(() => {});
+      const acquireSpy = pool.acquire as ReturnType<typeof vi.fn>;
 
       await healthMonitor.registerConnectionPool('test-service', pool);
 
@@ -154,37 +140,10 @@ describe('HealthMonitor', () => {
     });
 
     it('should emit serviceHealthy event when initial health check passes', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
-
-      vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-      vi.spyOn(pool, 'release').mockImplementation(() => {});
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+      });
 
       const serviceHealthySpy = vi.fn();
       healthMonitor.on('serviceHealthy', serviceHealthySpy);
@@ -202,22 +161,9 @@ describe('HealthMonitor', () => {
     });
 
     it('should emit serviceUnhealthy event when initial health check fails', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
+      });
 
       const serviceUnhealthySpy = vi.fn();
       healthMonitor.on('serviceUnhealthy', serviceUnhealthySpy);
@@ -236,22 +182,9 @@ describe('HealthMonitor', () => {
     });
 
     it('should return unhealthy status when initial health check fails', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
+      });
 
       const status = await healthMonitor.registerConnectionPool('test-service', pool);
 
@@ -265,21 +198,10 @@ describe('HealthMonitor', () => {
 
   describe('unregisterConnectionPool', () => {
     it('should unregister a connection pool and clear health status', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Failed')),
+      });
 
-      const pool = new ConnectionPool(service, service.connectionPool);
       healthMonitor.registerConnectionPool('test-service', pool);
 
       // Check health to create status
@@ -306,40 +228,10 @@ describe('HealthMonitor', () => {
     });
 
     it('should return healthy status when connection succeeds', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      // Create a mock pool
-      const pool = new ConnectionPool(service, service.connectionPool);
-
-      // Mock acquire to return a healthy connection
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
-
-      vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-      vi.spyOn(pool, 'release').mockImplementation(() => {});
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
@@ -353,24 +245,9 @@ describe('HealthMonitor', () => {
     });
 
     it('should return unhealthy status when connection fails', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-
-      // Mock acquire to fail
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
@@ -385,22 +262,9 @@ describe('HealthMonitor', () => {
     });
 
     it('should increment consecutive failures on repeated failures', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
@@ -418,36 +282,12 @@ describe('HealthMonitor', () => {
     });
 
     it('should reset consecutive failures when service recovers', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
+      });
 
       // First fail during registration
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
       await healthMonitor.registerConnectionPool('test-service', pool);
 
       // Verify initial failure
@@ -460,9 +300,7 @@ describe('HealthMonitor', () => {
       expect(status2?.consecutiveFailures).toBe(2);
 
       // Then succeed
-      vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-      vi.spyOn(pool, 'release').mockImplementation(() => {});
+      (pool.acquire as ReturnType<typeof vi.fn>).mockResolvedValue(mockConnection);
 
       const status3 = await healthMonitor.checkHealth('test-service');
       expect(status3.healthy).toBe(true);
@@ -470,41 +308,14 @@ describe('HealthMonitor', () => {
     });
 
     it('should emit healthChanged event when status changes from healthy to unhealthy', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
       // Start healthy
-      vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-      vi.spyOn(pool, 'release').mockImplementation(() => {});
-
       await healthMonitor.checkHealth('test-service');
 
       // Set up event listener
@@ -514,7 +325,7 @@ describe('HealthMonitor', () => {
       healthMonitor.on('serviceFailed', serviceFailedSpy);
 
       // Then fail
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+      (pool.acquire as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Connection failed'));
 
       await healthMonitor.checkHealth('test-service');
 
@@ -523,38 +334,14 @@ describe('HealthMonitor', () => {
     });
 
     it('should emit healthChanged event when status changes from unhealthy to healthy', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
       // Start unhealthy
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
       await healthMonitor.checkHealth('test-service');
 
       // Set up event listener
@@ -564,9 +351,7 @@ describe('HealthMonitor', () => {
       healthMonitor.on('serviceRecovered', serviceRecoveredSpy);
 
       // Then succeed
-      vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-      vi.spyOn(pool, 'release').mockImplementation(() => {});
+      (pool.acquire as ReturnType<typeof vi.fn>).mockResolvedValue(mockConnection);
 
       await healthMonitor.checkHealth('test-service');
 
@@ -575,43 +360,20 @@ describe('HealthMonitor', () => {
     });
 
     it('should release connection even if health check fails', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+        isConnectionHealthy: vi.fn().mockReturnValue(false),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
-      vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(false); // Unhealthy
-      const releaseSpy = vi.spyOn(pool, 'release').mockImplementation(() => {});
+      const markFailedSpy = pool.markConnectionFailed as ReturnType<typeof vi.fn>;
 
       await healthMonitor.checkHealth('test-service');
 
-      expect(releaseSpy).toHaveBeenCalledWith(mockConnection);
+      // When connection is unhealthy, it should be marked as failed instead of released
+      expect(markFailedSpy).toHaveBeenCalledWith(mockConnection, expect.any(Error));
     });
   });
 
@@ -622,39 +384,12 @@ describe('HealthMonitor', () => {
     });
 
     it('should return all health statuses', async () => {
-      const service1: ServiceDefinition = {
-        name: 'service-1',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test1.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const service2: ServiceDefinition = {
-        name: 'service-2',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test2.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool1 = new ConnectionPool(service1, service1.connectionPool);
-      const pool2 = new ConnectionPool(service2, service2.connectionPool);
-
-      vi.spyOn(pool1, 'acquire').mockRejectedValue(new Error('Failed'));
-      vi.spyOn(pool2, 'acquire').mockRejectedValue(new Error('Failed'));
+      const pool1 = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Failed')),
+      });
+      const pool2 = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Failed')),
+      });
 
       healthMonitor.registerConnectionPool('service-1', pool1);
       healthMonitor.registerConnectionPool('service-2', pool2);
@@ -675,22 +410,9 @@ describe('HealthMonitor', () => {
     });
 
     it('should return health status for checked service', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Failed'));
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Failed')),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
       await healthMonitor.checkHealth('test-service');
@@ -703,22 +425,9 @@ describe('HealthMonitor', () => {
 
   describe('clearHealthStatus', () => {
     it('should clear health status for a service', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Failed'));
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Failed')),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
       await healthMonitor.checkHealth('test-service');
@@ -733,39 +442,12 @@ describe('HealthMonitor', () => {
 
   describe('clearAllHealthStatuses', () => {
     it('should clear all health statuses', async () => {
-      const service1: ServiceDefinition = {
-        name: 'service-1',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test1.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const service2: ServiceDefinition = {
-        name: 'service-2',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test2.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool1 = new ConnectionPool(service1, service1.connectionPool);
-      const pool2 = new ConnectionPool(service2, service2.connectionPool);
-
-      vi.spyOn(pool1, 'acquire').mockRejectedValue(new Error('Failed'));
-      vi.spyOn(pool2, 'acquire').mockRejectedValue(new Error('Failed'));
+      const pool1 = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Failed')),
+      });
+      const pool2 = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Failed')),
+      });
 
       healthMonitor.registerConnectionPool('service-1', pool1);
       healthMonitor.registerConnectionPool('service-2', pool2);
@@ -785,37 +467,10 @@ describe('HealthMonitor', () => {
 
   describe('startHeartbeat', () => {
     it('should start periodic health checks', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
-
-      vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-      vi.spyOn(pool, 'release').mockImplementation(() => {});
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
@@ -835,22 +490,9 @@ describe('HealthMonitor', () => {
     });
 
     it('should perform initial health check immediately', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Failed'));
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Failed')),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
@@ -868,22 +510,9 @@ describe('HealthMonitor', () => {
     });
 
     it('should emit serviceUnhealthy event when threshold is exceeded', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
+      });
 
       await healthMonitor.registerConnectionPool('test-service', pool);
 
@@ -908,39 +537,12 @@ describe('HealthMonitor', () => {
     });
 
     it('should check multiple services in parallel', async () => {
-      const service1: ServiceDefinition = {
-        name: 'service-1',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test1.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const service2: ServiceDefinition = {
-        name: 'service-2',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test2.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool1 = new ConnectionPool(service1, service1.connectionPool);
-      const pool2 = new ConnectionPool(service2, service2.connectionPool);
-
-      vi.spyOn(pool1, 'acquire').mockRejectedValue(new Error('Failed'));
-      vi.spyOn(pool2, 'acquire').mockRejectedValue(new Error('Failed'));
+      const pool1 = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Failed')),
+      });
+      const pool2 = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Failed')),
+      });
 
       healthMonitor.registerConnectionPool('service-1', pool1);
       healthMonitor.registerConnectionPool('service-2', pool2);
@@ -965,23 +567,12 @@ describe('HealthMonitor', () => {
 
   describe('stopHeartbeat', () => {
     it('should stop periodic health checks', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Failed')),
+      });
 
-      const pool = new ConnectionPool(service, service.connectionPool);
       let checkCount = 0;
-      vi.spyOn(pool, 'acquire').mockImplementation(async () => {
+      (pool.acquire as ReturnType<typeof vi.fn>).mockImplementation(async () => {
         checkCount++;
         throw new Error('Failed');
       });
@@ -1015,22 +606,9 @@ describe('HealthMonitor', () => {
     });
 
     it('should stop previous heartbeat when starting new one', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Failed'));
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Failed')),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
@@ -1054,41 +632,14 @@ describe('HealthMonitor', () => {
 
   describe('onHealthChange', () => {
     it('should subscribe to health status changes', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
       // Start healthy
-      vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-      vi.spyOn(pool, 'release').mockImplementation(() => {});
-
       await healthMonitor.checkHealth('test-service');
 
       // Subscribe to health changes
@@ -1096,7 +647,7 @@ describe('HealthMonitor', () => {
       const unsubscribe = healthMonitor.onHealthChange(callback);
 
       // Then fail
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+      (pool.acquire as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Connection failed'));
       await healthMonitor.checkHealth('test-service');
 
       expect(callback).toHaveBeenCalledTimes(1);
@@ -1109,41 +660,14 @@ describe('HealthMonitor', () => {
     });
 
     it('should return unsubscribe function that removes the listener', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
       // Start healthy
-      vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-      vi.spyOn(pool, 'release').mockImplementation(() => {});
-
       await healthMonitor.checkHealth('test-service');
 
       // Subscribe and immediately unsubscribe
@@ -1152,7 +676,7 @@ describe('HealthMonitor', () => {
       unsubscribe();
 
       // Then fail
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+      (pool.acquire as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Connection failed'));
       await healthMonitor.checkHealth('test-service');
 
       // Callback should not have been called
@@ -1160,41 +684,14 @@ describe('HealthMonitor', () => {
     });
 
     it('should support multiple subscribers', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
       // Start healthy
-      vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-      vi.spyOn(pool, 'release').mockImplementation(() => {});
-
       await healthMonitor.checkHealth('test-service');
 
       // Subscribe multiple callbacks
@@ -1207,7 +704,7 @@ describe('HealthMonitor', () => {
       const unsubscribe3 = healthMonitor.onHealthChange(callback3);
 
       // Then fail
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
+      (pool.acquire as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Connection failed'));
       await healthMonitor.checkHealth('test-service');
 
       // All callbacks should have been called
@@ -1222,38 +719,14 @@ describe('HealthMonitor', () => {
     });
 
     it('should notify on recovery (unhealthy to healthy)', async () => {
-      const service: ServiceDefinition = {
-        name: 'test-service',
-        enabled: true,
-        tags: [],
-        transport: 'stdio',
-        command: 'node',
-        args: ['test.js'],
-        connectionPool: {
-          maxConnections: 5,
-          idleTimeout: 60000,
-          connectionTimeout: 30000,
-        },
-      };
-
-      const pool = new ConnectionPool(service, service.connectionPool);
-      const mockConnection: Connection = {
-        id: 'test-conn-1',
-        transport: {
-          send: vi.fn(),
-          receive: vi.fn(),
-          close: vi.fn(),
-          getType: () => 'stdio',
-        } as any,
-        state: 'idle',
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
+      const mockConnection = createMockConnection();
+      const pool = createMockPool({
+        acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
+      });
 
       healthMonitor.registerConnectionPool('test-service', pool);
 
       // Start unhealthy
-      vi.spyOn(pool, 'acquire').mockRejectedValue(new Error('Connection failed'));
       await healthMonitor.checkHealth('test-service');
 
       // Subscribe to health changes
@@ -1261,9 +734,7 @@ describe('HealthMonitor', () => {
       const unsubscribe = healthMonitor.onHealthChange(callback);
 
       // Then recover
-      vi.spyOn(pool, 'acquire').mockResolvedValue(mockConnection);
-      vi.spyOn(pool, 'isConnectionHealthy').mockReturnValue(true);
-      vi.spyOn(pool, 'release').mockImplementation(() => {});
+      (pool.acquire as ReturnType<typeof vi.fn>).mockResolvedValue(mockConnection);
 
       await healthMonitor.checkHealth('test-service');
 

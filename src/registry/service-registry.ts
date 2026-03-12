@@ -53,14 +53,20 @@ export class ServiceRegistry extends EventEmitter {
     // Validate service definition
     this.validateService(service);
 
+    // Deduplicate tags if present
+    const normalizedService = {
+      ...service,
+      tags: service.tags ? Array.from(new Set(service.tags)) : service.tags,
+    };
+
     // Add or update service in memory
-    this.services.set(service.name, service);
+    this.services.set(normalizedService.name, normalizedService);
 
     // Persist to configuration
     await this.persistServices();
 
     // Emit event for cache invalidation (Requirement 2.4)
-    this.emit('serviceRegistered', service.name, service);
+    this.emit('serviceRegistered', normalizedService.name, normalizedService);
   }
 
   /**
