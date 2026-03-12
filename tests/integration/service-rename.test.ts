@@ -49,7 +49,6 @@ describe('Service Rename Integration', () => {
         tool1: true,
         tool2: false,
       },
-      discoveredToolsCount: 2,
     };
 
     // Create initial configuration with one service
@@ -166,7 +165,6 @@ describe('Service Rename Integration', () => {
     expect(service?.command).toBe(originalService.command);
     expect(service?.args).toEqual(originalService.args);
     expect(service?.toolStates).toEqual(originalService.toolStates);
-    expect(service?.discoveredToolsCount).toBe(originalService.discoveredToolsCount);
     expect(service?.connectionPool).toEqual(originalService.connectionPool);
   });
 

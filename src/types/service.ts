@@ -51,9 +51,6 @@ export interface ServiceDefinition {
 
   /** Tool enable/disable states (pattern -> enabled) */
   toolStates?: Record<string, boolean>;
-
-  /** Total number of tools discovered from the service */
-  discoveredToolsCount?: number;
 }
 
 /**

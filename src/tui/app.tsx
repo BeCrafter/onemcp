@@ -69,42 +69,16 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
   const globalToolStats = React.useMemo(() => {
     let totalTools = 0;
     let enabledTools = 0;
-    let enabledServiceCount = 0;
 
     services.forEach(service => {
-      // Only count tools from enabled services
-      if (service.enabled) {
-        enabledServiceCount++;
-        // Use discovered tool count if available and valid, otherwise assume 0
-        const serviceTotal = (service.discoveredToolsCount && service.discoveredToolsCount > 0) 
-          ? service.discoveredToolsCount 
-          : 0;
-        totalTools += serviceTotal;
-        
-        if (serviceTotal > 0) {
-          // Count explicitly disabled tools in enabled services
-          if (service.toolStates) {
-            const disabledCount = Object.values(service.toolStates)
-              .filter(enabled => enabled === false).length;
-            // Enabled tools = total - disabled (unmentioned tools are enabled by default)
-            const serviceEnabled = Math.max(0, serviceTotal - disabledCount);
-            enabledTools += serviceEnabled;
-          } else {
-            // If no toolStates, all tools are enabled by default
-            enabledTools += serviceTotal;
-          }
-        }
+      if (service.enabled && service.toolStates) {
+        const toolCount = Object.keys(service.toolStates).length;
+        totalTools += toolCount;
+        const disabledCount = Object.values(service.toolStates)
+          .filter(v => v === false).length;
+        enabledTools += Math.max(0, toolCount - disabledCount);
       }
     });
-
-    // Debug: Log enabled services for verification
-    if (enabledServiceCount > 0) {
-      const debugInfo = services
-        .filter(s => s.enabled)
-        .map(s => `${s.name}(${s.discoveredToolsCount || 0})`)
-        .join(', ');
-      console.log(`Global tool stats: ${enabledTools}/${totalTools} tools from ${enabledServiceCount} enabled services: [${debugInfo}]`);
-    }
 
     return { enabled: enabledTools, total: totalTools };
   }, [services]);
@@ -306,39 +280,9 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
     }
   };
 
-  // Handle tools discovered
-  const handleToolsDiscovered = async (toolCount: number) => {
-    if (!config || !configProvider || !editingService) return;
-    
-    // Only update if the count has changed
-    if (editingService.discoveredToolsCount === toolCount) return;
-
-    try {
-      const updatedService = { ...editingService, discoveredToolsCount: toolCount };
-      
-      if (serviceRegistry) {
-        await serviceRegistry.register(updatedService);
-      } else {
-        const services = config.mcpServers.map((s: any) => 
-          s.name === editingService.name ? updatedService : s
-        );
-        const newConfig = { ...config, mcpServers: services };
-        await configProvider.save(newConfig);
-      }
-      
-      // Update editing service
-      setEditingService(updatedService);
-      
-      // Update services list
-      setServices(prevServices => 
-        prevServices.map(s => 
-          s.name === editingService.name ? updatedService : s
-        )
-      );
-    } catch (err) {
-      // Silently fail - this is not critical
-      console.error('Failed to save discovered tool count:', err);
-    }
+  // Handle tools discovered — in-memory only, no persistence
+  const handleToolsDiscovered = (_toolCount: number) => {
+    // Tool counts are not persisted in this legacy TUI
   };
 
   const handleToggleService = async (serviceName: string, enabled: boolean) => {

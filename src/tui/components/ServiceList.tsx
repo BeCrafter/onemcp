@@ -1,6 +1,6 @@
 /**
  * Service List Component
- * 
+ *
  * Displays all registered services with their status and details.
  * Supports navigation and selection with enhanced visual feedback.
  */
@@ -8,6 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import type { ServiceDefinition } from '../../types/service.js';
+import type { DiscoveryStatus } from '../tool-discovery-manager.js';
 
 export interface ServiceListProps {
   services: ServiceDefinition[];
@@ -19,6 +20,8 @@ export interface ServiceListProps {
     enabled: number;
     total: number;
   };
+  discoveryStatus?: Map<string, DiscoveryStatus>;
+  toolCounts?: Map<string, number>;
 }
 
 /**
@@ -52,31 +55,58 @@ function formatEnabled(enabled: boolean): { text: string; color: string; symbol:
 const ServiceListItem: React.FC<{
   service: ServiceDefinition;
   isSelected: boolean;
-}> = ({ service, isSelected }) => {
+  discoveryStatus?: DiscoveryStatus;
+  toolCount?: number;
+}> = ({ service, isSelected, discoveryStatus, toolCount }) => {
   const transport = formatTransport(service.transport);
   const status = formatEnabled(service.enabled);
-  
-  // Calculate tool statistics
-  const hasTools = service.toolStates && Object.keys(service.toolStates).length > 0;
-  
-  // Use discovered tool count if available, otherwise fall back to toolStates length
-  const totalTools = service.discoveredToolsCount ?? (hasTools ? Object.keys(service.toolStates!).length : 0);
-  
-  // Count explicitly disabled tools
-  const disabledTools = hasTools 
-    ? Object.entries(service.toolStates!).filter(([_, enabled]) => enabled === false).length
-    : 0;
-  
-  // Enabled tools = total - disabled (tools are enabled by default)
-  const enabledTools = totalTools - disabledTools;
 
-  const endpoint = service.transport === 'stdio' 
+  // Count explicitly disabled tools from toolStates
+  const disabledTools = service.toolStates
+    ? Object.entries(service.toolStates).filter(([_, enabled]) => enabled === false).length
+    : 0;
+
+  const enabledTools = (toolCount ?? 0) - disabledTools;
+
+  const endpoint = service.transport === 'stdio'
     ? ((service.command || '') + (service.args?.length ? ' ' + service.args.join(' ') : ''))
     : (service.url || '');
-  
-  const endpointDisplay = endpoint.length > 50 
-    ? endpoint.substring(0, 47) + '...' 
+
+  const endpointDisplay = endpoint.length > 50
+    ? endpoint.substring(0, 47) + '...'
     : endpoint;
+
+  // Render tool count indicator based on discovery status
+  const renderToolIndicator = () => {
+    if (!service.enabled) return null;
+
+    switch (discoveryStatus) {
+      case 'in-progress':
+        return (
+          <Box width={12} flexShrink={0}>
+            <Text dimColor>⏳ loading</Text>
+          </Box>
+        );
+      case 'failed':
+        return (
+          <Box width={12} flexShrink={0}>
+            <Text color="red">✗ failed</Text>
+          </Box>
+        );
+      case 'completed':
+        if (toolCount !== undefined && toolCount > 0) {
+          return (
+            <Box width={12} flexShrink={0}>
+              <Text color="magenta" bold>{Math.max(0, enabledTools)}/{toolCount}</Text>
+              <Text dimColor> tools</Text>
+            </Box>
+          );
+        }
+        return null;
+      default:
+        return null;
+    }
+  };
 
   return (
     <Box
@@ -90,7 +120,7 @@ const ServiceListItem: React.FC<{
           {isSelected ? '▶' : ' '}
         </Text>
       </Box>
-      
+
       <Box width={25} flexShrink={0}>
         <Text bold color={status.color}>
           {status.symbol}
@@ -99,21 +129,16 @@ const ServiceListItem: React.FC<{
           {' '}{service.name}
         </Text>
       </Box>
-      
+
       <Box width={8} flexShrink={0}>
         <Text color={transport.color} bold>{transport.text}</Text>
       </Box>
-      
+
       <Box flexGrow={1} flexShrink={1}>
         <Text color="dimGray">{endpointDisplay}</Text>
       </Box>
-      
-      {totalTools > 0 && (
-        <Box width={12} flexShrink={0}>
-          <Text color="magenta" bold>{enabledTools}/{totalTools}</Text>
-          <Text dimColor> tools</Text>
-        </Box>
-      )}
+
+      {renderToolIndicator()}
     </Box>
   );
 };
@@ -126,6 +151,8 @@ export const ServiceList: React.FC<ServiceListProps> = ({
   selectedIndex,
   onSelect,
   terminalHeight,
+  discoveryStatus,
+  toolCounts,
 }) => {
   const { stdout } = useStdout();
   const effectiveTerminalHeight = terminalHeight || 24;
@@ -136,19 +163,19 @@ export const ServiceList: React.FC<ServiceListProps> = ({
   // Calculate visible services based on terminal height, but cap at 25 per page
   const calculatedVisible = Math.floor((effectiveTerminalHeight - HEADER_LINES - FOOTER_LINES) / SERVICE_ITEM_LINES);
   const MAX_VISIBLE_SERVICES = Math.min(25, Math.max(3, calculatedVisible));
-  
+
   const [currentPage, setCurrentPage] = useState(0);
   const totalPages = Math.ceil(services.length / MAX_VISIBLE_SERVICES);
   const startIndex = currentPage * MAX_VISIBLE_SERVICES;
   const visibleServices = services.slice(startIndex, startIndex + MAX_VISIBLE_SERVICES);
-  
+
   useEffect(() => {
     const newPage = Math.floor(selectedIndex / MAX_VISIBLE_SERVICES);
     if (newPage !== currentPage && newPage >= 0 && newPage < totalPages) {
       setCurrentPage(newPage);
     }
   }, [selectedIndex, MAX_VISIBLE_SERVICES, totalPages, currentPage]);
-  
+
   useInput((_input, key) => {
     if (key.leftArrow) {
       if (currentPage > 0) {
@@ -164,7 +191,7 @@ export const ServiceList: React.FC<ServiceListProps> = ({
       }
     }
   });
-  
+
   if (services.length === 0) {
     return (
       <Box flexDirection="column">
@@ -177,7 +204,7 @@ export const ServiceList: React.FC<ServiceListProps> = ({
           <Text bold color="yellow">📋 No services registered</Text>
           <Text dimColor>Get started by adding your first MCP service</Text>
         </Box>
-        
+
         <Box marginTop={1} borderStyle="single" borderColor="cyan" paddingX={1}>
           <Text>
             <Text color="cyan">a</Text>
@@ -209,18 +236,24 @@ export const ServiceList: React.FC<ServiceListProps> = ({
           </>
         )}
       </Box>
-      
+
       {/* Service list with border */}
       <Box width={effectiveTerminalWidth} flexDirection="column" borderStyle="single" borderColor="gray" marginY={0}>
-        {visibleServices.map((service, index) => (
-          <ServiceListItem
-            key={service.name}
-            service={service}
-            isSelected={startIndex + index === selectedIndex}
-          />
-        ))}
+        {visibleServices.map((service, index) => {
+          const svcDiscoveryStatus = discoveryStatus?.get(service.name);
+          const svcToolCount = toolCounts?.get(service.name);
+          return (
+            <ServiceListItem
+              key={service.name}
+              service={service}
+              isSelected={startIndex + index === selectedIndex}
+              {...(svcDiscoveryStatus !== undefined ? { discoveryStatus: svcDiscoveryStatus } : {})}
+              {...(svcToolCount !== undefined ? { toolCount: svcToolCount } : {})}
+            />
+          );
+        })}
       </Box>
-      
+
       {totalPages > 1 && (
         <Box marginTop={0} paddingX={2} justifyContent="center">
           <Text dimColor>
@@ -230,11 +263,11 @@ export const ServiceList: React.FC<ServiceListProps> = ({
           </Text>
         </Box>
       )}
-      
+
       {/* Footer with shortcuts */}
       <Box width={effectiveTerminalWidth} borderStyle="single" borderColor="gray" paddingX={1} marginTop={0}>
         <Text dimColor>
-          ↑/↓ Navigate | Enter Edit | Space Toggle | a Add | d Delete | v Tools | q Quit
+          ↑/↓ Navigate | Enter Edit | Space Toggle | a Add | d Delete | v Tools | r Refresh | q Quit
         </Text>
       </Box>
     </Box>

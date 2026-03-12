@@ -1,188 +1,109 @@
-# OneMCP Developer Guide
+# OneMCP Dev Rules
 
-## Build, Test, and Lint Commands
-
-### Core Commands
+## Commands
 
 | Command | Description |
 |---------|-------------|
-| `npm run build` | Build the project using tsup |
-| `npm run dev` | Watch mode for development |
-| `npm run clean` | Remove dist directory |
-
-### Testing
-
-| Command | Description |
-|---------|-------------|
-| `npm test` | Run all tests (vitest --run) |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run test:coverage` | Run tests with coverage report |
-| `npm run test:property` | Run property-based tests using fast-check |
-
-**Running a single test file:**
-```bash
-npx vitest run tests/unit/config/file-provider.test.ts
-```
-
-**Running a single test:**
-```bash
-npx vitest run -t "should load config"
-```
-
-### Linting and Formatting
-
-| Command | Description |
-|---------|-------------|
-| `npm run lint` | Run ESLint on src and tests |
-| `npm run lint:fix` | Auto-fix lint issues |
-| `npm run format` | Format code with Prettier |
-| `npm run format:check` | Check formatting without fixing |
-| `npm run typecheck` | TypeScript type checking only |
+| `npm run build` | Build with tsup |
+| `npm run dev` | Watch mode |
+| `npm test` | Run all tests |
+| `npm run test:watch` | Watch mode tests |
+| `npm run test:coverage` | Coverage report (thresholds: 80% lines/fn/stmt, 75% branches) |
+| `npm run test:property` | Property-based tests (fast-check) |
+| `npm run lint` / `lint:fix` | ESLint |
+| `npm run format` / `format:check` | Prettier |
+| `npm run typecheck` | TypeScript check only |
+| `npx vitest run <file>` | Single test file |
+| `npx vitest run -t "<name>"` | Single test by name |
 
 ---
 
-## Code Style Guidelines
+## Constraints (Hard Rules)
 
-### TypeScript Configuration
+These are enforced by ESLint and will cause CI failure if violated:
 
-The project uses strict TypeScript with these key settings:
-- **Target**: ES2022
-- **Module**: ESNext (ESM)
-- **Strict mode**: Enabled
-- **`noImplicitAny`**: Error (no implicit any allowed)
-- **`noNonNullAssertion`**: Error (forbidden `!` operator)
-- **`noUncheckedIndexedAccess`**: Enabled
+- **NO `any`** — use proper types; `@typescript-eslint/no-explicit-any: error`
+- **NO `!`** — no non-null assertions; use explicit null checks or optional chaining
+- **NO `console.log/warn/error`** — use `process.stdout.write()` / `process.stderr.write()`; only `console.log` in CLI help/version output with `// eslint-disable-next-line no-console`
+- **Always handle promises** — `await` or `void`; floating promises are errors
+- **No implicit `any`** — all parameters and return types must be inferrable or explicit
+- **No `!` index access** — `noUncheckedIndexedAccess` is enabled; check array/map access results
 
-### Imports and Exports
+---
 
-```typescript
-// Use explicit .js extensions for relative imports
-import { Tool } from '../types/tool.js';
-import type { ServiceDefinition } from '../types/service.js';
+## TypeScript
 
-// Group imports: external → internal → types
-import Ajv from 'ajv';
-import { EventEmitter } from 'events';
-import type { Tool } from '../types/tool.js';
-import { ErrorCode } from '../types/jsonrpc.js';
-import { ToolRouter } from './tool-router.js';
+- Target: ES2022, Module: ESNext (ESM), strict mode enabled
+- `exactOptionalPropertyTypes` enabled — don't assign `undefined` to optional fields explicitly
+- Use `readonly` for fields that don't change after construction
+- Use `type` keyword for type-only imports: `import type { Foo } from './foo.js'`
+- Explicit return types required on all public methods
+- Use type inference only when the type is obvious from the right-hand side
 
-// Export types separately when needed
-export type { Session, SessionContext } from './session/index.js';
-export { CliModeRunner } from './cli-mode.js';
-```
+---
 
-### Naming Conventions
+## Naming
 
 | Element | Convention | Example |
 |---------|------------|---------|
-| Classes | PascalCase | `ToolRouter`, `ConnectionPool` |
-| Interfaces | PascalCase | `ToolCacheEntry`, `RequestContext` |
-| Types | PascalCase | `TagFilter`, `ServiceDefinition` |
-| Functions | camelCase | `parseCliArgs`, `displayHelp` |
-| Variables | camelCase | `toolCache`, `connectionPools` |
-| Constants | UPPER_SNAKE_CASE | `DEFAULT_TIMEOUT`, `MAX_RETRIES` |
-| Private members | Prefix with `_` or use `private` | `private readonly _toolCache` |
-| File names | kebab-case | `tool-router.ts`, `connection-pool.ts` |
+| Classes / Interfaces / Types | PascalCase | `ToolRouter`, `ServiceDefinition` |
+| Functions / Variables | camelCase | `discoverTools`, `toolCache` |
+| Constants | UPPER_SNAKE_CASE | `DEFAULT_TIMEOUT_MS`, `MAX_RETRIES` |
+| Private members | `private` keyword (or `_` prefix) | `private readonly _cache` |
+| Files | kebab-case | `tool-router.ts`, `connection-pool.ts` |
 
-### Error Handling
+---
+
+## Imports
+
+- Relative imports must use explicit `.js` extensions (ESM requirement)
+- Group order: external packages → internal modules → types
+- Use `import type` for type-only imports
 
 ```typescript
-// Use proper error handling with type guards
+import Ajv from 'ajv';
+import { ToolRouter } from './tool-router.js';
+import type { ServiceDefinition } from '../types/service.js';
+```
+
+---
+
+## Error Handling
+
+- Always use `instanceof Error` guard before accessing `.message`
+- Use `??` for defaults, `?.` for safe access — never `!`
+- Use `void` for fire-and-forget promise calls
+- Wrap errors with context (correlationId, requestId, sessionId) via `ErrorBuilder`
+
+```typescript
 try {
-  const result = await configProvider.load();
-  return result;
+  return await configProvider.load();
 } catch (error) {
-  process.stderr.write(
-    `Failed to load config: ${error instanceof Error ? error.message : String(error)}\n`
-  );
+  process.stderr.write(`Failed: ${error instanceof Error ? error.message : String(error)}\n`);
   return null;
 }
 
-// Use void for fire-and-forget promises
 process.on('SIGINT', () => void shutdown('SIGINT'));
-
-// Use nullish coalescing for optional values
-const port = config.port ?? 3000;
-
-// Check for null/undefined explicitly instead of non-null assertion
-if (service.command !== undefined && service.command !== null) {
-  // Use service.command here
-}
 ```
 
-### ESLint Rules (Enforced)
+---
 
-- **`@typescript-eslint/no-explicit-any`**: Error - Never use `any`, use proper types
-- **`@typescript-eslint/no-non-null-assertion`**: Error - Never use `!` operator, check for null/undefined
-- **`@typescript-eslint/no-floating-promises`**: Error - Always await or use void for promises
-- **`@typescript-eslint/await-thenable`**: Error - Don't await non-Promise values
-- **`no-console`**: Warn - Use `process.stdout.write()` or `process.stderr.write()` instead
-
-### Console Usage
+## Class Structure
 
 ```typescript
-// OK: Help/version output (with eslint-disable)
-function displayHelp(): void {
-  // eslint-disable-next-line no-console
-  console.log(`Usage: onemcp [OPTIONS]`);
-}
-
-// OK: stderr for errors
-process.stderr.write(`Error: ${message}\n`);
-
-// OK: stdout for status messages
-process.stdout.write(`Loading configuration...\n`);
-
-// NOT OK: console.log for status messages
-// Use process.stdout.write instead
-```
-
-### Type Annotations
-
-```typescript
-// Explicit return types for public methods
-public async load(): Promise<SystemConfig | null> { }
-
-// Private fields in constructor
-constructor(
-  private readonly serviceRegistry: ServiceRegistry,
-  private readonly namespaceManager: NamespaceManager
-) { }
-
-// Use readonly for immutable fields
-private readonly toolCache: ToolCacheEntry | null = null;
-
-// Use type inference when obvious
-const toolCache = new Map<string, Tool[]>(); // Infer Map<string, Tool[]>
-```
-
-### Class Structure
-
-```typescript
-/**
- * Class description
- */
-export class ToolRouter extends EventEmitter {
-  // Private fields
-  private toolCache: ToolCacheEntry | null = null;
-  private connectionPools: Map<string, ConnectionPool> = new Map();
+export class MyService extends EventEmitter {
+  private readonly cache: Map<string, Item> = new Map();
 
   constructor(
-    private readonly serviceRegistry: ServiceRegistry,
-    private readonly namespaceManager: NamespaceManager,
-    private readonly healthMonitor: HealthMonitor
+    private readonly registry: ServiceRegistry,
+    private readonly monitor: HealthMonitor
   ) {
     super();
-    // Setup code
   }
 
-  /**
-   * Method description
-   * @param paramName - Parameter description
-   */
-  public async discoverTools(tagFilter?: TagFilter): Promise<Tool[]> {
-    // Implementation
+  /** Brief description of what this method does. */
+  public async doWork(input: string): Promise<Result> {
+    // implementation
   }
 
   private handleError(error: Error): void {
@@ -191,16 +112,20 @@ export class ToolRouter extends EventEmitter {
 }
 ```
 
-### JSDoc Comments
+---
+
+## JSDoc
+
+Add JSDoc to all public methods. Keep it brief — describe *what* and *why*, not *how*.
 
 ```typescript
 /**
- * Resolves configuration directory with priority:
- * 1. Command-line argument (--config-dir)
- * 2. Environment variable (ONEMCP_CONFIG_DIR)
+ * Resolves config directory using priority:
+ * 1. CLI arg (--config-dir)
+ * 2. Env var (ONEMCP_CONFIG_DIR)
  * 3. Default (~/.onemcp)
  */
-function resolveConfigDir(args: CliArgs): string { }
+function resolveConfigDir(args: CliArgs): string {}
 ```
 
 ---
@@ -209,71 +134,34 @@ function resolveConfigDir(args: CliArgs): string { }
 
 ```
 src/
-├── cli.ts           # CLI entry point
-├── tui.ts           # TUI entry point
-├── index.ts         # Library exports
-├── cli-mode.ts      # CLI mode runner
-├── server-mode.ts   # Server mode runner
-├── config/          # Configuration providers
-├── health/          # Health monitoring
-├── logging/         # Logging (audit, request, logger)
-├── metrics/         # Metrics collection
-├── namespace/       # Tool namespace management
-├── pool/            # Connection pooling
-├── protocol/       # JSON-RPC parsing/serialization
-├── registry/       # Service registry
-├── routing/        # Tool routing
-├── session/        # Session management
-├── storage/        # Storage adapters
-├── transport/      # Transport layer (stdio, http)
-├── tui/            # TUI components
-└── types/          # TypeScript type definitions
+├── cli.ts / tui.ts / index.ts   # Entry points
+├── cli-mode.ts / server-mode.ts # Mode runners
+├── config/     # Config providers (FileConfigProvider)
+├── errors/     # ErrorBuilder, recovery, timeout handler
+├── health/     # HealthMonitor
+├── logging/    # Pino logger, audit logger, data masker
+├── metrics/    # Metrics collector and service
+├── namespace/  # NamespaceManager (__-separated tool names)
+├── pool/       # ConnectionPool
+├── protocol/   # JSON-RPC parser, serializer, MCP handler
+├── registry/   # ServiceRegistry
+├── routing/    # ToolRouter
+├── session/    # Session management
+├── storage/    # File / memory adapters
+├── transport/  # stdio, HTTP transports
+├── tui/        # Ink/React TUI components
+├── types/      # All TypeScript types (re-exported from index.ts)
+└── utils/      # Shared utilities
 ```
 
 ---
 
-## Testing Guidelines
+## Testing
 
-Tests are located in `tests/` with the following organization:
-- `tests/unit/` - Unit tests
-- `tests/integration/` - Integration tests
-- `tests/property/` - Property-based tests (fast-check)
-
-Test files should follow naming: `*.test.ts`
-
----
-
-## Common Patterns
-
-### Null Checks Instead of Non-Null Assertion
-
-```typescript
-// BAD
-const command = service.command!;
-
-// GOOD
-if (service.command !== undefined && service.command !== null) {
-  const command = service.command;
-  // Use command
-}
-
-// Or with optional chaining
-const value = config?.port ?? 3000;
-```
-
-### Async/Await
-
-```typescript
-// BAD: Async function without await
-async function getData(): Promise<Data> {
-  return fetchData(); // Missing await
-}
-
-// GOOD
-async function getData(): Promise<Data> {
-  return await fetchData();
-}
-
-// Or for fire-and-forget
-process.on('SIGTERM', () => void shutdown());
-```
+- Unit tests: `tests/unit/<module>/<feature>.test.ts` (mirrors src structure)
+- Property tests: `tests/property/<feature>.property.test.ts` using fast-check
+- Integration tests: `tests/integration/`
+- Use factory helpers (`createTestService()`, `createMockConfigProvider()`) — don't repeat setup inline
+- Mock with `vi.fn()` — avoid real I/O in unit tests
+- Property tests must include arbitraries for each type; test invariants not just happy paths
+- Coverage thresholds enforced: 80% lines/functions/statements, 75% branches
