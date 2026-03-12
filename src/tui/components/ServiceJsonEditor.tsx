@@ -73,6 +73,9 @@ function validateJson(jsonText: string): ValidationResult {
             service.env = config.env;
           } else {
             service.url = config.url;
+            if (config.headers != null && typeof config.headers === 'object' && !Array.isArray(config.headers)) {
+              service.headers = config.headers as Record<string, string>;
+            }
           }
 
           if (config.toolStates) {
@@ -142,6 +145,13 @@ function validateJson(jsonText: string): ValidationResult {
         valid: false,
         errors,
       };
+    }
+
+    // Strip headers from stdio services so they are not persisted
+    for (const s of services) {
+      if (s.transport === 'stdio' && s.headers !== undefined) {
+        delete s.headers;
+      }
     }
 
     return {

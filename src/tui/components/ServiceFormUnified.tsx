@@ -308,7 +308,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
         url: service.url || '',
         args: service.args?.join(', ') || '',
         env: service.env ? Object.entries(service.env).map(([k, v]) => `${k}=${v}`).join(', ') : '',
-        headers: service.headers ? Object.entries(service.headers).map(([k, v]) => `${k}: ${v}`).join(', ') : '',
+        headers: service.transport === 'stdio' ? '' : (service.headers ? Object.entries(service.headers).map(([k, v]) => `${k}: ${v}`).join(', ') : ''),
         tags: service.tags.join(', '),
         enabled: service.enabled,
         maxConnections: service.connectionPool.maxConnections.toString(),

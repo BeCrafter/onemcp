@@ -76,6 +76,24 @@ const ServiceListItem: React.FC<{
     ? endpoint.substring(0, 47) + '...'
     : endpoint;
 
+  const renderTags = () => {
+    const tags = service.tags?.slice(0, 3) ?? [];
+    if (tags.length === 0) return null;
+
+    return (
+      <Box width={28} flexShrink={0} paddingX={1}>
+        {tags.map((tag, index) => (
+          <Text key={tag}>
+            <Text dimColor>[</Text>
+            <Text color="yellow">{tag}</Text>
+            <Text dimColor>]</Text>
+            {index < tags.length - 1 && <Text dimColor> </Text>}
+          </Text>
+        ))}
+      </Box>
+    );
+  };
+
   // Render tool count indicator based on discovery status
   const renderToolIndicator = () => {
     if (!service.enabled) return null;
@@ -96,7 +114,7 @@ const ServiceListItem: React.FC<{
       case 'completed':
         if (toolCount !== undefined && toolCount > 0) {
           return (
-            <Box width={12} flexShrink={0}>
+            <Box width={12} flexShrink={0} justifyContent="flex-end">
               <Text color="magenta" bold>{Math.max(0, enabledTools)}/{toolCount}</Text>
               <Text dimColor> tools</Text>
             </Box>
@@ -138,6 +156,7 @@ const ServiceListItem: React.FC<{
         <Text color="dimGray">{endpointDisplay}</Text>
       </Box>
 
+      {renderTags()}
       {renderToolIndicator()}
     </Box>
   );
