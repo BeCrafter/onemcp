@@ -36,9 +36,8 @@ describe('Service Deletion Integration', () => {
       port: 3000,
       logLevel: 'INFO',
       configDir: tempDir,
-      mcpServers: [
-        {
-          name: 'test-service-1',
+      mcpServers: {
+        'test-service-1': {
           enabled: true,
           tags: ['test'],
           transport: 'stdio',
@@ -49,8 +48,7 @@ describe('Service Deletion Integration', () => {
             connectionTimeout: 30000,
           },
         },
-        {
-          name: 'test-service-2',
+        'test-service-2': {
           enabled: true,
           tags: ['test'],
           transport: 'stdio',
@@ -61,7 +59,7 @@ describe('Service Deletion Integration', () => {
             connectionTimeout: 30000,
           },
         },
-      ],
+      },
       connectionPool: {
         maxConnections: 10,
         idleTimeout: 60000,
@@ -132,8 +130,8 @@ describe('Service Deletion Integration', () => {
 
     // Verify service removed from config file
     const savedConfig = await provider.load();
-    expect(savedConfig.mcpServers).toHaveLength(1);
-    expect(savedConfig.mcpServers[0]?.name).toBe('test-service-2');
+    expect(Object.keys(savedConfig.mcpServers)).toHaveLength(1);
+    expect(Object.keys(savedConfig.mcpServers)[0]).toBe('test-service-2');
   });
 
   it('should delete multiple services sequentially', async () => {
@@ -152,7 +150,7 @@ describe('Service Deletion Integration', () => {
 
     // Verify config file is empty
     const savedConfig = await provider.load();
-    expect(savedConfig.mcpServers).toHaveLength(0);
+    expect(Object.keys(savedConfig.mcpServers)).toHaveLength(0);
   });
 
   it('should handle deleting non-existent service gracefully', async () => {
@@ -164,7 +162,7 @@ describe('Service Deletion Integration', () => {
     expect(services).toHaveLength(2);
 
     const savedConfig = await provider.load();
-    expect(savedConfig.mcpServers).toHaveLength(2);
+    expect(Object.keys(savedConfig.mcpServers)).toHaveLength(2);
   });
 
   it('should emit serviceUnregistered event on deletion', async () => {

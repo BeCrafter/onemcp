@@ -21,9 +21,8 @@ describe('FileConfigProvider', () => {
     mode: 'cli',
     logLevel: 'INFO',
     configDir: '/test/config',
-    mcpServers: [
-      {
-        name: 'test-service',
+    mcpServers: {
+      'test-service': {
         transport: 'stdio',
         command: 'node',
         args: ['server.js'],
@@ -36,7 +35,7 @@ describe('FileConfigProvider', () => {
           connectionTimeout: 30000,
         },
       },
-    ],
+    },
     connectionPool: {
       maxConnections: 5,
       idleTimeout: 60000,
@@ -153,9 +152,8 @@ describe('FileConfigProvider', () => {
       // Arrange
       const httpConfig: SystemConfig = {
         ...validConfig,
-        mcpServers: [
-          {
-            name: 'http-service',
+        mcpServers: {
+          'http-service': {
             transport: 'http',
             url: 'https://example.com/mcp',
             enabled: true,
@@ -166,7 +164,7 @@ describe('FileConfigProvider', () => {
               connectionTimeout: 30000,
             },
           },
-        ],
+        },
       };
       await storage.write('config.json', JSON.stringify(httpConfig));
 
@@ -174,18 +172,17 @@ describe('FileConfigProvider', () => {
       const config = await provider.load();
 
       // Assert
-      expect(config.mcpServers[0]).toBeDefined();
-      expect(config.mcpServers[0]?.transport).toBe('http');
-      expect(config.mcpServers[0]?.url).toBe('https://example.com/mcp');
+      expect(config.mcpServers['http-service']).toBeDefined();
+      expect(config.mcpServers['http-service']?.transport).toBe('http');
+      expect(config.mcpServers['http-service']?.url).toBe('https://example.com/mcp');
     });
 
     it('should load config with SSE service', async () => {
       // Arrange
       const sseConfig: SystemConfig = {
         ...validConfig,
-        mcpServers: [
-          {
-            name: 'sse-service',
+        mcpServers: {
+          'sse-service': {
             transport: 'sse',
             url: 'https://example.com/events',
             enabled: true,
@@ -196,7 +193,7 @@ describe('FileConfigProvider', () => {
               connectionTimeout: 30000,
             },
           },
-        ],
+        },
       };
       await storage.write('config.json', JSON.stringify(sseConfig));
 
@@ -204,9 +201,9 @@ describe('FileConfigProvider', () => {
       const config = await provider.load();
 
       // Assert
-      expect(config.mcpServers[0]).toBeDefined();
-      expect(config.mcpServers[0]?.transport).toBe('sse');
-      expect(config.mcpServers[0]?.url).toBe('https://example.com/events');
+      expect(config.mcpServers['sse-service']).toBeDefined();
+      expect(config.mcpServers['sse-service']?.transport).toBe('sse');
+      expect(config.mcpServers['sse-service']?.url).toBe('https://example.com/events');
     });
   });
 
@@ -246,7 +243,7 @@ describe('FileConfigProvider', () => {
 
     it('should validate before saving', async () => {
       // Arrange
-      const invalidConfig = { ...validConfig, mcpServers: [] as any };
+      const invalidConfig = { ...validConfig, mcpServers: {} as any };
       delete (invalidConfig as any).connectionPool;
 
       // Act & Assert
@@ -342,9 +339,8 @@ describe('FileConfigProvider', () => {
       // Arrange
       const invalidConfig: SystemConfig = {
         ...validConfig,
-        mcpServers: [
-          {
-            name: 'test',
+        mcpServers: {
+          test: {
             transport: 'stdio',
             enabled: true,
             tags: [],
@@ -354,7 +350,7 @@ describe('FileConfigProvider', () => {
               connectionTimeout: 30000,
             },
           } as any,
-        ],
+        },
       };
 
       // Act
@@ -369,9 +365,8 @@ describe('FileConfigProvider', () => {
       // Arrange
       const invalidConfig: SystemConfig = {
         ...validConfig,
-        mcpServers: [
-          {
-            name: 'test',
+        mcpServers: {
+          test: {
             transport: 'http',
             enabled: true,
             tags: [],
@@ -381,7 +376,7 @@ describe('FileConfigProvider', () => {
               connectionTimeout: 30000,
             },
           } as any,
-        ],
+        },
       };
 
       // Act
@@ -396,9 +391,8 @@ describe('FileConfigProvider', () => {
       // Arrange
       const invalidConfig: SystemConfig = {
         ...validConfig,
-        mcpServers: [
-          {
-            name: 'test',
+        mcpServers: {
+          test: {
             transport: 'sse',
             enabled: true,
             tags: [],
@@ -408,7 +402,7 @@ describe('FileConfigProvider', () => {
               connectionTimeout: 30000,
             },
           } as any,
-        ],
+        },
       };
 
       // Act
@@ -423,9 +417,8 @@ describe('FileConfigProvider', () => {
       // Arrange
       const invalidConfig: SystemConfig = {
         ...validConfig,
-        mcpServers: [
-          {
-            name: 'test',
+        mcpServers: {
+          test: {
             transport: 'http',
             url: 'not-a-valid-url',
             enabled: true,
@@ -436,7 +429,7 @@ describe('FileConfigProvider', () => {
               connectionTimeout: 30000,
             },
           },
-        ],
+        },
       };
 
       // Act
@@ -453,9 +446,8 @@ describe('FileConfigProvider', () => {
       // Arrange
       const validHttpConfig: SystemConfig = {
         ...validConfig,
-        mcpServers: [
-          {
-            name: 'test',
+        mcpServers: {
+          test: {
             transport: 'http',
             url: 'https://example.com/mcp',
             enabled: true,
@@ -466,7 +458,7 @@ describe('FileConfigProvider', () => {
               connectionTimeout: 30000,
             },
           },
-        ],
+        },
       };
 
       // Act
@@ -480,9 +472,8 @@ describe('FileConfigProvider', () => {
       // Arrange
       const invalidConfig: SystemConfig = {
         ...validConfig,
-        mcpServers: [
-          {
-            name: 'test',
+        mcpServers: {
+          test: {
             transport: 'websocket' as any,
             enabled: true,
             tags: [],
@@ -492,7 +483,7 @@ describe('FileConfigProvider', () => {
               connectionTimeout: 30000,
             },
           },
-        ],
+        },
       };
 
       // Act
@@ -579,9 +570,8 @@ describe('FileConfigProvider', () => {
       // Arrange
       const configWithToolStates: SystemConfig = {
         ...validConfig,
-        mcpServers: [
-          {
-            name: 'test-service',
+        mcpServers: {
+          'test-service': {
             transport: 'stdio',
             command: 'node',
             args: ['server.js'],
@@ -599,7 +589,7 @@ describe('FileConfigProvider', () => {
               '*_directory': true,
             },
           },
-        ],
+        },
       };
 
       // Act
@@ -872,9 +862,9 @@ describe('FileConfigProvider', () => {
   });
 
   describe('edge cases', () => {
-    it('should handle empty services array', () => {
+    it('should handle empty services object', () => {
       // Arrange
-      const emptyServicesConfig = { ...validConfig, mcpServers: [] };
+      const emptyServicesConfig = { ...validConfig, mcpServers: {} };
 
       // Act
       const result = provider.validate(emptyServicesConfig);
@@ -887,9 +877,8 @@ describe('FileConfigProvider', () => {
       // Arrange
       const minimalConfig: SystemConfig = {
         ...validConfig,
-        mcpServers: [
-          {
-            name: 'minimal',
+        mcpServers: {
+          minimal: {
             transport: 'stdio',
             command: 'node',
             enabled: true,
@@ -900,7 +889,7 @@ describe('FileConfigProvider', () => {
               connectionTimeout: 30000,
             },
           },
-        ],
+        },
       };
 
       // Act
@@ -914,9 +903,8 @@ describe('FileConfigProvider', () => {
       // Arrange
       const fullConfig: SystemConfig = {
         ...validConfig,
-        mcpServers: [
-          {
-            name: 'full',
+        mcpServers: {
+          full: {
             transport: 'stdio',
             command: 'node',
             args: ['--version'],
@@ -933,7 +921,7 @@ describe('FileConfigProvider', () => {
               tool2: false,
             },
           },
-        ],
+        },
       };
 
       // Act
@@ -967,7 +955,7 @@ describe('FileConfigProvider', () => {
         const config = JSON.parse(configData);
         expect(config.mode).toBe('cli');
         expect(config.logLevel).toBe('INFO');
-        expect(config.mcpServers).toEqual([]);
+        expect(config.mcpServers).toEqual({});
         expect(config.connectionPool).toBeDefined();
         expect(config.connectionPool.maxConnections).toBe(5);
         expect(config.healthCheck).toBeDefined();

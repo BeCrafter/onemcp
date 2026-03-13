@@ -116,7 +116,7 @@ export interface SystemConfig {
   /** Configuration directory path */
   configDir: string;
   /** Registered MCP servers */
-  mcpServers: ServiceDefinition[];
+  mcpServers: Record<string, Omit<ServiceDefinition, 'name'>>;
   /** Default connection pool configuration */
   connectionPool: ConnectionPoolConfig;
   /** Health check configuration */

@@ -28,7 +28,7 @@ async function createTestConfigProvider(): Promise<FileConfigProvider> {
     mode: 'cli',
     logLevel: 'INFO',
     configDir: '/test',
-    mcpServers: [],
+    mcpServers: {},
     connectionPool: {
       maxConnections: 5,
       idleTimeout: 60000,

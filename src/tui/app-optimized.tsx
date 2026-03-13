@@ -142,7 +142,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
         // Set up configuration watch to handle external changes
         unwatch = provider.watch((newConfig) => {
-          const updatedServices = newConfig.mcpServers;
+          const updatedServices = Object.entries(newConfig.mcpServers).map(([name, def]) => ({ ...def, name }));
           setServices(updatedServices);
 
           if (serviceRegistry) {
@@ -235,7 +235,33 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
       // Register the new/updated service
       await serviceRegistry.register(service);
-      await reloadServices();
+      const updatedList = await reloadServices();
+
+      // Handle discovery state for the saved service
+      const isRename = editingService && editingService.name !== service.name;
+      const isNew = !editingService;
+      const hasCachedTools = discoveryManagerRef.current.getToolCount(service.name) !== undefined;
+
+      if (isRename && editingService) {
+        // Rename: remove old entry, start fresh discovery for new name
+        setDiscoveryStatuses(prev => {
+          const next = new Map(prev);
+          next.delete(editingService.name);
+          if (service.enabled) next.set(service.name, 'pending');
+          return next;
+        });
+        if (service.enabled) {
+          const list = updatedList ?? services;
+          void discoveryManagerRef.current.refreshZeroToolServices(list);
+        }
+      } else if ((isNew || !hasCachedTools) && service.enabled) {
+        // New service or no cached tool count yet: trigger discovery
+        setDiscoveryStatuses(prev => new Map(prev).set(service.name, 'pending'));
+        const list = updatedList ?? services;
+        void discoveryManagerRef.current.refreshZeroToolServices(list);
+      }
+      // Editing existing service with cached tools: keep existing status/count intact
+
       setView('list');
       setEditingService(undefined);
       setStatusMessage({
@@ -276,10 +302,10 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       if (serviceRegistry) {
         await serviceRegistry.register(updatedService);
       } else {
-        const updatedList = config.mcpServers.map(s =>
-          s.name === editingService.name ? updatedService : s
-        );
-        const newConfig = { ...config, mcpServers: updatedList };
+        const newServers = { ...config.mcpServers };
+        const { name: _n, ...def } = updatedService;
+        newServers[updatedService.name] = def;
+        const newConfig = { ...config, mcpServers: newServers };
         await configProvider.save(newConfig);
       }
 
@@ -319,10 +345,10 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       if (serviceRegistry) {
         await serviceRegistry.register(updatedService);
       } else {
-        const updatedList = config.mcpServers.map(s =>
-          s.name === editingService.name ? updatedService : s
-        );
-        const newConfig = { ...config, mcpServers: updatedList };
+        const newServers = { ...config.mcpServers };
+        const { name: _nn, ...def2 } = updatedService;
+        newServers[updatedService.name] = def2;
+        const newConfig = { ...config, mcpServers: newServers };
         await configProvider.save(newConfig);
       }
 

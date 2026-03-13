@@ -168,7 +168,14 @@ const systemConfigArbitrary = () =>
       port: fc.option(fc.integer({ min: 1, max: 65535 }), { nil: undefined }),
       logLevel: logLevelArbitrary(),
       configDir: fc.constant('/tmp/test-config'),
-      mcpServers: fc.array(serviceDefinitionArbitrary(), { maxLength: 5 }),
+      mcpServers: fc.array(serviceDefinitionArbitrary(), { maxLength: 5 }).map((services) => {
+        const record: Record<string, any> = {};
+        for (const svc of services) {
+          const { name, ...rest } = svc as any;
+          record[name] = rest;
+        }
+        return record;
+      }),
       connectionPool: connectionPoolConfigArbitrary(),
       healthCheck: fc.record({
         enabled: fc.boolean(),
@@ -219,7 +226,7 @@ const invalidSystemConfigArbitrary = () =>
     fc.record({
       logLevel: logLevelArbitrary(),
       configDir: fc.constant('/tmp/test-config'),
-      mcpServers: fc.constant([]),
+      mcpServers: fc.constant({}),
       connectionPool: connectionPoolConfigArbitrary(),
       healthCheck: fc.record({
         enabled: fc.boolean(),
@@ -253,26 +260,24 @@ const invalidSystemConfigArbitrary = () =>
     // Invalid service: stdio without command
     systemConfigArbitrary().map((config) => ({
       ...config,
-      mcpServers: [
-        {
-          name: 'invalid-service',
+      mcpServers: {
+        'invalid-service': {
           transport: 'stdio' as const,
           enabled: true,
           // Missing command field
         },
-      ],
+      },
     })),
     // Invalid service: http without URL
     systemConfigArbitrary().map((config) => ({
       ...config,
-      mcpServers: [
-        {
-          name: 'invalid-service',
+      mcpServers: {
+        'invalid-service': {
           transport: 'http' as const,
           enabled: true,
           // Missing url field
         },
-      ],
+      },
     })),
     // Invalid health check interval (too small)
     systemConfigArbitrary().map((config) => ({
@@ -292,20 +297,18 @@ const multiErrorConfigArbitrary = () =>
     ...config,
     mode: 'server' as const,
     port: undefined, // Error 1: Missing port for server mode
-    mcpServers: [
-      {
-        name: 'invalid-stdio',
+    mcpServers: {
+      'invalid-stdio': {
         transport: 'stdio' as const,
         enabled: true,
         // Error 2: Missing command for stdio
       },
-      {
-        name: 'invalid-http',
+      'invalid-http': {
         transport: 'http' as const,
         enabled: true,
         // Error 3: Missing URL for http
       },
-    ],
+    },
     healthCheck: {
       ...config.healthCheck,
       interval: 500, // Error 4: Interval too small
@@ -355,7 +358,16 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
       await fc.assert(
         fc.asyncProperty(
           systemConfigArbitrary(),
-          fc.array(serviceDefinitionArbitrary(), { minLength: 1, maxLength: 10 }),
+          fc
+            .array(serviceDefinitionArbitrary(), { minLength: 1, maxLength: 10 })
+            .map((services) => {
+              const record: Record<string, any> = {};
+              for (const svc of services) {
+                const { name, ...rest } = svc as any;
+                record[name] = rest;
+              }
+              return record;
+            }),
           async (baseConfig, mcpServers) => {
             const config = { ...baseConfig, mcpServers };
 
@@ -383,9 +395,8 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
           async (baseConfig, toolStates) => {
             const config: SystemConfig = {
               ...baseConfig,
-              mcpServers: [
-                {
-                  name: 'test-service',
+              mcpServers: {
+                'test-service': {
                   transport: 'stdio' as const,
                   command: 'test',
                   enabled: true,
@@ -393,7 +404,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
                   connectionPool: baseConfig.connectionPool,
                   toolStates,
                 },
-              ],
+              },
             };
 
             // Save
@@ -403,7 +414,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
             const loaded = await provider.load();
 
             // Verify tool states are preserved
-            expect(loaded.mcpServers[0]?.toolStates).toEqual(toolStates);
+            expect(loaded.mcpServers['test-service']?.toolStates).toEqual(toolStates);
 
             return true;
           }
@@ -513,7 +524,7 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
     fc.assert(
       fc.property(invalidSystemConfigArbitrary(), (invalidConfig) => {
         // Validate should return invalid
-        const result = provider.validate(invalidConfig as SystemConfig);
+        const result = provider.validate(invalidConfig as unknown as SystemConfig);
 
         expect(result.valid).toBe(false);
         expect(result.errors.length).toBeGreaterThan(0);
@@ -569,17 +580,16 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
       fc.property(systemConfigArbitrary(), (config) => {
         const invalidConfig = {
           ...config,
-          mcpServers: [
-            {
-              name: 'test-service',
+          mcpServers: {
+            'test-service': {
               transport: 'stdio' as const,
               enabled: true,
               // Missing command
             },
-          ],
+          },
         };
 
-        const result = provider.validate(invalidConfig as SystemConfig);
+        const result = provider.validate(invalidConfig as unknown as SystemConfig);
 
         expect(result.valid).toBe(false);
         expect(result.errors.some((err) => err.field.includes('command'))).toBe(true);
@@ -598,17 +608,16 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
         (config, transport) => {
           const invalidConfig = {
             ...config,
-            mcpServers: [
-              {
-                name: 'test-service',
+            mcpServers: {
+              'test-service': {
                 transport,
                 enabled: true,
                 // Missing url
               },
-            ],
+            },
           };
 
-          const result = provider.validate(invalidConfig as SystemConfig);
+          const result = provider.validate(invalidConfig as unknown as SystemConfig);
 
           expect(result.valid).toBe(false);
           expect(result.errors.some((err) => err.field.includes('url'))).toBe(true);
@@ -635,17 +644,16 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
         (config, invalidUrl) => {
           const invalidConfig = {
             ...config,
-            mcpServers: [
-              {
-                name: 'test-service',
+            mcpServers: {
+              'test-service': {
                 transport: 'http' as const,
                 url: invalidUrl,
                 enabled: true,
               },
-            ],
+            },
           };
 
-          const result = provider.validate(invalidConfig as SystemConfig);
+          const result = provider.validate(invalidConfig as unknown as SystemConfig);
 
           expect(result.valid).toBe(false);
 
@@ -660,7 +668,7 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
     await fc.assert(
       fc.asyncProperty(invalidSystemConfigArbitrary(), async (invalidConfig) => {
         // Attempt to save should throw
-        await expect(provider.save(invalidConfig as SystemConfig)).rejects.toThrow();
+        await expect(provider.save(invalidConfig as unknown as SystemConfig)).rejects.toThrow();
 
         return true;
       }),
@@ -722,12 +730,14 @@ describe('Feature: onemcp-system, Property 22: Configuration validation error co
         fc.integer({ min: 2, max: 5 }),
         (baseConfig, numInvalidServices) => {
           // Create multiple invalid services
-          const invalidServices = Array.from({ length: numInvalidServices }, (_, i) => ({
-            name: `invalid-service-${i}`,
-            transport: 'stdio' as const,
-            enabled: true,
-            // Missing command
-          }));
+          const invalidServices: Record<string, any> = {};
+          for (let i = 0; i < numInvalidServices; i++) {
+            invalidServices[`invalid-service-${i}`] = {
+              transport: 'stdio' as const,
+              enabled: true,
+              // Missing command
+            };
+          }
 
           const config = {
             ...baseConfig,
@@ -774,7 +784,7 @@ describe('Feature: onemcp-system, Property 22: Configuration validation error co
   it('should report errors in a consistent format', () => {
     fc.assert(
       fc.property(invalidSystemConfigArbitrary(), (invalidConfig) => {
-        const result = provider.validate(invalidConfig as SystemConfig);
+        const result = provider.validate(invalidConfig as unknown as SystemConfig);
 
         // All errors should follow ValidationError interface
         for (const error of result.errors) {
@@ -800,20 +810,18 @@ describe('Feature: onemcp-system, Property 22: Configuration validation error co
         const config: any = {
           ...baseConfig,
           mode: 'server' as const,
-          mcpServers: [
-            {
-              name: 'invalid-1',
+          mcpServers: {
+            'invalid-1': {
               transport: 'stdio' as const,
               enabled: true,
               // Missing command - Error 2
             },
-            {
-              name: 'invalid-2',
+            'invalid-2': {
               transport: 'http' as const,
               enabled: true,
               // Missing url - Error 3
             },
-          ],
+          },
         };
         delete config.port; // Error 1
 

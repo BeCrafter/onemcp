@@ -57,7 +57,7 @@ describe('Service Rename Integration', () => {
       port: 3000,
       logLevel: 'INFO',
       configDir: tempDir,
-      mcpServers: [originalService],
+      mcpServers: { [originalService.name]: (({ name: _n, ...rest }) => rest)(originalService) },
       connectionPool: {
         maxConnections: 10,
         idleTimeout: 60000,
@@ -142,8 +142,8 @@ describe('Service Rename Integration', () => {
 
     // Verify config file has only one service
     const savedConfig = await provider.load();
-    expect(savedConfig.mcpServers).toHaveLength(1);
-    expect(savedConfig.mcpServers[0]?.name).toBe('renamed-service');
+    expect(Object.keys(savedConfig.mcpServers)).toHaveLength(1);
+    expect(Object.keys(savedConfig.mcpServers)[0]).toBe('renamed-service');
   });
 
   it('should preserve all service properties during rename', async () => {
@@ -184,7 +184,7 @@ describe('Service Rename Integration', () => {
 
     // Verify config file has only 1 service
     const savedConfig = await provider.load();
-    expect(savedConfig.mcpServers).toHaveLength(1);
+    expect(Object.keys(savedConfig.mcpServers)).toHaveLength(1);
   });
 
   it('should handle rename with multiple services', async () => {
@@ -227,8 +227,8 @@ describe('Service Rename Integration', () => {
 
     // Verify config file
     const savedConfig = await provider.load();
-    expect(savedConfig.mcpServers).toHaveLength(2);
-    const configNames = savedConfig.mcpServers.map((s) => s.name).sort();
+    expect(Object.keys(savedConfig.mcpServers)).toHaveLength(2);
+    const configNames = Object.keys(savedConfig.mcpServers).sort();
     expect(configNames).toEqual(['another-service', 'renamed-service']);
   });
 

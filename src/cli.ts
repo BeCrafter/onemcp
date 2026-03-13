@@ -216,7 +216,7 @@ function initializeConfigDir(configDir: string): void {
       mode: 'cli',
       logLevel: 'INFO',
       configDir,
-      mcpServers: [],
+      mcpServers: {},
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,
@@ -324,7 +324,7 @@ async function validateConfiguration(configDir: string): Promise<boolean> {
     if (validation.valid) {
       process.stderr.write('✓ Configuration is valid\n');
       process.stderr.write(`  Mode: ${config.mode}\n`);
-      process.stderr.write(`  Services: ${config.mcpServers.length}\n`);
+      process.stderr.write(`  Services: ${Object.keys(config.mcpServers).length}\n`);
       process.stderr.write(`  Log level: ${config.logLevel}\n`);
       if (config.mode === 'server' && config.port) {
         process.stderr.write(`  Server port: ${config.port}\n`);
@@ -387,7 +387,7 @@ function displayEffectiveConfig(config: SystemConfig, configDir: string): void {
   if (config.mode === 'server') {
     process.stderr.write(`  Server port: ${config.port || 3000}\n`);
   }
-  process.stderr.write(`  Services: ${config.mcpServers.length}\n`);
+  process.stderr.write(`  Services: ${Object.keys(config.mcpServers).length}\n`);
   process.stderr.write(`  Health checks: ${config.healthCheck.enabled ? 'enabled' : 'disabled'}\n`);
   process.stderr.write(`  Audit logging: ${config.audit.enabled ? 'enabled' : 'disabled'}\n`);
   process.stderr.write(`  Metrics: ${config.metrics?.enabled ? 'enabled' : 'disabled'}\n`);

@@ -24,10 +24,19 @@ import { FileConfigProvider } from '../../src/config/file-provider.js';
 /**
  * Generate valid service names
  */
+const DANGEROUS_KEYS = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+  'toString',
+  'valueOf',
+  'hasOwnProperty',
+]);
+
 const serviceNameArbitrary = (): fc.Arbitrary<string> =>
   fc
     .string({ minLength: 1, maxLength: 50 })
-    .filter((s) => s.trim().length > 0)
+    .filter((s) => s.trim().length > 0 && !DANGEROUS_KEYS.has(s.trim()))
     .map((s) => s.trim());
 
 /**
@@ -101,7 +110,7 @@ async function createTestConfigProvider(): Promise<ConfigProvider> {
     mode: 'cli',
     logLevel: 'INFO',
     configDir: '/tmp/test-config',
-    mcpServers: [],
+    mcpServers: {},
     connectionPool: {
       maxConnections: 5,
       idleTimeout: 60000,
@@ -153,6 +162,9 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
   it('should preserve service definition after register and retrieve', async () => {
     await fc.assert(
       fc.asyncProperty(serviceDefinitionArbitrary(), async (serviceDef) => {
+        configProvider = await createTestConfigProvider();
+        registry = new ServiceRegistry(configProvider);
+        await registry.initialize();
         // Register service
         await registry.register(serviceDef);
 
@@ -175,6 +187,9 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
   it('should preserve all service fields through round-trip', async () => {
     await fc.assert(
       fc.asyncProperty(serviceDefinitionArbitrary(), async (serviceDef) => {
+        configProvider = await createTestConfigProvider();
+        registry = new ServiceRegistry(configProvider);
+        await registry.initialize();
         await registry.register(serviceDef);
         const retrieved = await registry.get(serviceDef.name);
 
@@ -212,6 +227,9 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
         fc.option(fc.dictionary(fc.string({ minLength: 1 }), fc.string()), { nil: undefined }),
         fc.boolean(),
         async (name, command, args, env, enabled) => {
+          configProvider = await createTestConfigProvider();
+          registry = new ServiceRegistry(configProvider);
+          await registry.initialize();
           const service: ServiceDefinition = {
             name,
             transport: 'stdio',
@@ -247,6 +265,9 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
         urlArbitrary(),
         fc.boolean(),
         async (name, transport, url, enabled) => {
+          configProvider = await createTestConfigProvider();
+          registry = new ServiceRegistry(configProvider);
+          await registry.initialize();
           const service: ServiceDefinition = {
             name,
             transport,
@@ -278,6 +299,9 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
         serviceDefinitionArbitrary(),
         fc.dictionary(fc.string({ minLength: 1 }), fc.boolean(), { maxKeys: 20 }),
         async (baseDef, toolStates) => {
+          configProvider = await createTestConfigProvider();
+          registry = new ServiceRegistry(configProvider);
+          await registry.initialize();
           const service = { ...baseDef, toolStates };
 
           await registry.register(service);
@@ -299,6 +323,9 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
         serviceDefinitionArbitrary(),
         serviceDefinitionArbitrary(),
         async (name, def1, def2) => {
+          configProvider = await createTestConfigProvider();
+          registry = new ServiceRegistry(configProvider);
+          await registry.initialize();
           // Register first service
           const service1 = { ...def1, name };
           await registry.register(service1);
@@ -325,6 +352,9 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
   it('should handle services with empty optional fields', async () => {
     await fc.assert(
       fc.asyncProperty(serviceNameArbitrary(), fc.boolean(), async (name, enabled) => {
+        configProvider = await createTestConfigProvider();
+        registry = new ServiceRegistry(configProvider);
+        await registry.initialize();
         const service: ServiceDefinition = {
           name,
           transport: 'stdio',
@@ -355,6 +385,9 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
         serviceDefinitionArbitrary(),
         connectionPoolConfigArbitrary(),
         async (baseDef, connectionPool) => {
+          configProvider = await createTestConfigProvider();
+          registry = new ServiceRegistry(configProvider);
+          await registry.initialize();
           const service = { ...baseDef, connectionPool };
 
           await registry.register(service);
@@ -390,6 +423,9 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
         fc.array(serviceDefinitionArbitrary(), { minLength: 5, maxLength: 20 }),
         fc.array(fc.string({ minLength: 1 }), { minLength: 1, maxLength: 3 }),
         async (services, queryTags) => {
+          configProvider = await createTestConfigProvider();
+          registry = new ServiceRegistry(configProvider);
+          await registry.initialize();
           // Ensure unique service names
           const uniqueServices = services.map((s, i) => ({ ...s, name: `service-${i}` }));
 
@@ -421,6 +457,9 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
       fc.asyncProperty(
         fc.array(fc.string({ minLength: 1 }), { minLength: 2, maxLength: 5 }),
         async (allTags) => {
+          configProvider = await createTestConfigProvider();
+          registry = new ServiceRegistry(configProvider);
+          await registry.initialize();
           // Deduplicate tags to ensure unique tags
           const uniqueTags = Array.from(new Set(allTags));
 
@@ -554,6 +593,11 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
         serviceNameArbitrary(),
         fc.array(fc.string({ minLength: 1 }), { minLength: 1 }),
         async (name, queryTags) => {
+          // Re-initialize registry for clean state
+          configProvider = await createTestConfigProvider();
+          registry = new ServiceRegistry(configProvider);
+          await registry.initialize();
+
           // Register service with no tags
           const service: ServiceDefinition = {
             name,
@@ -633,6 +677,9 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
         fc.array(fc.string({ minLength: 1 }), { minLength: 2, maxLength: 4 }),
         fc.integer({ min: 5, max: 15 }),
         async (queryTags, numServices) => {
+          configProvider = await createTestConfigProvider();
+          registry = new ServiceRegistry(configProvider);
+          await registry.initialize();
           // Create services with various tag combinations
           const services: ServiceDefinition[] = [];
 
@@ -697,6 +744,9 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
         fc.array(serviceDefinitionArbitrary(), { minLength: 5, maxLength: 10 }),
         fc.array(fc.string({ minLength: 1 }), { minLength: 1, maxLength: 3 }),
         async (services, queryTags) => {
+          configProvider = await createTestConfigProvider();
+          registry = new ServiceRegistry(configProvider);
+          await registry.initialize();
           // Ensure unique service names
           const uniqueServices = services.map((s, i) => ({ ...s, name: `service-${i}` }));
 
@@ -726,6 +776,9 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
       fc.asyncProperty(
         fc.array(fc.string({ minLength: 1 }), { minLength: 1, maxLength: 3 }),
         async (tags) => {
+          configProvider = await createTestConfigProvider();
+          registry = new ServiceRegistry(configProvider);
+          await registry.initialize();
           // Register service with tags
           const service: ServiceDefinition = {
             name: 'test-service',

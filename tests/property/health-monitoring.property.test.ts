@@ -88,7 +88,7 @@ async function createTestConfigProvider(): Promise<ConfigProvider> {
     mode: 'cli',
     logLevel: 'INFO',
     configDir: '/tmp/test-health-config',
-    mcpServers: [],
+    mcpServers: {},
     connectionPool: {
       maxConnections: 5,
       idleTimeout: 60000,

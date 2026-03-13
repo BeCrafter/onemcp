@@ -83,7 +83,7 @@ export class CliModeRunner {
     try {
       // Initialize service registry
       await this.serviceRegistry.initialize();
-      console.error(`Loaded ${this.config.mcpServers.length} service(s)`);
+      console.error(`Loaded ${Object.keys(this.config.mcpServers).length} service(s)`);
 
       // Create connection pools for all enabled services
       await this.initializeConnectionPools();

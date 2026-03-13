@@ -57,7 +57,7 @@ describe('HealthMonitor', () => {
       mode: 'cli' as const,
       logLevel: 'INFO' as const,
       configDir: '/test/config',
-      mcpServers: [],
+      mcpServers: {},
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,

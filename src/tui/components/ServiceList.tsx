@@ -78,7 +78,6 @@ const ServiceListItem: React.FC<{
 
   const renderTags = () => {
     const tags = service.tags?.slice(0, 3) ?? [];
-    if (tags.length === 0) return null;
 
     return (
       <Box width={28} flexShrink={0} paddingX={1}>
@@ -96,7 +95,9 @@ const ServiceListItem: React.FC<{
 
   // Render tool count indicator based on discovery status
   const renderToolIndicator = () => {
-    if (!service.enabled) return null;
+    if (!service.enabled) {
+      return <Box width={12} flexShrink={0} />;
+    }
 
     switch (discoveryStatus) {
       case 'in-progress':
@@ -120,9 +121,9 @@ const ServiceListItem: React.FC<{
             </Box>
           );
         }
-        return null;
+        return <Box width={12} flexShrink={0} />;
       default:
-        return null;
+        return <Box width={12} flexShrink={0} />;
     }
   };
 

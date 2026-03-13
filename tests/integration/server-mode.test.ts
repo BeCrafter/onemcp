@@ -40,7 +40,7 @@ describe('Server Mode Integration Tests', () => {
       port: testPort,
       logLevel: 'ERROR', // Reduce noise in tests
       configDir: tempConfigDir,
-      mcpServers: [],
+      mcpServers: {},
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,

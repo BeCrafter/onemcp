@@ -38,7 +38,7 @@ describe('TUI Service List View Integration', () => {
       mode: 'cli',
       logLevel: 'INFO',
       configDir: tempDir,
-      mcpServers: [],
+      mcpServers: {},
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,

@@ -395,7 +395,7 @@ export class ServerModeRunner {
     try {
       // Initialize service registry
       await this.serviceRegistry.initialize();
-      console.error(`Loaded ${this.config.mcpServers.length} service(s)`);
+      console.error(`Loaded ${Object.keys(this.config.mcpServers).length} service(s)`);
 
       // Create connection pools for all enabled services
       this.initializeConnectionPools();
@@ -481,8 +481,8 @@ export class ServerModeRunner {
     const oldServices = oldConfig.mcpServers;
     const newServices = newConfig.mcpServers;
 
-    const oldServiceNames = new Set(oldServices.map((s) => s.name));
-    const newServiceNames = new Set(newServices.map((s) => s.name));
+    const oldServiceNames = new Set(Object.keys(oldServices));
+    const newServiceNames = new Set(Object.keys(newServices));
 
     for (const serviceName of oldServiceNames) {
       if (!newServiceNames.has(serviceName)) {
@@ -496,9 +496,10 @@ export class ServerModeRunner {
       }
     }
 
-    for (const newService of newServices) {
-      const oldService = oldServices.find((s) => s.name === newService.name);
-      if (!oldService) {
+    for (const [serviceName, newServiceDef] of Object.entries(newServices)) {
+      const newService = { ...newServiceDef, name: serviceName };
+      const oldServiceDef = oldServices[serviceName];
+      if (!oldServiceDef) {
         if (newService.enabled) {
           try {
             const pool = new ConnectionPool(
@@ -514,30 +515,33 @@ export class ServerModeRunner {
             );
           }
         }
-      } else if (
-        oldService.enabled !== newService.enabled ||
-        JSON.stringify(oldService.connectionPool) !== JSON.stringify(newService.connectionPool)
-      ) {
-        const existingPool = this.connectionPools.get(newService.name);
-        if (existingPool) {
-          await existingPool.closeAll();
-          this.connectionPools.delete(newService.name);
-          this.toolRouter.unregisterConnectionPool(newService.name);
-        }
+      } else {
+        const oldService = { ...oldServiceDef, name: serviceName };
+        if (
+          oldService.enabled !== newService.enabled ||
+          JSON.stringify(oldService.connectionPool) !== JSON.stringify(newService.connectionPool)
+        ) {
+          const existingPool = this.connectionPools.get(newService.name);
+          if (existingPool) {
+            await existingPool.closeAll();
+            this.connectionPools.delete(newService.name);
+            this.toolRouter.unregisterConnectionPool(newService.name);
+          }
 
-        if (newService.enabled) {
-          try {
-            const pool = new ConnectionPool(
-              newService,
-              newService.connectionPool || newConfig.connectionPool
-            );
-            this.toolRouter.registerConnectionPool(newService.name, pool);
-            this.connectionPools.set(newService.name, pool);
-            console.error(`Updated connection pool for service: ${newService.name}`);
-          } catch (error) {
-            console.error(
-              `Failed to update connection pool for service ${newService.name}: ${error instanceof Error ? error.message : String(error)}`
-            );
+          if (newService.enabled) {
+            try {
+              const pool = new ConnectionPool(
+                newService,
+                newService.connectionPool || newConfig.connectionPool
+              );
+              this.toolRouter.registerConnectionPool(newService.name, pool);
+              this.connectionPools.set(newService.name, pool);
+              console.error(`Updated connection pool for service: ${newService.name}`);
+            } catch (error) {
+              console.error(
+                `Failed to update connection pool for service ${newService.name}: ${error instanceof Error ? error.message : String(error)}`
+              );
+            }
           }
         }
       }
@@ -545,7 +549,7 @@ export class ServerModeRunner {
 
     await this.serviceRegistry.initialize();
     this.toolRouter.invalidateCache();
-    console.error(`Reloaded ${newServices.length} service(s)`);
+    console.error(`Reloaded ${Object.keys(newServices).length} service(s)`);
   }
 
   /**

@@ -1,26 +1,19 @@
 {
   "mode": "server",
   "logLevel": "INFO",
-  "mcpServers": [
-    {
-      "name": "example-http",
+  "mcpServers": {
+    "example-http": {
       "transport": "http",
       "enabled": true,
       "tags": ["example"],
       "url": "http://127.0.0.1:5000/mcp",
-      "headers": {
-        "X-Session-ID": "your-session-id-here",
-        "Authorization": "Bearer your-token-here",
-        "X-Custom-Header": "custom-value"
-      },
       "connectionPool": {
         "maxConnections": 5,
         "idleTimeout": 60000,
         "connectionTimeout": 30000
       }
     },
-    {
-      "name": "example-stdio",
+    "example-stdio": {
       "transport": "stdio",
       "enabled": true,
       "tags": ["example"],
@@ -32,7 +25,7 @@
         "connectionTimeout": 30000
       }
     }
-  ],
+  },
   "connectionPool": {
     "maxConnections": 10,
     "idleTimeout": 60000,

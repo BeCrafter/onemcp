@@ -27,9 +27,8 @@ describe('Configuration Hot-Reload Integration', () => {
     mode: 'cli',
     logLevel: 'INFO',
     configDir: '',
-    mcpServers: [
-      {
-        name: 'test-service',
+    mcpServers: {
+      'test-service': {
         transport: 'stdio',
         command: 'node',
         args: ['server.js'],
@@ -41,7 +40,7 @@ describe('Configuration Hot-Reload Integration', () => {
           connectionTimeout: 30000,
         },
       },
-    ],
+    },
     connectionPool: {
       maxConnections: 5,
       idleTimeout: 60000,

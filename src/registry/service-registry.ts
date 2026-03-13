@@ -36,8 +36,8 @@ export class ServiceRegistry extends EventEmitter {
     const config = await this.configProvider.load();
     this.services.clear();
 
-    for (const service of config.mcpServers) {
-      this.services.set(service.name, service);
+    for (const [name, def] of Object.entries(config.mcpServers)) {
+      this.services.set(name, { ...def, name });
     }
   }
 
@@ -273,8 +273,13 @@ export class ServiceRegistry extends EventEmitter {
     // Load current configuration
     const config = await this.configProvider.load();
 
-    // Update services in configuration
-    config.mcpServers = Array.from(this.services.values());
+    // Update services in configuration (convert Map to record, stripping the name key)
+    const record: Record<string, Omit<ServiceDefinition, 'name'>> = {};
+    for (const [name, svc] of this.services) {
+      const { name: _n, ...rest } = svc;
+      record[name] = rest;
+    }
+    config.mcpServers = record;
 
     // Save configuration
     await this.configProvider.save(config);

@@ -109,15 +109,11 @@ export class FileConfigProvider implements ConfigProvider {
           minLength: 1,
         },
         mcpServers: {
-          type: 'array',
-          items: {
+          type: 'object',
+          additionalProperties: {
             type: 'object',
-            required: ['name', 'transport', 'enabled'],
+            required: ['transport', 'enabled'],
             properties: {
-              name: {
-                type: 'string',
-                minLength: 1,
-              },
               transport: {
                 type: 'string',
                 enum: ['stdio', 'sse', 'http'],
@@ -327,9 +323,9 @@ export class FileConfigProvider implements ConfigProvider {
         const processed = {
           ...parsedRecord,
           mcpServers:
-            (parsedRecord['mcpServers'] as ServiceDefinition[]) ||
-            (parsedRecord['services'] as ServiceDefinition[]) ||
-            [],
+            (parsedRecord['mcpServers'] as Record<string, Omit<ServiceDefinition, 'name'>>) ||
+            (parsedRecord['services'] as Record<string, Omit<ServiceDefinition, 'name'>>) ||
+            {},
         };
 
         if ('services' in processed) {
@@ -423,14 +419,17 @@ export class FileConfigProvider implements ConfigProvider {
     }
 
     // Validate service transport-specific requirements
-    if (config.mcpServers && Array.isArray(config.mcpServers)) {
-      for (let i = 0; i < config.mcpServers.length; i++) {
-        const service = config.mcpServers[i];
+    if (
+      config.mcpServers &&
+      typeof config.mcpServers === 'object' &&
+      !Array.isArray(config.mcpServers)
+    ) {
+      for (const [name, service] of Object.entries(config.mcpServers)) {
         if (!service) continue;
 
         if (service.transport === 'stdio' && !service.command) {
           errors.push({
-            field: `services[${i}].command`,
+            field: `services.${name}.command`,
             message: 'Command is required for stdio transport',
             expected: 'non-empty string',
             actual: service.command,
@@ -439,7 +438,7 @@ export class FileConfigProvider implements ConfigProvider {
 
         if ((service.transport === 'sse' || service.transport === 'http') && !service.url) {
           errors.push({
-            field: `services[${i}].url`,
+            field: `services.${name}.url`,
             message: `URL is required for ${service.transport} transport`,
             expected: 'valid URL',
             actual: service.url,
@@ -452,7 +451,7 @@ export class FileConfigProvider implements ConfigProvider {
             new URL(service.url);
           } catch {
             errors.push({
-              field: `services[${i}].url`,
+              field: `services.${name}.url`,
               message: 'Invalid URL format',
               expected: 'valid URL (e.g., https://example.com)',
               actual: service.url,
@@ -680,7 +679,7 @@ export class FileConfigProvider implements ConfigProvider {
       mode: 'cli',
       logLevel: 'INFO',
       configDir: this.configDir,
-      mcpServers: [],
+      mcpServers: {},
       connectionPool: {
         maxConnections: 5,
         idleTimeout: 60000,
@@ -747,7 +746,7 @@ The main configuration file defines the system behavior and registered services.
   "port": 3000,               // Server port (required for server mode)
   "logLevel": "INFO",         // Log level: DEBUG, INFO, WARN, ERROR
   "configDir": "~/.onemcp",   // Configuration directory path
-  "mcpServers": [],             // Array of service definitions
+  "mcpServers": {},             // Map of service definitions (key = service name)
   "connectionPool": {         // Default connection pool settings
     "maxConnections": 5,
     "idleTimeout": 60000,

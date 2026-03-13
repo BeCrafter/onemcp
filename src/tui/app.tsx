@@ -116,7 +116,7 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
         const serviceList = await registry.list();
         
         unwatch = provider.watch((newConfig) => {
-          const updatedServices = newConfig.mcpServers;
+          const updatedServices = Object.entries(newConfig.mcpServers).map(([name, def]) => ({ ...def, name }));
           setServices(updatedServices);
           
           if (serviceRegistry) {
@@ -210,18 +210,18 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
       if (serviceRegistry) {
         await serviceRegistry.register(updatedService);
       } else {
-        const services = config.mcpServers.map((s: any) => 
-          s.name === editingService.name ? updatedService : s
-        );
-        const newConfig = { ...config, mcpServers: services };
+        const newServers = { ...config.mcpServers };
+        const { name: _n, ...def } = updatedService;
+        newServers[updatedService.name] = def;
+        const newConfig = { ...config, mcpServers: newServers };
         await configProvider.save(newConfig);
       }
-      
+
       // Update editing service
       setEditingService(updatedService);
-      
+
       // Update services list to reflect the change immediately
-      setServices(prevServices => 
+      setServices(prevServices =>
         prevServices.map(s => 
           s.name === editingService.name ? updatedService : s
         )
@@ -252,16 +252,16 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
       if (serviceRegistry) {
         await serviceRegistry.register(updatedService);
       } else {
-        const services = config.mcpServers.map((s: any) => 
-          s.name === editingService.name ? updatedService : s
-        );
-        const newConfig = { ...config, mcpServers: services };
+        const newServers = { ...config.mcpServers };
+        const { name: _nn, ...def2 } = updatedService;
+        newServers[updatedService.name] = def2;
+        const newConfig = { ...config, mcpServers: newServers };
         await configProvider.save(newConfig);
       }
-      
+
       setEditingService(updatedService);
-      setServices(prevServices => 
-        prevServices.map(s => 
+      setServices(prevServices =>
+        prevServices.map(s =>
           s.name === editingService.name ? updatedService : s
         )
       );
