@@ -67,9 +67,13 @@ npm run build
 ```bash
 # 初始化默认配置目录 ~/.onemcp
 onemcp --init
+# 或使用 npx
+npx onemcp --init
 
 # 或指定自定义配置目录
 onemcp --init --config-dir /path/to/config
+# 或使用 npx
+npx onemcp --init --config-dir /path/to/config
 ```
 
 ### CLI 模式（通过 stdio 通信）
@@ -77,6 +81,9 @@ onemcp --init --config-dir /path/to/config
 ```bash
 # 默认使用 CLI 模式
 onemcp
+
+# 或使用 npx 直接运行（无需安装）
+npx onemcp
 
 # 使用自定义配置目录
 onemcp --config-dir ~/.onemcp
@@ -88,6 +95,9 @@ onemcp --config-dir ~/.onemcp
 # 启动 HTTP 服务器，监听 0.0.0.0:3000
 onemcp --mode server --port 3000
 
+# 或使用 npx 直接运行（无需安装）
+npx onemcp --mode server --port 3000
+
 # 使用环境变量
 ONEMCP_MODE=server ONEMCP_PORT=8080 onemcp
 ```
@@ -96,11 +106,44 @@ ONEMCP_MODE=server ONEMCP_PORT=8080 onemcp
 
 ```bash
 # 启动交互式配置界面
-onemcp-tui
+onemcp --mode tui
+
+# 或使用 npx 直接运行（无需安装）
+npx onemcp --mode tui
 
 # 使用自定义配置目录
-onemcp-tui --config-dir ~/.onemcp
+onemcp --mode tui --config-dir ~/.onemcp
 ```
+
+### 使用方式说明
+
+**已安装包：**
+```bash
+onemcp -h              # 查看帮助
+onemcp --version       # 查看版本
+onemcp --mode server   # 启动服务器模式
+onemcp --mode tui      # 启动 TUI 模式
+```
+
+**无需安装（使用 npx）：**
+```bash
+npx onemcp -h              # 查看帮助
+npx onemcp --version       # 查看版本
+npx onemcp --mode server   # 启动服务器模式
+npx onemcp --mode tui      # 启动 TUI 模式
+```
+
+**开发模式（从源码运行）：**
+```bash
+npx tsx src/cli.ts -h          # 查看帮助
+npx tsx src/cli.ts --version   # 查看版本
+npx tsx src/cli.ts --mode server  # 启动服务器模式
+npx tsx src/cli.ts --mode tui     # 启动 TUI 模式
+```
+
+**入口文件说明：**
+- `src/cli.ts` - 主入口文件，支持 CLI、Server 和 TUI 三种模式
+- `src/tui.ts` - TUI 模式的独立入口（内部使用，不对外输出）
 
 ## ✅ 验证和测试
 
@@ -109,22 +152,31 @@ onemcp-tui --config-dir ~/.onemcp
 ```bash
 # 验证配置文件是否正确
 onemcp --validate
+# 或使用 npx
+npx onemcp --validate
 
 # 模拟启动（不实际启动服务）
 onemcp --dry-run
+# 或使用 npx
+npx onemcp --dry-run
 ```
 
 ### 查看帮助信息
 
 ```bash
-# 查看 CLI 帮助
+# 查看帮助
 onemcp --help
-
-# 查看 TUI 帮助
-onemcp-tui --help
+# 或使用 npx
+npx onemcp --help
+# 或开发模式
+npx tsx src/cli.ts -h
 
 # 查看版本信息
 onemcp --version
+# 或使用 npx
+npx onemcp --version
+# 或开发模式
+npx tsx src/cli.ts -v
 ```
 
 ## 📋 配置
@@ -139,15 +191,14 @@ onemcp --version
   "port": 3000,
   "logLevel": "INFO",
   "configDir": "~/.onemcp",
-  "mcpServers": [
-    {
-      "name": "filesystem",
+  "mcpServers": {
+    "filesystem": {
       "transport": "stdio",
+      "enabled": true,
+      "tags": ["filesystem", "local"],
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
       "env": {},
-      "tags": ["filesystem", "local"],
-      "enabled": true,
       "connectionPool": {
         "maxConnections": 3,
         "idleTimeout": 60000,
@@ -157,8 +208,19 @@ onemcp --version
         "read_file": true,
         "write_file": false
       }
+    },
+    "remote-api": {
+      "transport": "http",
+      "enabled": true,
+      "tags": ["remote", "api"],
+      "url": "https://api.example.com/mcp",
+      "connectionPool": {
+        "maxConnections": 5,
+        "idleTimeout": 60000,
+        "connectionTimeout": 30000
+      }
     }
-  ],
+  },
   "connectionPool": {
     "maxConnections": 5,
     "idleTimeout": 60000,
@@ -205,14 +267,22 @@ onemcp --version
 
 ```json
 {
-  "name": "filesystem",
-  "enabled": true,
-  "tags": ["local", "storage"],
-  "transport": "stdio",
-  "command": "npx",
-  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-  "env": {
-    "NODE_ENV": "production"
+  "mcpServers": {
+    "filesystem": {
+      "enabled": true,
+      "tags": ["local", "storage"],
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "env": {
+        "NODE_ENV": "production"
+      },
+      "connectionPool": {
+        "maxConnections": 5,
+        "idleTimeout": 60000,
+        "connectionTimeout": 30000
+      }
+    }
   }
 }
 ```
@@ -221,11 +291,19 @@ onemcp --version
 
 ```json
 {
-  "name": "remote-api",
-  "enabled": true,
-  "tags": ["remote", "api"],
-  "transport": "http",
-  "url": "https://api.example.com/mcp"
+  "mcpServers": {
+    "remote-api": {
+      "enabled": true,
+      "tags": ["remote", "api"],
+      "transport": "http",
+      "url": "https://api.example.com/mcp",
+      "connectionPool": {
+        "maxConnections": 5,
+        "idleTimeout": 60000,
+        "connectionTimeout": 30000
+      }
+    }
+  }
 }
 ```
 
@@ -284,9 +362,13 @@ interface TagFilter {
 ```bash
 # 过滤具有 production 或 api 标签的服务
 onemcp --tag production,api
+# 或使用 npx
+npx onemcp --tag production,api
 
 # 简写形式
 onemcp -t production,database
+# 或使用 npx
+npx onemcp -t production,database
 ```
 
 **Server 模式 (HTTP)**: 使用 `X-MCP-Tags` HTTP 头
@@ -459,6 +541,9 @@ npm run dev
 在另一个终端中，可以直接运行路由器：
 
 ```bash
+# 查看帮助
+npx tsx src/cli.ts -h
+
 # CLI 模式
 npx tsx src/cli.ts
 
@@ -466,7 +551,7 @@ npx tsx src/cli.ts
 npx tsx src/cli.ts --mode server --port 3000
 
 # TUI 模式
-npx tsx src/tui.ts
+npx tsx src/cli.ts --mode tui
 ```
 
 ## 🧪 测试策略
