@@ -7,6 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import { StdioTransport } from '../../transport/stdio.js';
+import { getPackageVersion } from '../../utils/package-version.js';
 import type { ServiceDefinition } from '../../types/service.js';
 import type { Tool } from '../../types/tool.js';
 
@@ -171,7 +172,7 @@ async function fetchToolsViaStdio(service: ServiceDefinition): Promise<Tool[]> {
         capabilities: {},
         clientInfo: {
           name: 'onemcp-tui',
-          version: '0.1.0',
+          version: getPackageVersion(),
         },
       },
     };
@@ -279,7 +280,7 @@ async function fetchToolsViaHttp(service: ServiceDefinition): Promise<Tool[]> {
           capabilities: {},
           clientInfo: {
             name: 'onemcp-tui',
-            version: '0.1.0',
+            version: getPackageVersion(),
           },
         },
       }),

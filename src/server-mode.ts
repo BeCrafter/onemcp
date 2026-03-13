@@ -17,6 +17,7 @@ import { NamespaceManager } from './namespace/manager.js';
 import { HealthMonitor } from './health/health-monitor.js';
 import { ToolRouter } from './routing/tool-router.js';
 import { ConnectionPool } from './pool/connection-pool.js';
+import { getPackageVersion } from './utils/package-version.js';
 import { SessionManager } from './session/session-manager.js';
 import { MetricsService } from './metrics/service.js';
 import type { ConfigProvider } from './types/config.js';
@@ -107,7 +108,7 @@ export class ServerModeRunner {
     this.fastify.get('/', async (_request: FastifyRequest, _reply: FastifyReply) => {
       return {
         name: 'MCP Router System',
-        version: '0.1.0',
+        version: getPackageVersion(),
         mode: 'server',
         status: 'running',
       };

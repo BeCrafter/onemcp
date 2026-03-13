@@ -284,8 +284,13 @@ describe('Feature: auto-discover-service-tools, Property 3: 成功发现存储�
       fc.asyncProperty(
         fc.array(serviceWithToolCountArbitrary(), { minLength: 1, maxLength: 10 }),
         async (services) => {
+          // Ensure unique service names (to avoid cache key collisions)
+          const uniqueServices = services.filter(
+            (service, index, self) => self.findIndex((s) => s.name === service.name) === index
+          );
+
           // Cache all services
-          for (const service of services) {
+          for (const service of uniqueServices) {
             manager.emit('discovered', {
               serviceName: service.name,
               status: 'completed' as const,
@@ -295,7 +300,7 @@ describe('Feature: auto-discover-service-tools, Property 3: 成功发现存储�
           }
 
           // Verify all are cached
-          for (const service of services) {
+          for (const service of uniqueServices) {
             expect(manager.getToolCount(service.name)).toBe(service.toolCount);
           }
 
@@ -303,7 +308,7 @@ describe('Feature: auto-discover-service-tools, Property 3: 成功发现存储�
           manager.clear();
 
           // Verify all are cleared
-          for (const service of services) {
+          for (const service of uniqueServices) {
             expect(manager.getToolCount(service.name)).toBeUndefined();
           }
 

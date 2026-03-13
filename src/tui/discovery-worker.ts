@@ -4,6 +4,7 @@
  */
 
 import { StdioTransport } from '../transport/stdio.js';
+import { getPackageVersion } from '../utils/package-version.js';
 import type { ServiceDefinition } from '../types/service.js';
 import type { Tool } from '../types/tool.js';
 
@@ -158,7 +159,7 @@ async function discoverToolsViaStdio(service: ServiceDefinition, timeout: number
         capabilities: {},
         clientInfo: {
           name: 'onemcp-tui',
-          version: '0.1.0',
+          version: getPackageVersion(),
         },
       },
     };
@@ -294,7 +295,7 @@ async function discoverToolsViaHttp(service: ServiceDefinition, timeout: number)
             capabilities: {},
             clientInfo: {
               name: 'onemcp-tui',
-              version: '0.1.0',
+              version: getPackageVersion(),
             },
           },
         }),

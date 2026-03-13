@@ -19,6 +19,7 @@ import type { SystemConfig } from './types/config.js';
 import type { ConfigProvider } from './types/config.js';
 import { FileConfigProvider } from './config/file-provider.js';
 import { FileStorageAdapter } from './storage/file.js';
+import { getPackageVersion } from './utils/package-version.js';
 
 // Use optimized version by default
 const USE_OPTIMIZED_UI = process.env['ONEMCP_USE_LEGACY_UI'] !== 'true';
@@ -97,7 +98,7 @@ For more information, visit: https://github.com/BeCrafter/onemcp
  */
 function displayVersion(): void {
   // eslint-disable-next-line no-console
-  console.log('MCP Router System TUI v0.1.0');
+  console.log(`MCP Router System TUI v${getPackageVersion()}`);
 }
 
 /**

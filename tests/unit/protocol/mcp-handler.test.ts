@@ -12,6 +12,7 @@ import { NamespaceManager } from '../../../src/namespace/manager.js';
 import { HealthMonitor } from '../../../src/health/health-monitor.js';
 import { MemoryStorageAdapter } from '../../../src/storage/memory.js';
 import { FileConfigProvider } from '../../../src/config/file-provider.js';
+import { getPackageVersion } from '../../../src/utils/package-version.js';
 import type { RequestContext } from '../../../src/types/context.js';
 import type { ServiceDefinition } from '../../../src/types/service.js';
 import type { SystemConfig } from '../../../src/types/config.js';
@@ -132,7 +133,7 @@ describe('McpProtocolHandler', () => {
         },
         serverInfo: {
           name: 'onemcp',
-          version: '0.1.2',
+          version: getPackageVersion(),
         },
       });
 

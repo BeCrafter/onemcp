@@ -15,6 +15,7 @@ import { FileConfigProvider } from './config/file-provider.js';
 import { FileStorageAdapter } from './storage/file.js';
 import type { SystemConfig } from './types/config.js';
 import type { TagFilter } from './types/tool.js';
+import { getPackageVersion } from './utils/package-version.js';
 
 /**
  * CLI argument definitions
@@ -110,10 +111,8 @@ For more information, visit: https://github.com/BeCrafter/onemcp
  * Display version information
  */
 function displayVersion(): void {
-  // Read version from package.json
-  // In production, this would be bundled or read from a version file
   // eslint-disable-next-line no-console
-  console.log('MCP Router System v0.1.0');
+  console.log(`MCP Router System v${getPackageVersion()}`);
 }
 
 /**
