@@ -966,26 +966,6 @@ describe('FileConfigProvider', () => {
       }
     });
 
-    it('should create README.md explaining directory structure', async () => {
-      // Act
-      await provider.initialize();
-
-      // Assert
-      const readmeData = await storage.read('README.md');
-      expect(readmeData).toBeDefined();
-
-      if (readmeData) {
-        expect(readmeData).toContain('OneMCP Configuration Directory');
-        expect(readmeData).toContain('config.json');
-        expect(readmeData).toContain('services/');
-        expect(readmeData).toContain('logs/');
-        expect(readmeData).toContain('backups/');
-        expect(readmeData).toContain('Configuration Format');
-        expect(readmeData).toContain('Adding Services');
-        expect(readmeData).toContain('Transport Types');
-      }
-    });
-
     it('should not overwrite existing config.json', async () => {
       // Arrange
       const existingConfig = { ...validConfig, logLevel: 'DEBUG' as const };
@@ -1002,19 +982,6 @@ describe('FileConfigProvider', () => {
       expect(config.logLevel).toBe('DEBUG');
     });
 
-    it('should not overwrite existing README.md', async () => {
-      // Arrange
-      const existingReadme = '# Custom README\n\nThis is a custom readme.';
-      await storage.write('README.md', existingReadme);
-
-      // Act
-      await provider.initialize();
-
-      // Assert
-      const readmeData = await storage.read('README.md');
-      expect(readmeData).toBe(existingReadme); // Should preserve existing content
-    });
-
     it('should be idempotent - calling multiple times is safe', async () => {
       // Act
       await provider.initialize();
@@ -1024,9 +991,6 @@ describe('FileConfigProvider', () => {
       // Assert
       const configData = await storage.read('config.json');
       expect(configData).toBeDefined();
-
-      const readmeData = await storage.read('README.md');
-      expect(readmeData).toBeDefined();
     });
 
     it('should create default config with all required fields', async () => {
@@ -1145,53 +1109,6 @@ describe('FileConfigProvider', () => {
       if (configData) {
         const config = JSON.parse(configData);
         expect(config.configDir).toBe('/test/config');
-      }
-    });
-
-    it('should create README with service examples', async () => {
-      // Act
-      await provider.initialize();
-
-      // Assert
-      const readmeData = await storage.read('README.md');
-      expect(readmeData).toBeDefined();
-
-      if (readmeData) {
-        expect(readmeData).toContain('Stdio Transport');
-        expect(readmeData).toContain('HTTP/SSE Transport');
-        expect(readmeData).toContain('"transport": "stdio"');
-        expect(readmeData).toContain('"transport": "http"');
-        expect(readmeData).toContain('"command"');
-        expect(readmeData).toContain('"url"');
-      }
-    });
-
-    it('should create README with tool state management info', async () => {
-      // Act
-      await provider.initialize();
-
-      // Assert
-      const readmeData = await storage.read('README.md');
-      expect(readmeData).toBeDefined();
-
-      if (readmeData) {
-        expect(readmeData).toContain('Tool State Management');
-        expect(readmeData).toContain('toolStates');
-        expect(readmeData).toContain('Wildcard patterns');
-      }
-    });
-
-    it('should create README with hot reload information', async () => {
-      // Act
-      await provider.initialize();
-
-      // Assert
-      const readmeData = await storage.read('README.md');
-      expect(readmeData).toBeDefined();
-
-      if (readmeData) {
-        expect(readmeData).toContain('Hot Reload');
-        expect(readmeData).toContain('automatically reloads');
       }
     });
   });

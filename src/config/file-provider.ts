@@ -601,12 +601,7 @@ export class FileConfigProvider implements ConfigProvider {
   /**
    * Initialize configuration directory structure
    *
-   * Creates the configuration directory and subdirectories if they don't exist:
-   * - config.json: Main configuration file with sensible defaults
-   * - services/: Directory for service definitions
-   * - logs/: Directory for log files
-   * - backups/: Directory for configuration backups
-   * - README.md: Documentation explaining the directory structure
+   * Creates the configuration directory and config.json if they don't exist.
    *
    * This method is idempotent - calling it multiple times is safe and will not
    * overwrite existing files.
@@ -619,11 +614,6 @@ export class FileConfigProvider implements ConfigProvider {
       // Create main config directory
       await this.ensureDirectory(this.configDir);
 
-      // Create subdirectories
-      await this.ensureDirectory(path.join(this.configDir, 'services'));
-      await this.ensureDirectory(path.join(this.configDir, 'logs'));
-      await this.ensureDirectory(path.join(this.configDir, 'backups'));
-
       // Create default config.json if it doesn't exist
       // Use relative path for storage adapter (consistent with load() and save())
       const existingConfig = await this.storageAdapter.read(this.CONFIG_FILE);
@@ -631,15 +621,6 @@ export class FileConfigProvider implements ConfigProvider {
       if (!existingConfig) {
         const defaultConfig = this.createDefaultConfig();
         await this.save(defaultConfig);
-      }
-
-      // Create README.md if it doesn't exist
-      const readmePath = 'README.md';
-      const existingReadme = await this.storageAdapter.read(readmePath);
-
-      if (!existingReadme) {
-        const readmeContent = this.createReadmeContent();
-        await this.storageAdapter.write(readmePath, readmeContent);
       }
     } catch (error) {
       throw new Error(
@@ -713,222 +694,5 @@ export class FileConfigProvider implements ConfigProvider {
         format: 'pretty',
       },
     };
-  }
-
-  /**
-   * Create README content explaining directory structure
-   */
-  private createReadmeContent(): string {
-    return `# OneMCP Configuration Directory
-
-This directory contains the configuration for the OneMCP System.
-
-## Directory Structure
-
-\`\`\`
-${path.basename(this.configDir)}/
-├── config.json       # Main configuration file
-├── services/         # Service definition files (optional)
-├── logs/             # Log files (if file logging is enabled)
-├── backups/          # Configuration backups
-└── README.md         # This file
-\`\`\`
-
-## Configuration File (config.json)
-
-The main configuration file defines the system behavior and registered services.
-
-### Configuration Format
-
-\`\`\`json
-{
-  "mode": "cli",              // Deployment mode: "cli" or "server"
-  "port": 3000,               // Server port (required for server mode)
-  "logLevel": "INFO",         // Log level: DEBUG, INFO, WARN, ERROR
-  "configDir": "~/.onemcp",   // Configuration directory path
-  "mcpServers": {},             // Map of service definitions (key = service name)
-  "connectionPool": {         // Default connection pool settings
-    "maxConnections": 5,
-    "idleTimeout": 60000,
-    "connectionTimeout": 30000
-  },
-  "healthCheck": {            // Health monitoring settings
-    "enabled": true,
-    "interval": 30000,
-    "failureThreshold": 3,
-    "autoUnload": true
-  },
-  "audit": {                  // Audit logging settings
-    "enabled": true,
-    "level": "standard",
-    "logInput": false,
-    "logOutput": false,
-    "retention": {
-      "days": 30,
-      "maxSize": "1GB"
-    }
-  },
-  "security": {               // Security settings
-    "dataMasking": {
-      "enabled": true,
-      "patterns": ["password", "token", "secret", "key"]
-    }
-  }
-}
-\`\`\`
-
-## Adding Services
-
-Services can be added directly in the \`services\` array in config.json or managed via the TUI.
-
-### Service Definition Format
-
-#### Stdio Transport (Local Process)
-
-\`\`\`json
-{
-  "name": "filesystem",
-  "transport": "stdio",
-  "command": "npx",
-  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-  "env": {
-    "NODE_ENV": "production"
-  },
-  "enabled": true,
-  "tags": ["local", "storage"],
-  "connectionPool": {
-    "maxConnections": 3,
-    "idleTimeout": 60000,
-    "connectionTimeout": 30000
-  }
-}
-\`\`\`
-
-#### HTTP/SSE Transport (Remote Service)
-
-\`\`\`json
-{
-  "name": "remote-api",
-  "transport": "http",
-  "url": "https://api.example.com/mcp",
-  "enabled": true,
-  "tags": ["remote", "api"],
-  "connectionPool": {
-    "maxConnections": 10,
-    "idleTimeout": 120000,
-    "connectionTimeout": 30000
-  }
-}
-\`\`\`
-
-### Transport Types
-
-- **stdio**: Launches a local process and communicates via stdin/stdout
-  - Required fields: \`command\`
-  - Optional fields: \`args\`, \`env\`
-  
-- **sse**: Connects to a remote service using Server-Sent Events
-  - Required fields: \`url\`
-  
-- **http**: Connects to a remote service using HTTP streaming
-  - Required fields: \`url\`
-
-## Tool State Management
-
-You can pre-configure which tools are enabled or disabled for each service:
-
-\`\`\`json
-{
-  "name": "filesystem",
-  "toolStates": {
-    "read_file": true,
-    "write_file": false,
-    "*_directory": true
-  }
-}
-\`\`\`
-
-Tool state patterns support:
-- Exact tool names: \`"read_file": false\`
-- Wildcard patterns: \`"*_directory": true\`
-- Regular expressions: \`".*_file": false\`
-
-## Logs Directory
-
-When file logging is enabled, log files are stored in the \`logs/\` directory.
-
-Configure file logging in config.json:
-
-\`\`\`json
-{
-  "logging": {
-    "level": "INFO",
-    "outputs": ["console", "file"],
-    "format": "json",
-    "filePath": "logs/onemcp.log"
-  }
-}
-\`\`\`
-
-## Backups Directory
-
-Configuration backups are automatically created in the \`backups/\` directory when:
-- Configuration is modified via the TUI
-- Manual backup is triggered
-- Periodic backups are enabled
-
-Backup files are named with timestamps: \`config-backup-YYYY-MM-DD-HHmmss.json\`
-
-## Configuration Management
-
-### Using the TUI
-
-Launch the interactive configuration interface:
-
-\`\`\`bash
-onemcp-tui
-\`\`\`
-
-The TUI provides:
-- Service management (add, edit, delete)
-- Tool state management
-- Configuration validation
-- Connection testing
-- Import/export functionality
-
-### Using the CLI
-
-Validate configuration:
-
-\`\`\`bash
-onemcp --validate
-\`\`\`
-
-Initialize configuration directory:
-
-\`\`\`bash
-onemcp --init
-\`\`\`
-
-Specify custom config directory:
-
-\`\`\`bash
-onemcp --config-dir /path/to/config
-# or
-export ONEMCP_CONFIG_DIR=/path/to/config
-onemcp
-\`\`\`
-
-## Hot Reload
-
-The system automatically reloads configuration when config.json is modified.
-Invalid configurations are rejected and the previous valid configuration is maintained.
-
-## More Information
-
-For complete documentation, visit: https://github.com/BeCrafter/onemcp
-
-For support, open an issue at: https://github.com/BeCrafter/onemcp/issues
-`;
   }
 }

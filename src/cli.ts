@@ -207,9 +207,6 @@ function initializeConfigDir(configDir: string): void {
   try {
     // Create directory structure
     mkdirSync(configDir, { recursive: true });
-    mkdirSync(resolve(configDir, 'services'), { recursive: true });
-    mkdirSync(resolve(configDir, 'logs'), { recursive: true });
-    mkdirSync(resolve(configDir, 'backups'), { recursive: true });
 
     // Create default config.json
     const defaultConfig: SystemConfig = {
@@ -257,43 +254,14 @@ function initializeConfigDir(configDir: string): void {
     };
 
     const configPath = resolve(configDir, 'config.json');
-    writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2), 'utf8');
 
-    // Create README
-    const readme = `# MCP Router Configuration Directory
-
-This directory contains configuration files for the MCP Router System.
-
-## Directory Structure
-
-- \`config.json\`: Main configuration file
-- \`services/\`: Service definition files
-- \`logs/\`: Log files (if file logging is enabled)
-- \`backups/\`: Configuration backup files
-
-## Configuration Format
-
-The \`config.json\` file follows the MCP Router System configuration schema.
-Service definitions can be added to the \`services\` array or stored as separate
-files in the \`services/\` directory.
-
-## Getting Started
-
-1. Edit \`config.json\` to configure the router
-2. Add service definitions to the \`services\` array
-3. Start the router: \`onemcp --config-dir ${configDir}\`
-
-For more information, see the documentation at:
-https://github.com/yourusername/onemcp
-`;
-
-    writeFileSync(resolve(configDir, 'README.md'), readme, 'utf8');
+    // Only write config.json if it doesn't already exist
+    if (!existsSync(configPath)) {
+      writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2), 'utf8');
+    }
 
     process.stderr.write('✓ Configuration directory initialized successfully\n');
     process.stderr.write(`  Config file: ${configPath}\n`);
-    process.stderr.write(`  Services directory: ${resolve(configDir, 'services')}\n`);
-    process.stderr.write(`  Logs directory: ${resolve(configDir, 'logs')}\n`);
-    process.stderr.write(`  Backups directory: ${resolve(configDir, 'backups')}\n`);
   } catch (error) {
     process.stderr.write(
       `Failed to initialize configuration directory: ${error instanceof Error ? error.message : String(error)}\n`
