@@ -1,4 +1,8 @@
 import { defineConfig } from 'tsup';
+import { readFileSync } from 'node:fs';
+
+// Read version from package.json
+const pkg = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
 export default defineConfig({
   entry: {
@@ -16,6 +20,10 @@ export default defineConfig({
   target: 'es2022',
   outDir: 'dist',
   shims: true,
+  // Inject version at build time
+  define: {
+    PACKAGE_VERSION: JSON.stringify(pkg.version),
+  },
   // Mark packages with dynamic requires as external
   external: [
     'ajv',
