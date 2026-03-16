@@ -104,7 +104,10 @@ describe('McpProtocolHandler', () => {
     namespaceManager = new NamespaceManager();
     healthMonitor = new HealthMonitor(serviceRegistry);
     toolRouter = new ToolRouter(serviceRegistry, namespaceManager, healthMonitor);
-    mcpHandler = new McpProtocolHandler(toolRouter, { maxBatchSize: 100 });
+    mcpHandler = new McpProtocolHandler(toolRouter, {
+      maxBatchSize: 100,
+      toolDiscoveryConfig: { smartDiscovery: false },
+    });
 
     context = {
       requestId: 'test-request-1',
@@ -223,7 +226,9 @@ describe('McpProtocolHandler', () => {
 
     it('should use tag filter from initialization if not provided in params', async () => {
       // Create new handler with tag filter in initialization
-      const handlerWithFilter = new McpProtocolHandler(toolRouter);
+      const handlerWithFilter = new McpProtocolHandler(toolRouter, {
+        toolDiscoveryConfig: { smartDiscovery: false },
+      });
       const tagFilter = { tags: ['production'], logic: 'AND' as const };
 
       await handlerWithFilter.initialize(
@@ -330,6 +335,136 @@ describe('McpProtocolHandler', () => {
       await mcpHandler.toolsCall({ name: 'service__test-tool' }, context);
 
       expect(callToolSpy).toHaveBeenCalledWith('service__test-tool', {}, context);
+    });
+  });
+
+  describe('Smart Tool Discovery', () => {
+    let smartHandler: McpProtocolHandler;
+
+    beforeEach(async () => {
+      smartHandler = new McpProtocolHandler(toolRouter, {
+        toolDiscoveryConfig: { smartDiscovery: true, maxResults: 10, searchDescription: true },
+      });
+      await smartHandler.initialize(
+        { protocolVersion: '2024-11-05', clientInfo: { name: 'test', version: '1.0' } },
+        context
+      );
+    });
+
+    it('should return only search tool when smart discovery is enabled', async () => {
+      const result = await smartHandler.toolsList(undefined, context);
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0]?.name).toBe('onemcp__search');
+    });
+
+    it('should search tools by query', async () => {
+      const mockTools = [
+        {
+          name: 'read',
+          namespacedName: 'fs__read',
+          serviceName: 'fs',
+          description: 'Read file',
+          inputSchema: { type: 'object', properties: {} },
+          enabled: true,
+        },
+        {
+          name: 'write',
+          namespacedName: 'fs__write',
+          serviceName: 'fs',
+          description: 'Write file',
+          inputSchema: { type: 'object', properties: {} },
+          enabled: true,
+        },
+        {
+          name: 'delete',
+          namespacedName: 'db__delete',
+          serviceName: 'db',
+          description: 'Delete record',
+          inputSchema: { type: 'object', properties: {} },
+          enabled: true,
+        },
+      ];
+      vi.spyOn(toolRouter, 'discoverTools').mockResolvedValue(mockTools as any);
+
+      const result = await smartHandler.toolsCall(
+        { name: 'onemcp__search', arguments: { query: 'read' } },
+        context
+      );
+      expect((result as any).tools).toHaveLength(1);
+      expect((result as any).tools[0]?.namespacedName).toBe('fs__read');
+    });
+
+    it('should search tools by description', async () => {
+      const mockTools = [
+        {
+          name: 'read',
+          namespacedName: 'fs__read',
+          serviceName: 'fs',
+          description: 'Read file content',
+          inputSchema: { type: 'object', properties: {} },
+          enabled: true,
+        },
+        {
+          name: 'write',
+          namespacedName: 'fs__write',
+          serviceName: 'fs',
+          description: 'Write file content',
+          inputSchema: { type: 'object', properties: {} },
+          enabled: true,
+        },
+      ];
+      vi.spyOn(toolRouter, 'discoverTools').mockResolvedValue(mockTools as any);
+
+      const result = await smartHandler.toolsCall(
+        { name: 'onemcp__search', arguments: { query: 'content' } },
+        context
+      );
+      expect((result as any).tools).toHaveLength(2);
+    });
+
+    it('should respect maxResults limit', async () => {
+      const mockTools = [
+        {
+          name: 'a',
+          namespacedName: 'svc__a',
+          serviceName: 'svc',
+          description: 'Tool a',
+          inputSchema: { type: 'object', properties: {} },
+          enabled: true,
+        },
+        {
+          name: 'b',
+          namespacedName: 'svc__b',
+          serviceName: 'svc',
+          description: 'Tool b',
+          inputSchema: { type: 'object', properties: {} },
+          enabled: true,
+        },
+        {
+          name: 'c',
+          namespacedName: 'svc__c',
+          serviceName: 'svc',
+          description: 'Tool c',
+          inputSchema: { type: 'object', properties: {} },
+          enabled: true,
+        },
+      ];
+      vi.spyOn(toolRouter, 'discoverTools').mockResolvedValue(mockTools as any);
+
+      const result = await smartHandler.toolsCall(
+        { name: 'onemcp__search', arguments: { query: 'tool', limit: 2 } },
+        context
+      );
+      expect((result as any).tools).toHaveLength(2);
+    });
+
+    it('should still allow direct tool calls when smart discovery is enabled', async () => {
+      const callToolSpy = vi.spyOn(toolRouter, 'callTool');
+      callToolSpy.mockResolvedValue({ success: true });
+
+      await smartHandler.toolsCall({ name: 'fs__read', arguments: { path: '/test' } }, context);
+
+      expect(callToolSpy).toHaveBeenCalledWith('fs__read', { path: '/test' }, context);
     });
   });
 

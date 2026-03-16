@@ -13,7 +13,7 @@ import { homedir } from 'node:os';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { FileConfigProvider } from './config/file-provider.js';
 import { FileStorageAdapter } from './storage/file.js';
-import type { SystemConfig } from './types/config.js';
+import type { SystemConfig, ToolDiscoveryConfig } from './types/config.js';
 import type { TagFilter } from './types/tool.js';
 import { getPackageVersion } from './utils/package-version.js';
 
@@ -26,6 +26,7 @@ interface CliArgs {
   port?: string | undefined;
   logLevel?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | undefined;
   tag?: string | undefined;
+  'smart-discovery'?: boolean | undefined;
   help?: boolean | undefined;
   version?: boolean | undefined;
   validate?: boolean | undefined;
@@ -50,6 +51,7 @@ OPTIONS:
   -p, --port <port>           Server port for server mode (default: 3000)
   -l, --log-level <level>    Log level: DEBUG, INFO, WARN, ERROR (default: INFO)
   -t, --tag <tags>            Tag filter for service/tool filtering (comma-separated, OR logic)
+  --smart-discovery          Enable smart tool discovery mode (default: enabled)
   -h, --help                  Display this help message
   -v, --version               Display version information
   --validate                  Validate configuration without starting
@@ -63,9 +65,15 @@ MODES:
 
 TAG FILTERING:
   -t, --tag                   Filter services by tags (CLI mode only)
-                              Multiple tags are separated by commas (OR logic)
-                              Example: onemcp --tag production,api
-                              Services without tags are always available
+                                Multiple tags are separated by commas (OR logic)
+                                Example: onemcp --tag production,api
+                                Services without tags are always available
+
+SMART TOOL DISCOVERY:
+  --smart-discovery            Enable smart tool discovery mode (default: enabled)
+                                When enabled, tools/list only returns a search tool
+                                Users search for tools instead of seeing all at once
+                                Use --no-smart-discovery to disable
 
 HEADER FILTERING (Server mode):
   X-MCP-Tags: "tag1,tag2"      HTTP header to filter services by tags (OR logic)
@@ -80,6 +88,9 @@ ENVIRONMENT VARIABLES:
 EXAMPLES:
   # Start in CLI mode with tag filter
   onemcp --tag production,api
+
+  # Disable smart tool discovery
+  onemcp --no-smart-discovery
 
   # Start in server mode
   onemcp --mode server --port 8080
@@ -121,6 +132,7 @@ function displayVersion(): void {
 function parseCliArgs(): CliArgs {
   try {
     const { values } = parseArgs({
+      allowNegative: true,
       options: {
         mode: {
           type: 'string',
@@ -141,6 +153,10 @@ function parseCliArgs(): CliArgs {
         tag: {
           type: 'string',
           short: 't',
+        },
+        'smart-discovery': {
+          type: 'boolean',
+          negate: true,
         },
         help: {
           type: 'boolean',
@@ -170,6 +186,7 @@ function parseCliArgs(): CliArgs {
       port: values.port,
       logLevel: values['log-level'] as 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | undefined,
       tag: values.tag,
+      'smart-discovery': values['smart-discovery'],
       help: values.help,
       version: values.version,
       validate: values.validate,
@@ -459,7 +476,18 @@ async function main(): Promise<void> {
         }
       }
 
-      const runner = new CliModeRunner(config, configProvider, tagFilter);
+      // Parse smart discovery config from CLI argument
+      let toolDiscoveryConfig: ToolDiscoveryConfig | undefined;
+      if (args['smart-discovery'] !== undefined) {
+        toolDiscoveryConfig = {
+          smartDiscovery: args['smart-discovery'],
+          maxResults: 10,
+          searchDescription: true,
+        };
+        console.error(`Smart tool discovery: ${args['smart-discovery'] ? 'enabled' : 'disabled'}`);
+      }
+
+      const runner = new CliModeRunner(config, configProvider, tagFilter, toolDiscoveryConfig);
 
       // Set up graceful shutdown handlers
       const shutdown = async (signal: string) => {

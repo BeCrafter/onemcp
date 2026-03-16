@@ -90,6 +90,18 @@ export interface MetricsConfig {
 }
 
 /**
+ * Tool discovery configuration for smart tool filtering
+ */
+export interface ToolDiscoveryConfig {
+  /** Whether smart tool discovery is enabled (default: true) */
+  smartDiscovery: boolean;
+  /** Maximum number of results to return from search (default: 10) */
+  maxResults?: number;
+  /** Whether to search in tool descriptions (default: true) */
+  searchDescription?: boolean;
+}
+
+/**
  * Logging configuration
  */
 export interface LoggingConfig {
@@ -129,6 +141,8 @@ export interface SystemConfig {
   logging?: LoggingConfig;
   /** Metrics configuration */
   metrics?: MetricsConfig;
+  /** Tool discovery configuration */
+  toolDiscovery?: ToolDiscoveryConfig;
 }
 
 /**

@@ -13,9 +13,11 @@ import type {
 } from '../types/jsonrpc.js';
 import type { ToolRouter } from '../routing/tool-router.js';
 import type { RequestContext, TagFilter } from '../types/context.js';
+import type { ToolDiscoveryConfig } from '../types/config.js';
 import { ErrorCode } from '../types/jsonrpc.js';
 import { ErrorBuilder } from '../errors/error-builder.js';
 import { getPackageVersion } from '../utils/package-version.js';
+import { SEARCH_TOOL_DEFINITION, searchTools } from './tool-search.js';
 
 /**
  * MCP initialize parameters
@@ -78,18 +80,25 @@ export class McpProtocolHandler {
   private initialized = false;
   private tagFilter?: TagFilter;
   private readonly maxBatchSize: number;
+  private toolDiscoveryConfig: ToolDiscoveryConfig;
 
   constructor(
     private readonly toolRouter: ToolRouter,
     options?: {
       maxBatchSize?: number;
       tagFilter?: TagFilter;
+      toolDiscoveryConfig?: ToolDiscoveryConfig;
     }
   ) {
     this.maxBatchSize = options?.maxBatchSize ?? 100;
     if (options?.tagFilter) {
       this.tagFilter = options.tagFilter;
     }
+    this.toolDiscoveryConfig = options?.toolDiscoveryConfig ?? {
+      smartDiscovery: true,
+      maxResults: 10,
+      searchDescription: true,
+    };
   }
 
   /**
@@ -151,10 +160,20 @@ export class McpProtocolHandler {
       throw new Error('Protocol not initialized');
     }
 
-    // Use tag filter from params > context > initialization
-    const tagFilter = params?.tagFilter ?? _context.tagFilter ?? this.tagFilter;
+    if (this.toolDiscoveryConfig.smartDiscovery) {
+      return {
+        tools: [
+          {
+            name: SEARCH_TOOL_DEFINITION.name,
+            description: SEARCH_TOOL_DEFINITION.description,
+            inputSchema: SEARCH_TOOL_DEFINITION.inputSchema,
+            enabled: true,
+          },
+        ],
+      };
+    }
 
-    // Discover tools with tag filter
+    const tagFilter = params?.tagFilter ?? _context.tagFilter ?? this.tagFilter;
     const tools = await this.toolRouter.discoverTools(tagFilter);
 
     return {
@@ -188,7 +207,20 @@ export class McpProtocolHandler {
       throw new Error('Tool name is required');
     }
 
-    // Call tool via router
+    if (params.name === SEARCH_TOOL_DEFINITION.name) {
+      const tagFilter = context.tagFilter ?? this.tagFilter;
+      const allTools = await this.toolRouter.discoverTools(tagFilter);
+      const args = params.arguments ?? {};
+      const query = args['query'] ?? '';
+      const limit = args['limit'];
+      const searchParams = {
+        query: String(query),
+        limit: typeof limit === 'number' ? limit : (this.toolDiscoveryConfig.maxResults ?? 10),
+        searchDescription: this.toolDiscoveryConfig.searchDescription ?? true,
+      };
+      return searchTools(allTools, searchParams);
+    }
+
     const result = await this.toolRouter.callTool(params.name, params.arguments ?? {}, context);
 
     return result;

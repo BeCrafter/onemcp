@@ -7,7 +7,7 @@
 
 import { stdin, stdout } from 'node:process';
 import { createInterface } from 'node:readline';
-import type { SystemConfig } from './types/config.js';
+import type { SystemConfig, ToolDiscoveryConfig } from './types/config.js';
 import type { JsonRpcMessage, JsonRpcRequest } from './types/jsonrpc.js';
 import { JsonRpcParser } from './protocol/parser.js';
 import { JsonRpcSerializer } from './protocol/serializer.js';
@@ -48,7 +48,8 @@ export class CliModeRunner {
   constructor(
     private config: SystemConfig,
     configProvider: ConfigProvider,
-    tagFilter?: TagFilter
+    tagFilter?: TagFilter,
+    toolDiscoveryConfig?: ToolDiscoveryConfig
   ) {
     this.parser = new JsonRpcParser();
     this.serializer = new JsonRpcSerializer();
@@ -61,12 +62,18 @@ export class CliModeRunner {
       this.healthMonitor
     );
 
-    // Initialize protocol handler with tag filter
-    const handlerOptions: { maxBatchSize: number; tagFilter?: TagFilter } = {
+    const handlerOptions: {
+      maxBatchSize: number;
+      tagFilter?: TagFilter;
+      toolDiscoveryConfig?: ToolDiscoveryConfig;
+    } = {
       maxBatchSize: 100,
     };
     if (tagFilter) {
       handlerOptions.tagFilter = tagFilter;
+    }
+    if (toolDiscoveryConfig) {
+      handlerOptions.toolDiscoveryConfig = toolDiscoveryConfig;
     }
     this.protocolHandler = new McpProtocolHandler(this.toolRouter, handlerOptions);
   }

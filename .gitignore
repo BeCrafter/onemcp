@@ -50,3 +50,4 @@ config.local.json
 
 backup/
 *.bak
+.sisyphus
