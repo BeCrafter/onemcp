@@ -113,6 +113,7 @@ export class FileConfigProvider implements ConfigProvider {
           additionalProperties: {
             type: 'object',
             required: ['transport', 'enabled'],
+            additionalProperties: false,
             properties: {
               transport: {
                 type: 'string',
