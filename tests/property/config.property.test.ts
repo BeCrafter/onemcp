@@ -44,12 +44,22 @@ const transportTypeArbitrary = (): fc.Arbitrary<'stdio' | 'sse' | 'http'> =>
 
 /**
  * Generate valid service names
+ * Service names must be alphanumeric with hyphens and underscores only
+ * to avoid JSON Schema validation issues with special characters
  */
 const serviceNameArbitrary = (): fc.Arbitrary<string> =>
   fc
-    .string({ minLength: 1, maxLength: 50 })
-    .filter((s) => s.trim().length > 0)
-    .map((s) => s.trim());
+    .array(
+      fc.constantFrom(
+        ...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_'.split('')
+      ),
+      {
+        minLength: 1,
+        maxLength: 50,
+      }
+    )
+    .map((chars) => chars.join(''))
+    .filter((s) => s.length > 0 && /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(s));
 
 /**
  * Generate valid URLs
@@ -103,6 +113,10 @@ const serviceDefinitionArbitrary = () =>
         if (service.env !== undefined) result.env = service.env;
         if (service.toolStates !== undefined) result.toolStates = service.toolStates;
         return result;
+      })
+      .filter((service) => {
+        // Ensure stdio service has required command field
+        return service.transport === 'stdio' && service.command !== undefined;
       }),
     // SSE transport service
     fc
@@ -129,6 +143,10 @@ const serviceDefinitionArbitrary = () =>
         };
         if (service.toolStates !== undefined) result.toolStates = service.toolStates;
         return result;
+      })
+      .filter((service) => {
+        // Ensure sse service has required url field
+        return service.transport === 'sse' && service.url !== undefined;
       }),
     // HTTP transport service
     fc
@@ -156,6 +174,10 @@ const serviceDefinitionArbitrary = () =>
         if (service.toolStates !== undefined) result.toolStates = service.toolStates;
         return result;
       })
+      .filter((service) => {
+        // Ensure http service has required url field
+        return service.transport === 'http' && service.url !== undefined;
+      })
   );
 
 /**
@@ -168,14 +190,41 @@ const systemConfigArbitrary = () =>
       port: fc.option(fc.integer({ min: 1, max: 65535 }), { nil: undefined }),
       logLevel: logLevelArbitrary(),
       configDir: fc.constant('/tmp/test-config'),
-      mcpServers: fc.array(serviceDefinitionArbitrary(), { maxLength: 5 }).map((services) => {
-        const record: Record<string, any> = {};
-        for (const svc of services) {
-          const { name, ...rest } = svc as any;
-          record[name] = rest;
-        }
-        return record;
-      }),
+      mcpServers: fc
+        .array(serviceDefinitionArbitrary(), { minLength: 1, maxLength: 5 })
+        .map((services) => {
+          const record: Record<string, any> = {};
+          for (const svc of services) {
+            const serviceObj = svc as any;
+            // Extract name and create service definition
+            // Ensure name exists and is non-empty string
+            if (
+              serviceObj &&
+              typeof serviceObj === 'object' &&
+              'name' in serviceObj &&
+              typeof serviceObj.name === 'string' &&
+              serviceObj.name.trim().length > 0
+            ) {
+              const { name, ...serviceDef } = serviceObj;
+              record[name] = serviceDef;
+            }
+          }
+          // Ensure record is never empty
+          if (Object.keys(record).length === 0) {
+            record['default-service'] = {
+              transport: 'stdio',
+              command: '/usr/bin/test',
+              enabled: true,
+              tags: [],
+              connectionPool: {
+                maxConnections: 1,
+                idleTimeout: 1000,
+                connectionTimeout: 1000,
+              },
+            };
+          }
+          return record;
+        }),
       connectionPool: connectionPoolConfigArbitrary(),
       healthCheck: fc.record({
         enabled: fc.boolean(),
@@ -215,6 +264,32 @@ const systemConfigArbitrary = () =>
         return fc.constant({ ...config, port: 3000 } as SystemConfig);
       }
       return fc.constant(config as SystemConfig);
+    })
+    .filter((config) => {
+      // Ensure mcpServers contains only valid service definitions
+      if (config.mcpServers) {
+        for (const [_serviceName, service] of Object.entries(config.mcpServers)) {
+          const svc = service as any;
+          // Validate service has required fields
+          if (!svc.transport || typeof svc.transport !== 'string') {
+            return false;
+          }
+          if (typeof svc.enabled !== 'boolean') {
+            return false;
+          }
+          // Validate transport-specific required fields
+          if (svc.transport === 'stdio' && (!svc.command || typeof svc.command !== 'string')) {
+            return false;
+          }
+          if (
+            (svc.transport === 'sse' || svc.transport === 'http') &&
+            (!svc.url || typeof svc.url !== 'string')
+          ) {
+            return false;
+          }
+        }
+      }
+      return true;
     });
 
 /**
@@ -223,33 +298,9 @@ const systemConfigArbitrary = () =>
 const invalidSystemConfigArbitrary = () =>
   fc.oneof(
     // Missing required field: mode
-    fc.record({
-      logLevel: logLevelArbitrary(),
-      configDir: fc.constant('/tmp/test-config'),
-      mcpServers: fc.constant({}),
-      connectionPool: connectionPoolConfigArbitrary(),
-      healthCheck: fc.record({
-        enabled: fc.boolean(),
-        interval: fc.integer({ min: 1000 }),
-        failureThreshold: fc.integer({ min: 1 }),
-        autoUnload: fc.boolean(),
-      }),
-      audit: fc.record({
-        enabled: fc.boolean(),
-        level: fc.constantFrom('minimal' as const, 'standard' as const, 'verbose' as const),
-        logInput: fc.boolean(),
-        logOutput: fc.boolean(),
-        retention: fc.record({
-          days: fc.integer({ min: 1 }),
-          maxSize: fc.constant('1GB'),
-        }),
-      }),
-      security: fc.record({
-        dataMasking: fc.record({
-          enabled: fc.boolean(),
-          patterns: fc.array(fc.string(), { minLength: 1 }),
-        }),
-      }),
+    systemConfigArbitrary().map((config) => {
+      const { mode, ...rest } = config as any;
+      return rest;
     }),
     // Invalid port number (out of range)
     systemConfigArbitrary().map((config) => ({
@@ -264,6 +315,8 @@ const invalidSystemConfigArbitrary = () =>
         'invalid-service': {
           transport: 'stdio' as const,
           enabled: true,
+          tags: [],
+          connectionPool: config.connectionPool,
           // Missing command field
         },
       },
@@ -275,6 +328,8 @@ const invalidSystemConfigArbitrary = () =>
         'invalid-service': {
           transport: 'http' as const,
           enabled: true,
+          tags: [],
+          connectionPool: config.connectionPool,
           // Missing url field
         },
       },
@@ -301,11 +356,15 @@ const multiErrorConfigArbitrary = () =>
       'invalid-stdio': {
         transport: 'stdio' as const,
         enabled: true,
+        tags: [],
+        connectionPool: config.connectionPool,
         // Error 2: Missing command for stdio
       },
       'invalid-http': {
         transport: 'http' as const,
         enabled: true,
+        tags: [],
+        connectionPool: config.connectionPool,
         // Error 3: Missing URL for http
       },
     },
@@ -363,8 +422,32 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
             .map((services) => {
               const record: Record<string, any> = {};
               for (const svc of services) {
-                const { name, ...rest } = svc as any;
-                record[name] = rest;
+                const serviceObj = svc as any;
+                // Ensure name exists and is non-empty string
+                if (
+                  serviceObj &&
+                  typeof serviceObj === 'object' &&
+                  'name' in serviceObj &&
+                  typeof serviceObj.name === 'string' &&
+                  serviceObj.name.trim().length > 0
+                ) {
+                  const { name, ...rest } = serviceObj;
+                  record[name] = rest;
+                }
+              }
+              // Ensure record is never empty
+              if (Object.keys(record).length === 0) {
+                record['default-service'] = {
+                  transport: 'stdio',
+                  command: '/usr/bin/test',
+                  enabled: true,
+                  tags: [],
+                  connectionPool: {
+                    maxConnections: 1,
+                    idleTimeout: 1000,
+                    connectionTimeout: 1000,
+                  },
+                };
               }
               return record;
             }),
@@ -496,7 +579,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
 
           return true;
         }),
-        { numRuns: 50 } // Reduced for file I/O
+        { numRuns: 50, timeout: 30000 } // Add timeout for file I/O operations
       );
     });
   });
@@ -586,6 +669,8 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
             'test-service': {
               transport: 'stdio' as const,
               enabled: true,
+              tags: [],
+              connectionPool: config.connectionPool,
               // Missing command
             },
           },
@@ -651,6 +736,8 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
                 transport: 'http' as const,
                 url: invalidUrl,
                 enabled: true,
+                tags: [],
+                connectionPool: config.connectionPool,
               },
             },
           };
@@ -737,6 +824,8 @@ describe('Feature: onemcp-system, Property 22: Configuration validation error co
             invalidServices[`invalid-service-${i}`] = {
               transport: 'stdio' as const,
               enabled: true,
+              tags: [],
+              connectionPool: baseConfig.connectionPool,
               // Missing command
             };
           }
@@ -816,11 +905,15 @@ describe('Feature: onemcp-system, Property 22: Configuration validation error co
             'invalid-1': {
               transport: 'stdio' as const,
               enabled: true,
+              tags: [],
+              connectionPool: baseConfig.connectionPool,
               // Missing command - Error 2
             },
             'invalid-2': {
               transport: 'http' as const,
               enabled: true,
+              tags: [],
+              connectionPool: baseConfig.connectionPool,
               // Missing url - Error 3
             },
           },

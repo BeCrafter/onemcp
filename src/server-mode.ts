@@ -8,7 +8,6 @@
 import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { SystemConfig } from './types/config.js';
-import type { JsonRpcRequest } from './types/jsonrpc.js';
 import type { TagFilter } from './types/tool.js';
 import { JsonRpcParser } from './protocol/parser.js';
 import { McpProtocolHandler } from './protocol/mcp-handler.js';
@@ -186,7 +185,7 @@ export class ServerModeRunner {
 
       // Check if it's a request (has method + id) or notification (has method, no id)
       if ('method' in message && message.method && 'id' in message) {
-        const jsonRpcRequest = message as JsonRpcRequest;
+        const jsonRpcRequest = message;
 
         // Create request context with session info
         const sessionTagFilter = session.context.tagFilter;
