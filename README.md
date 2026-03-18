@@ -1,15 +1,10 @@
 # OneMCP
 
-
-
 **智能 MCP 路由系统 - 统一管理多个 MCP 服务器的路由层**
 
 [License: MIT](https://opensource.org/licenses/MIT)
 [Node Version](https://nodejs.org)
 [TypeScript](https://www.typescriptlang.org/)
-
-📚 **[快速开始指南](./QUICKSTART.md)** - 5 分钟快速上手
-
 
 
 ## 📖 简介
