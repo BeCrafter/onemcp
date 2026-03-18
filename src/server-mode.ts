@@ -184,8 +184,8 @@ export class ServerModeRunner {
         return;
       }
 
-      // Check if it's a request
-      if ('method' in message && message.method) {
+      // Check if it's a request (has method + id) or notification (has method, no id)
+      if ('method' in message && message.method && 'id' in message) {
         const jsonRpcRequest = message as JsonRpcRequest;
 
         // Create request context with session info
@@ -229,8 +229,11 @@ export class ServerModeRunner {
           // Decrement active request count
           this.sessionManager.decrementActiveRequests(session.id);
         }
+      } else if ('method' in message && message.method) {
+        // Notification: has method but no id — must not send any JSON-RPC response per MCP spec
+        void reply.code(204).send();
       } else {
-        // Not a request
+        // Not a request or notification
         void reply.code(400).send({
           jsonrpc: '2.0',
           id: null,
@@ -433,6 +436,11 @@ export class ServerModeRunner {
       const host = '0.0.0.0';
 
       await this.fastify.listen({ port, host });
+
+      // Listen for tool list changes (log only, notification sending not implemented in HTTP mode)
+      this.toolRouter.on('cacheInvalidated', () => {
+        console.error('Tool list changed - clients should refresh tools/list');
+      });
 
       this.running = true;
       console.error(`MCP Router is ready and listening on http://${host}:${port}`);

@@ -93,6 +93,83 @@ export class ToolRouter extends EventEmitter {
   }
 
   /**
+   * Verify connections for all enabled services
+   *
+   * Establishes and verifies connections for all enabled services without
+   * retrieving tool lists. Connections are pooled for later use.
+   *
+   * This is used in smart discovery mode to ensure services are reachable
+   * before the server starts accepting requests, while still maintaining
+   * the lazy loading benefits of smart discovery.
+   *
+   * @param tagFilter - Optional tag filter to limit which services to verify
+   * @returns Promise resolving when all connections are verified
+   * @throws Error if any service connection fails
+   */
+  public async verifyConnections(tagFilter?: TagFilter): Promise<void> {
+    let services: ServiceDefinition[];
+    if (tagFilter) {
+      const matchAll = tagFilter.logic === 'AND';
+      services = await this.serviceRegistry.findByTags(tagFilter.tags, matchAll);
+    } else {
+      services = this.serviceRegistry.list();
+    }
+
+    const enabledServices = services.filter((service) => service.enabled);
+
+    const results = await this.runWithConcurrencyLimit(
+      enabledServices,
+      MAX_CONCURRENT_DISCOVERY,
+      async (service) => {
+        const pool = this.connectionPools.get(service.name);
+        if (!pool) {
+          throw new Error(`No connection pool registered for service: ${service.name}`);
+        }
+
+        try {
+          // Acquire a connection to establish and verify the connection
+          const connection = await pool.acquire();
+          // Immediately release the connection back to the pool
+          pool.release(connection);
+          return { service: service.name, success: true };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return {
+            service: service.name,
+            success: false,
+            error: errorMessage,
+          };
+        }
+      }
+    );
+
+    // Check for failures and throw if any service failed to connect
+    const failures: Array<{ service: string; error: string }> = [];
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        const errorMessage =
+          result.reason instanceof Error ? result.reason.message : String(result.reason);
+        failures.push({ service: 'unknown', error: errorMessage });
+      } else if (result.status === 'fulfilled' && !result.value.success) {
+        failures.push({
+          service: result.value.service,
+          error: result.value.error ?? 'Unknown error',
+        });
+      }
+    }
+
+    if (failures.length > 0) {
+      const failureDetails = failures
+        .map((failure) => `${failure.service}: ${failure.error}`)
+        .join('\n  ');
+      throw new Error(
+        `Failed to verify connections for ${failures.length} service(s):\n  ${failureDetails}`
+      );
+    }
+  }
+
+  /**
    * Unregister a connection pool for a service
    *
    * @param serviceName - Name of the service
@@ -204,10 +281,16 @@ export class ToolRouter extends EventEmitter {
     }
 
     if (!tagFilter) {
+      const wasEmpty = this.toolCache === null;
       this.toolCache = {
         tools: allTools,
         timestamp: new Date(),
       };
+      // Emit cacheInvalidated event when cache is populated from empty state
+      // This notifies clients that tools are now available
+      if (wasEmpty) {
+        this.emit('cacheInvalidated');
+      }
     }
 
     return allTools;

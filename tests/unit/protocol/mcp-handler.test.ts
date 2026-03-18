@@ -132,7 +132,9 @@ describe('McpProtocolHandler', () => {
       expect(result).toEqual({
         protocolVersion: '2024-11-05',
         capabilities: {
-          tools: {},
+          tools: {
+            listChanged: true,
+          },
         },
         serverInfo: {
           name: 'onemcp',
@@ -177,6 +179,20 @@ describe('McpProtocolHandler', () => {
       );
 
       expect(mcpHandler.getTagFilter()).toBeUndefined();
+    });
+  });
+
+  describe('ping', () => {
+    it('should return empty object as pong response', async () => {
+      const result = await mcpHandler.ping();
+
+      expect(result).toEqual({});
+    });
+
+    it('should work without initialization', async () => {
+      const uninitializedHandler = new McpProtocolHandler(toolRouter);
+
+      await expect(uninitializedHandler.ping()).resolves.toEqual({});
     });
   });
 
@@ -671,6 +687,22 @@ describe('McpProtocolHandler', () => {
       const response = await mcpHandler.handleRequest(request, context);
 
       expect('result' in response).toBe(true);
+    });
+
+    it('should route ping method', async () => {
+      const request: JsonRpcRequest = {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'ping',
+        params: {},
+      };
+
+      const response = await mcpHandler.handleRequest(request, context);
+
+      expect('result' in response).toBe(true);
+      if ('result' in response) {
+        expect(response.result).toEqual({});
+      }
     });
 
     it('should return error for unknown method', async () => {

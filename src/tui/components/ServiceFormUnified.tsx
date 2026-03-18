@@ -118,7 +118,7 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
     configs.push({
       field: 'env',
       label: 'Environment Variables',
-      help: 'KEY=VALUE pairs (comma-separated, optional)',
+      help: 'Environment variables to pass to the process (KEY=VALUE pairs, comma-separated, optional).',
       required: false,
       type: 'text',
       dependsOn: { field: 'transport', value: 'stdio' },
@@ -135,7 +135,7 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
     configs.push({
       field: 'headers',
       label: 'Headers',
-      help: 'KEY: VALUE pairs (comma-separated, optional)',
+      help: 'Custom HTTP headers (Key: Value pairs, comma-separated, optional).',
       required: false,
       type: 'text',
       dependsOn: { field: 'transport', value: transport },

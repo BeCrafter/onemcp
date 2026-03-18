@@ -8,7 +8,7 @@
 import { stdin, stdout } from 'node:process';
 import { createInterface } from 'node:readline';
 import type { SystemConfig, ToolDiscoveryConfig } from './types/config.js';
-import type { JsonRpcMessage, JsonRpcRequest } from './types/jsonrpc.js';
+import type { JsonRpcMessage, JsonRpcNotification } from './types/jsonrpc.js';
 import { JsonRpcParser } from './protocol/parser.js';
 import { JsonRpcSerializer } from './protocol/serializer.js';
 import { McpProtocolHandler } from './protocol/mcp-handler.js';
@@ -44,13 +44,21 @@ export class CliModeRunner {
   private connectionPools: Map<string, ConnectionPool> = new Map();
   private running = false;
   private readline: ReturnType<typeof createInterface> | null = null;
+  private readonly tagFilter?: TagFilter;
+  private readonly toolDiscoveryConfig?: ToolDiscoveryConfig;
 
   constructor(
     private config: SystemConfig,
     configProvider: ConfigProvider,
-    tagFilter?: TagFilter,
-    toolDiscoveryConfig?: ToolDiscoveryConfig
+    tagFilterParam?: TagFilter,
+    toolDiscoveryConfigParam?: ToolDiscoveryConfig
   ) {
+    if (tagFilterParam !== undefined) {
+      this.tagFilter = tagFilterParam;
+    }
+    if (toolDiscoveryConfigParam !== undefined) {
+      this.toolDiscoveryConfig = toolDiscoveryConfigParam;
+    }
     this.parser = new JsonRpcParser();
     this.serializer = new JsonRpcSerializer();
     this.serviceRegistry = new ServiceRegistry(configProvider);
@@ -69,11 +77,11 @@ export class CliModeRunner {
     } = {
       maxBatchSize: 100,
     };
-    if (tagFilter) {
-      handlerOptions.tagFilter = tagFilter;
+    if (tagFilterParam) {
+      handlerOptions.tagFilter = tagFilterParam;
     }
-    if (toolDiscoveryConfig) {
-      handlerOptions.toolDiscoveryConfig = toolDiscoveryConfig;
+    if (toolDiscoveryConfigParam) {
+      handlerOptions.toolDiscoveryConfig = toolDiscoveryConfigParam;
     }
     this.protocolHandler = new McpProtocolHandler(this.toolRouter, handlerOptions);
   }
@@ -95,6 +103,21 @@ export class CliModeRunner {
       // Create connection pools for all enabled services
       await this.initializeConnectionPools();
 
+      // Verify connections for all enabled services in smart discovery mode
+      // This ensures services are reachable before accepting requests
+      if (this.toolDiscoveryConfig?.smartDiscovery) {
+        console.error('Verifying connections for all enabled services...');
+        try {
+          await this.toolRouter.verifyConnections(this.tagFilter);
+          console.error('All connections verified successfully');
+        } catch (error) {
+          console.error(
+            `Connection verification failed: ${error instanceof Error ? error.message : String(error)}`
+          );
+          throw error;
+        }
+      }
+
       // Protocol handler already initialized in constructor
 
       // Start health monitoring if enabled
@@ -108,6 +131,14 @@ export class CliModeRunner {
 
       // Set up stdin/stdout communication
       this.setupStdioTransport();
+
+      // Listen for tool list changes and notify clients
+      this.toolRouter.on('cacheInvalidated', () => {
+        void this.sendNotification({
+          jsonrpc: '2.0',
+          method: 'notifications/tools/list_changed',
+        });
+      });
 
       this.running = true;
       console.error('MCP Router is ready and listening on stdin/stdout');
@@ -218,9 +249,10 @@ export class CliModeRunner {
       throw new Error('Protocol handler not initialized');
     }
 
-    // Check if it's a request (has method field)
-    if ('method' in message && message.method) {
-      const request = message as JsonRpcRequest;
+    // Check if it's a request (has method field AND id field).
+    // Notifications have method but no id — must NOT be responded to per MCP spec.
+    if ('method' in message && message.method && 'id' in message) {
+      const request = message;
 
       // Create request context
       const context: RequestContext = {
@@ -253,8 +285,11 @@ export class CliModeRunner {
         this.sendResponse(errorResponse);
       }
     } else {
-      // It's a notification or response, which we don't handle in CLI mode
-      console.error('Received non-request message, ignoring');
+      // It's a notification or response from the client
+      // In CLI mode, we receive notifications like 'notifications/initialized'
+      // Log these for debugging purposes
+      const notification = message as JsonRpcNotification;
+      console.error(`Received notification: ${notification.method}`);
     }
   }
 
@@ -275,6 +310,22 @@ export class CliModeRunner {
     } catch (error) {
       console.error(
         `Failed to send response: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * Send a JSON-RPC notification to stdout.
+   *
+   * @param notification - Notification to send
+   */
+  private sendNotification(notification: JsonRpcMessage): void {
+    try {
+      const serialized = this.serializer.serialize(notification);
+      stdout.write(serialized + '\n');
+    } catch (error) {
+      console.error(
+        `Failed to send notification: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

@@ -44,6 +44,7 @@ temp/
 
 # Config files (user-specific)
 config.local.json
+config.json
 
 # Test configuration
 .onemcp-test/

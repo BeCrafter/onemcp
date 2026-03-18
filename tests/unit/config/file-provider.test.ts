@@ -598,6 +598,119 @@ describe('FileConfigProvider', () => {
       // Assert
       expect(result.valid).toBe(true);
     });
+
+    it('should accept valid headers for HTTP service', () => {
+      // Arrange
+      const configWithHeaders: SystemConfig = {
+        ...validConfig,
+        mcpServers: {
+          'http-service': {
+            transport: 'http',
+            url: 'https://example.com/mcp',
+            headers: {
+              Authorization: 'Bearer token123',
+              'Content-Type': 'application/json',
+            },
+            enabled: true,
+            tags: [],
+            connectionPool: {
+              maxConnections: 5,
+              idleTimeout: 60000,
+              connectionTimeout: 30000,
+            },
+          },
+        },
+      };
+
+      // Act
+      const result = provider.validate(configWithHeaders);
+
+      // Assert
+      expect(result.valid).toBe(true);
+    });
+
+    it('should reject headers with non-string values', () => {
+      // Arrange
+      const configWithInvalidHeaders: SystemConfig = {
+        ...validConfig,
+        mcpServers: {
+          'http-service': {
+            transport: 'http',
+            url: 'https://example.com/mcp',
+            headers: { Authorization: 123 } as any,
+            enabled: true,
+            tags: [],
+            connectionPool: {
+              maxConnections: 5,
+              idleTimeout: 60000,
+              connectionTimeout: 30000,
+            },
+          },
+        },
+      };
+
+      // Act
+      const result = provider.validate(configWithInvalidHeaders);
+
+      // Assert
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.field.includes('headers'))).toBe(true);
+    });
+
+    it('should accept service without headers (optional field)', () => {
+      // Arrange
+      const configWithoutHeaders: SystemConfig = {
+        ...validConfig,
+        mcpServers: {
+          'http-service': {
+            transport: 'http',
+            url: 'https://example.com/mcp',
+            enabled: true,
+            tags: [],
+            connectionPool: {
+              maxConnections: 5,
+              idleTimeout: 60000,
+              connectionTimeout: 30000,
+            },
+          },
+        },
+      };
+
+      // Act
+      const result = provider.validate(configWithoutHeaders);
+
+      // Assert
+      expect(result.valid).toBe(true);
+    });
+
+    it('should accept valid headers for SSE service', () => {
+      // Arrange
+      const configWithHeaders: SystemConfig = {
+        ...validConfig,
+        mcpServers: {
+          'sse-service': {
+            transport: 'sse',
+            url: 'https://example.com/events',
+            headers: {
+              'X-API-Key': 'secret-key',
+            },
+            enabled: true,
+            tags: [],
+            connectionPool: {
+              maxConnections: 5,
+              idleTimeout: 60000,
+              connectionTimeout: 30000,
+            },
+          },
+        },
+      };
+
+      // Act
+      const result = provider.validate(configWithHeaders);
+
+      // Assert
+      expect(result.valid).toBe(true);
+    });
   });
 
   describe('watch()', () => {

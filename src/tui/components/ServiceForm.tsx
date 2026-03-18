@@ -25,13 +25,14 @@ export interface ServiceFormProps {
 /**
  * Form field type
  */
-type FormField = 
+type FormField =
   | 'name'
   | 'transport'
   | 'command'
   | 'url'
   | 'args'
   | 'env'
+  | 'headers'
   | 'tags'
   | 'enabled'
   | 'maxConnections'
@@ -46,7 +47,7 @@ type FormField =
 const QUICK_MODE_FIELDS: FormField[] = ['name', 'transport'];
 
 const QUICK_MODE_STDIO_FIELDS: FormField[] = ['command', 'tags', 'quickMode', 'confirm'];
-const QUICK_MODE_HTTP_FIELDS: FormField[] = ['url', 'tags', 'quickMode', 'confirm'];
+const QUICK_MODE_HTTP_FIELDS: FormField[] = ['url', 'headers', 'tags', 'quickMode', 'confirm'];
 
 /**
  * Form data structure
@@ -58,6 +59,7 @@ interface FormData {
   url: string;
   args: string;
   env: string;
+  headers: string;
   tags: string;
   enabled: boolean;
   maxConnections: string;
@@ -84,15 +86,15 @@ function getFieldOrder(transport: TransportType, quickMode: boolean): FormField[
       return [...QUICK_MODE_FIELDS, ...QUICK_MODE_HTTP_FIELDS];
     }
   }
-  
+
   if (transport === 'stdio') {
     return [
-      'name', 'transport', 'command', 'args', 'env', 'tags', 
+      'name', 'transport', 'command', 'args', 'env', 'tags',
       'enabled', 'maxConnections', 'idleTimeout', 'connectionTimeout', 'confirm',
     ];
   } else {
     return [
-      'name', 'transport', 'url', 'tags', 
+      'name', 'transport', 'url', 'headers', 'tags',
       'enabled', 'maxConnections', 'idleTimeout', 'connectionTimeout', 'confirm',
     ];
   }
@@ -109,6 +111,7 @@ function getFieldLabel(field: FormField): string {
     url: 'URL',
     args: 'Arguments (comma-separated)',
     env: 'Environment Variables (KEY=VALUE, comma-separated)',
+    headers: 'HTTP Headers (Key: Value, comma-separated)',
     tags: 'Tags (comma-separated)',
     enabled: 'Enabled',
     maxConnections: 'Max Connections',
@@ -130,7 +133,8 @@ function getFieldHelp(field: FormField): string {
     command: 'Command to start the MCP server (e.g., npx, node, python)',
     url: 'HTTP(S) URL of the MCP server',
     args: 'Command-line arguments (e.g., -y, @modelcontextprotocol/server-filesystem, /tmp)',
-    env: 'Environment variables to pass to the process (e.g., NODE_ENV=production, DEBUG=true)',
+    env: 'Environment variables to pass to the process (e.g., NODE_ENV=production, DEBUG=true).',
+    headers: 'Custom HTTP headers (e.g., Authorization: Bearer token, Content-Type: application/json).',
     tags: 'Labels for categorization and filtering (e.g., local, storage, api)',
     enabled: 'Whether this service should be active',
     maxConnections: 'Maximum number of concurrent connections (default: 5)',
@@ -205,11 +209,11 @@ function formDataToService(data: FormData): ServiceDefinition {
 
   if (data.transport === 'stdio') {
     service.command = data.command.trim();
-    
+
     if (data.args.trim()) {
       service.args = data.args.split(',').map(a => a.trim()).filter(a => a.length > 0);
     }
-    
+
     if (data.env.trim()) {
       service.env = {};
       const envPairs = data.env.split(',').map(e => e.trim()).filter(e => e.length > 0);
@@ -222,6 +226,17 @@ function formDataToService(data: FormData): ServiceDefinition {
     }
   } else {
     service.url = data.url.trim();
+
+    if (data.headers.trim()) {
+      service.headers = {};
+      const headerPairs = data.headers.split(',').map(h => h.trim()).filter(h => h.length > 0);
+      for (const pair of headerPairs) {
+        const [key, ...valueParts] = pair.split(':');
+        if (key && valueParts.length > 0) {
+          service.headers[key.trim()] = valueParts.join(':').trim();
+        }
+      }
+    }
   }
 
   return service;
@@ -248,6 +263,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
         url: service.url || '',
         args: service.args?.join(', ') || '',
         env: service.env ? Object.entries(service.env).map(([k, v]) => `${k}=${v}`).join(', ') : '',
+        headers: service.headers ? Object.entries(service.headers).map(([k, v]) => `${k}: ${v}`).join(', ') : '',
         tags: service.tags.join(', '),
         enabled: service.enabled,
         maxConnections: service.connectionPool.maxConnections.toString(),
@@ -262,6 +278,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
         url: '',
         args: '',
         env: '',
+        headers: '',
         tags: '',
         enabled: true,
         maxConnections: '5',
@@ -478,7 +495,11 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
           {previewService.url && (
             <Text><Text bold>URL:</Text> {previewService.url}</Text>
           )}
-          
+
+          {previewService.headers && Object.keys(previewService.headers).length > 0 && (
+            <Text><Text bold>Headers:</Text> {Object.entries(previewService.headers).map(([k, v]) => `${k}: ${v}`).join(', ')}</Text>
+          )}
+
           {previewService.env && Object.keys(previewService.env).length > 0 && (
             <Text><Text bold>Environment:</Text> {Object.entries(previewService.env).map(([k, v]) => `${k}=${v}`).join(', ')}</Text>
           )}

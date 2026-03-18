@@ -133,6 +133,10 @@ export class FileConfigProvider implements ConfigProvider {
                 type: 'object',
                 additionalProperties: { type: 'string' },
               },
+              headers: {
+                type: 'object',
+                additionalProperties: { type: 'string' },
+              },
               url: {
                 type: 'string',
                 format: 'uri',

@@ -1531,4 +1531,432 @@ describe('ToolRouter', () => {
       findToolSpy.mockRestore();
     });
   });
+
+  describe('verifyConnections', () => {
+    it('should verify connections for all enabled services successfully', async () => {
+      // Register enabled services
+      const service1: ServiceDefinition = {
+        name: 'service1',
+        enabled: true,
+        tags: [],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      const service2: ServiceDefinition = {
+        name: 'service2',
+        enabled: true,
+        tags: [],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      await serviceRegistry.register(service1);
+      await serviceRegistry.register(service2);
+
+      // Create mock connection pools
+      const mockPool1 = {
+        acquire: vi.fn().mockResolvedValue({ id: 'conn-1' }),
+        release: vi.fn(),
+      } as any;
+
+      const mockPool2 = {
+        acquire: vi.fn().mockResolvedValue({ id: 'conn-2' }),
+        release: vi.fn(),
+      } as any;
+
+      toolRouter.registerConnectionPool('service1', mockPool1);
+      toolRouter.registerConnectionPool('service2', mockPool2);
+
+      // Call verifyConnections - should not throw
+      await expect(toolRouter.verifyConnections()).resolves.not.toThrow();
+
+      // Verify each pool was acquired and released
+      expect(mockPool1.acquire).toHaveBeenCalled();
+      expect(mockPool1.release).toHaveBeenCalled();
+      expect(mockPool2.acquire).toHaveBeenCalled();
+      expect(mockPool2.release).toHaveBeenCalled();
+    });
+
+    it('should skip disabled services', async () => {
+      // Register enabled and disabled services
+      const enabledService: ServiceDefinition = {
+        name: 'enabled-service',
+        enabled: true,
+        tags: [],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      const disabledService: ServiceDefinition = {
+        name: 'disabled-service',
+        enabled: false,
+        tags: [],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      await serviceRegistry.register(enabledService);
+      await serviceRegistry.register(disabledService);
+
+      // Create mock connection pool only for enabled service
+      const mockPool = {
+        acquire: vi.fn().mockResolvedValue({ id: 'conn-1' }),
+        release: vi.fn(),
+      } as any;
+
+      toolRouter.registerConnectionPool('enabled-service', mockPool);
+
+      // Call verifyConnections - should not throw
+      await expect(toolRouter.verifyConnections()).resolves.not.toThrow();
+
+      // Verify only enabled service pool was used
+      expect(mockPool.acquire).toHaveBeenCalled();
+      expect(mockPool.release).toHaveBeenCalled();
+    });
+
+    it('should throw error when no connection pool is registered', async () => {
+      // Register an enabled service without connection pool
+      const service: ServiceDefinition = {
+        name: 'service-no-pool',
+        enabled: true,
+        tags: [],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      await serviceRegistry.register(service);
+
+      // Call verifyConnections - should throw
+      await expect(toolRouter.verifyConnections()).rejects.toThrow(
+        'No connection pool registered for service: service-no-pool'
+      );
+    });
+
+    it('should throw error when connection acquisition fails', async () => {
+      // Register an enabled service
+      const service: ServiceDefinition = {
+        name: 'service-fail',
+        enabled: true,
+        tags: [],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      await serviceRegistry.register(service);
+
+      // Create mock connection pool that fails to acquire
+      const mockPool = {
+        acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
+        release: vi.fn(),
+      } as any;
+
+      toolRouter.registerConnectionPool('service-fail', mockPool);
+
+      // Call verifyConnections - should throw
+      await expect(toolRouter.verifyConnections()).rejects.toThrow(
+        'Failed to verify connections for 1 service(s)'
+      );
+    });
+
+    it('should filter services by tag filter', async () => {
+      // Register services with different tags
+      const service1: ServiceDefinition = {
+        name: 'service1',
+        enabled: true,
+        tags: ['tag1'],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      const service2: ServiceDefinition = {
+        name: 'service2',
+        enabled: true,
+        tags: ['tag2'],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      await serviceRegistry.register(service1);
+      await serviceRegistry.register(service2);
+
+      // Create mock connection pools
+      const mockPool1 = {
+        acquire: vi.fn().mockResolvedValue({ id: 'conn-1' }),
+        release: vi.fn(),
+      } as any;
+
+      const mockPool2 = {
+        acquire: vi.fn().mockResolvedValue({ id: 'conn-2' }),
+        release: vi.fn(),
+      } as any;
+
+      toolRouter.registerConnectionPool('service1', mockPool1);
+      toolRouter.registerConnectionPool('service2', mockPool2);
+
+      // Call verifyConnections with tag filter - should only verify service1
+      await expect(
+        toolRouter.verifyConnections({ tags: ['tag1'], logic: 'AND' })
+      ).resolves.not.toThrow();
+
+      // Verify only service1 pool was used
+      expect(mockPool1.acquire).toHaveBeenCalled();
+      expect(mockPool1.release).toHaveBeenCalled();
+      expect(mockPool2.acquire).not.toHaveBeenCalled();
+      expect(mockPool2.release).not.toHaveBeenCalled();
+    });
+
+    it('should handle multiple service failures', async () => {
+      // Register multiple enabled services
+      const service1: ServiceDefinition = {
+        name: 'service1',
+        enabled: true,
+        tags: [],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      const service2: ServiceDefinition = {
+        name: 'service2',
+        enabled: true,
+        tags: [],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      const service3: ServiceDefinition = {
+        name: 'service3',
+        enabled: true,
+        tags: [],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      await serviceRegistry.register(service1);
+      await serviceRegistry.register(service2);
+      await serviceRegistry.register(service3);
+
+      // Create mock connection pools - service1 and service2 fail
+      const mockPool1 = {
+        acquire: vi.fn().mockRejectedValue(new Error('Service1 failed')),
+        release: vi.fn(),
+      } as any;
+
+      const mockPool2 = {
+        acquire: vi.fn().mockRejectedValue(new Error('Service2 failed')),
+        release: vi.fn(),
+      } as any;
+
+      const mockPool3 = {
+        acquire: vi.fn().mockResolvedValue({ id: 'conn-3' }),
+        release: vi.fn(),
+      } as any;
+
+      toolRouter.registerConnectionPool('service1', mockPool1);
+      toolRouter.registerConnectionPool('service2', mockPool2);
+      toolRouter.registerConnectionPool('service3', mockPool3);
+
+      // Call verifyConnections - should throw with both failures
+      await expect(toolRouter.verifyConnections()).rejects.toThrow(
+        'Failed to verify connections for 2 service(s)'
+      );
+    });
+  });
+
+  describe('discoverTools - cache invalidation events', () => {
+    it('should emit cacheInvalidated event when cache is populated from empty state', async () => {
+      // Register an enabled service
+      const service: ServiceDefinition = {
+        name: 'test-service',
+        enabled: true,
+        tags: [],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      await serviceRegistry.register(service);
+
+      // Create mock connection pool
+      const mockTool = {
+        name: 'test_tool',
+        namespacedName: 'test-service__test_tool',
+        serviceName: 'test-service',
+        description: 'Test tool',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {},
+        },
+        enabled: true,
+      };
+
+      const mockTransport = {
+        send: vi.fn(),
+        receive: vi.fn().mockReturnValue({
+          next: vi.fn().mockResolvedValue({
+            value: {
+              result: {
+                tools: [mockTool],
+              },
+            },
+          }),
+        }),
+        getType: vi.fn().mockReturnValue('stdio'),
+      };
+
+      const mockConnection = {
+        id: 'conn-1',
+        transport: mockTransport,
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+
+      const mockPool = {
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+        release: vi.fn(),
+      } as any;
+
+      toolRouter.registerConnectionPool('test-service', mockPool);
+
+      // Listen for cacheInvalidated event
+      const eventListener = vi.fn();
+      toolRouter.on('cacheInvalidated', eventListener);
+
+      // First discovery - should emit event (cache was empty)
+      await toolRouter.discoverTools();
+      expect(eventListener).toHaveBeenCalledTimes(1);
+
+      // Second discovery - should not emit event (cache already populated)
+      await toolRouter.discoverTools();
+      expect(eventListener).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not emit cacheInvalidated event when using tag filter', async () => {
+      // Register an enabled service
+      const service: ServiceDefinition = {
+        name: 'test-service',
+        enabled: true,
+        tags: ['test'],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      await serviceRegistry.register(service);
+
+      // Create mock connection pool
+      const mockTool = {
+        name: 'test_tool',
+        namespacedName: 'test-service__test_tool',
+        serviceName: 'test-service',
+        description: 'Test tool',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {},
+        },
+        enabled: true,
+      };
+
+      const mockTransport = {
+        send: vi.fn(),
+        receive: vi.fn().mockReturnValue({
+          next: vi.fn().mockResolvedValue({
+            value: {
+              result: {
+                tools: [mockTool],
+              },
+            },
+          }),
+        }),
+        getType: vi.fn().mockReturnValue('stdio'),
+      };
+
+      const mockConnection = {
+        id: 'conn-1',
+        transport: mockTransport,
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+
+      const mockPool = {
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+        release: vi.fn(),
+      } as any;
+
+      toolRouter.registerConnectionPool('test-service', mockPool);
+
+      // Listen for cacheInvalidated event
+      const eventListener = vi.fn();
+      toolRouter.on('cacheInvalidated', eventListener);
+
+      // Discovery with tag filter - should not emit event (no caching)
+      await toolRouter.discoverTools({ tags: ['test'], logic: 'AND' });
+      expect(eventListener).not.toHaveBeenCalled();
+    });
+  });
 });

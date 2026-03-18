@@ -481,8 +481,10 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
           await provider.save(configWithDir);
 
           // Simulate system restart by creating new provider instance
+          const newStorage = new FileStorageAdapter(tempDir);
+          await newStorage.initialize();
           const newProvider = new FileConfigProvider({
-            storageAdapter: new FileStorageAdapter(tempDir),
+            storageAdapter: newStorage,
             configDir: tempDir,
           });
 

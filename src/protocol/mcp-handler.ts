@@ -128,7 +128,9 @@ export class McpProtocolHandler {
     return {
       protocolVersion: '2024-11-05',
       capabilities: {
-        tools: {},
+        tools: {
+          listChanged: true,
+        },
       },
       serverInfo: {
         name: 'onemcp',
@@ -227,6 +229,20 @@ export class McpProtocolHandler {
   }
 
   /**
+   * Handle ping request
+   *
+   * Implements MCP protocol ping mechanism for connection health monitoring.
+   * Returns an empty object as pong response.
+   *
+   * @returns Empty object as pong response
+   */
+  async ping(): Promise<Record<string, never>> {
+    // Use Promise.resolve to satisfy require-await rule
+    await Promise.resolve();
+    return {};
+  }
+
+  /**
    * Handle batch request
    *
    * Executes multiple tool calls and collects results, handling partial failures.
@@ -313,6 +329,10 @@ export class McpProtocolHandler {
 
         case 'tools/call':
           result = await this.toolsCall(request.params as ToolCallParams, context);
+          break;
+
+        case 'ping':
+          result = await this.ping();
           break;
 
         default:

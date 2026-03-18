@@ -7,6 +7,10 @@
       "enabled": true,
       "tags": ["example"],
       "url": "http://127.0.0.1:5000/mcp",
+      "headers": {
+        "Authorization": "Bearer your-token-here",
+        "X-API-Key": "your-api-key"
+      },
       "connectionPool": {
         "maxConnections": 5,
         "idleTimeout": 60000,
