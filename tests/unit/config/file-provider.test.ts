@@ -917,8 +917,8 @@ describe('FileConfigProvider', () => {
       // Act
       const dir = provider.getConfigDir();
 
-      // Assert
-      expect(dir).toBe('/test/config');
+      // Assert — use path.resolve on both sides to handle cross-platform path differences
+      expect(dir).toBe(path.resolve('/test/config'));
     });
   });
 
@@ -935,7 +935,7 @@ describe('FileConfigProvider', () => {
       const dir = customProvider.getConfigDir();
 
       // Assert
-      expect(dir).toBe('/custom/config');
+      expect(dir).toBe(path.resolve('/custom/config'));
 
       // Cleanup
       delete process.env['ONEMCP_CONFIG_DIR'];
@@ -952,7 +952,7 @@ describe('FileConfigProvider', () => {
       const dir = envProvider.getConfigDir();
 
       // Assert
-      expect(dir).toBe('/env/config');
+      expect(dir).toBe(path.resolve('/env/config'));
 
       // Cleanup
       delete process.env['ONEMCP_CONFIG_DIR'];
@@ -1221,7 +1221,7 @@ describe('FileConfigProvider', () => {
 
       if (configData) {
         const config = JSON.parse(configData);
-        expect(config.configDir).toBe('/test/config');
+        expect(config.configDir).toBe(path.resolve('/test/config'));
       }
     });
   });

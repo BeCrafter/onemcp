@@ -5,6 +5,8 @@
  * It manages connection lifecycle, reuse, limits, and cleanup.
  */
 
+import { existsSync } from 'fs';
+import { resolve, join } from 'path';
 import type { ServiceDefinition, ConnectionPoolConfig, PoolStats } from '../types/service.js';
 import type { Transport } from '../types/transport.js';
 import type { Connection } from './connection.js';
@@ -88,6 +90,57 @@ function parseCommandString(command: string): { command: string; args: string[] 
     command: tokens[0] || '',
     args: tokens.slice(1),
   };
+}
+
+/**
+ * On Windows, executables installed by npm (npx, node, etc.) are actually .cmd
+ * batch files in the PATH. Node's spawn() cannot find them without the extension
+ * when shell:false (our default). This function resolves the correct executable
+ * name so that spawn() can find it on every platform automatically.
+ *
+ * Logic:
+ *  - Non-Windows: return as-is (POSIX doesn't need extensions).
+ *  - Windows + already has an extension (.exe/.cmd/.bat): return as-is.
+ *  - Windows + bare name (e.g. "npx", "node"): search PATH entries and return
+ *    the first match with a Windows executable extension, falling back to the
+ *    original name if nothing is found (spawn will report ENOENT in that case).
+ */
+function resolveCommandForPlatform(command: string): string {
+  if (process.platform !== 'win32') {
+    return command;
+  }
+
+  // If the command already has a recognised extension, trust it.
+  const winExtensions = ['.exe', '.cmd', '.bat', '.com'];
+  const lower = command.toLowerCase();
+  if (winExtensions.some((ext) => lower.endsWith(ext))) {
+    return command;
+  }
+
+  // If it's an absolute or relative path without an extension, try appending.
+  if (command.includes('/') || command.includes('\\')) {
+    for (const ext of winExtensions) {
+      const candidate = command + ext;
+      if (existsSync(resolve(candidate))) {
+        return candidate;
+      }
+    }
+    return command;
+  }
+
+  // Bare command name — search PATH directories.
+  const pathDirs = (process.env['PATH'] ?? '').split(';');
+  for (const dir of pathDirs) {
+    if (!dir) continue;
+    for (const ext of winExtensions) {
+      const candidate = join(dir, command + ext);
+      if (existsSync(candidate)) {
+        return join(dir, command + ext);
+      }
+    }
+  }
+
+  return command;
 }
 
 /**
@@ -429,6 +482,8 @@ export class ConnectionPool extends EventEmitter {
         command = this.service.command;
         args = undefined;
       }
+      // Resolve the correct executable for the current platform (e.g. .cmd on Windows)
+      command = resolveCommandForPlatform(command);
       const config: { command: string; args?: string[]; env?: Record<string, string> } = {
         command,
       };

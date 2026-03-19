@@ -475,7 +475,12 @@ describe('StdioTransport', () => {
       await closePromise;
 
       expect(mockProcess.stdin.end).toHaveBeenCalled();
-      expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+      if (process.platform === 'win32') {
+        // On Windows killProcess calls proc.kill() without a signal argument
+        expect(mockProcess.kill).toHaveBeenCalled();
+      } else {
+        expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+      }
       expect(transport.isClosed()).toBe(true);
     });
 
@@ -486,8 +491,13 @@ describe('StdioTransport', () => {
       await expect(closePromise).rejects.toThrow(TransportError);
       await expect(closePromise).rejects.toThrow('timeout');
 
-      // Should have tried SIGKILL
-      expect(mockProcess.kill).toHaveBeenCalledWith('SIGKILL');
+      // Should have tried force kill
+      if (process.platform === 'win32') {
+        // On Windows killProcess calls proc.kill() without a signal argument
+        expect(mockProcess.kill).toHaveBeenCalled();
+      } else {
+        expect(mockProcess.kill).toHaveBeenCalledWith('SIGKILL');
+      }
     });
 
     it('should be idempotent', async () => {
@@ -517,7 +527,11 @@ describe('StdioTransport', () => {
 
       await closePromise;
 
-      expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+      if (process.platform === 'win32') {
+        expect(mockProcess.kill).toHaveBeenCalled();
+      } else {
+        expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+      }
       expect(transport.isClosed()).toBe(true);
     });
   });

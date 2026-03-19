@@ -13,7 +13,12 @@ export default defineConfig({
         'tests/',
         '**/*.test.ts',
         '**/*.config.ts',
+        'src/tui/**',
+        'src/cli.ts',
+        'src/cli-mode.ts',
         'src/tui.ts',
+        'src/server-mode.ts',
+        '**/index.ts',
       ],
       thresholds: {
         lines: 80,

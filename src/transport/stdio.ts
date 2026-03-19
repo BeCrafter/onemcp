@@ -7,6 +7,28 @@ import { BaseTransport, TransportError } from './base.js';
 import type { JsonRpcMessage } from '../types/jsonrpc.js';
 import type { TransportType } from '../types/service.js';
 
+const isWindows = process.platform === 'win32';
+
+/**
+ * Gracefully terminate a child process in a cross-platform way.
+ * On Windows, POSIX signals are not supported; we use process.kill() without
+ * a signal argument which sends the default termination signal on each platform.
+ */
+function killProcess(proc: ChildProcess, force: boolean): void {
+  // proc.exitCode is null while the process is running; non-null means it has exited
+  if (proc.killed || (proc.exitCode !== null && proc.exitCode !== undefined)) {
+    return;
+  }
+  if (isWindows) {
+    // On Windows, only the default (no-signal) kill is reliable.
+    // taskkill /F /PID is the forceful equivalent but requires a shell call;
+    // Node's .kill() maps to TerminateProcess on Windows regardless of signal.
+    proc.kill();
+  } else {
+    proc.kill(force ? 'SIGKILL' : 'SIGTERM');
+  }
+}
+
 /**
  * Configuration for StdioTransport
  */
@@ -277,7 +299,7 @@ export class StdioTransport extends BaseTransport {
       const timeout = setTimeout(() => {
         // Force kill if graceful shutdown takes too long
         if (this.process && !this.process.killed) {
-          this.process.kill('SIGKILL');
+          killProcess(this.process, true);
         }
         reject(new TransportError('Process termination timeout', 'CLOSE_TIMEOUT'));
       }, 5000); // 5 second timeout
@@ -288,13 +310,13 @@ export class StdioTransport extends BaseTransport {
         resolve();
       });
 
-      // Try graceful shutdown first
+      // Try graceful shutdown first: close stdin so the child can exit cleanly
       if (this.process.stdin && !this.process.stdin.destroyed) {
         this.process.stdin.end();
       }
 
-      // Send SIGTERM
-      this.process.kill('SIGTERM');
+      // Send termination signal (platform-aware)
+      killProcess(this.process, false);
     });
   }
 }

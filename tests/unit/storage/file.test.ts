@@ -257,8 +257,12 @@ describe('FileStorageAdapter', () => {
     });
 
     it('should throw descriptive error on write failure to invalid path', async () => {
-      // Try to write to a path that cannot be created
-      const invalidAdapter = new FileStorageAdapter('/invalid/path/that/does/not/exist');
+      // Use a regular file as the "base directory" so mkdir fails because
+      // a file already exists at that path — this works on all platforms.
+      const fileAsDir = path.join(testDir, 'blocking-file.txt');
+      await fs.writeFile(fileAsDir, 'i am a file, not a directory');
+
+      const invalidAdapter = new FileStorageAdapter(fileAsDir);
 
       await expect(invalidAdapter.write('test.json', 'data')).rejects.toThrow(
         'Failed to write file'
