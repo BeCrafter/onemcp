@@ -7,7 +7,8 @@
 
 import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
 import { randomUUID } from 'node:crypto';
-import type { SystemConfig } from './types/config.js';
+import type { ServerResponse } from 'node:http';
+import type { SystemConfig, ToolDiscoveryConfig } from './types/config.js';
 import type { TagFilter } from './types/tool.js';
 import { JsonRpcParser } from './protocol/parser.js';
 import { McpProtocolHandler } from './protocol/mcp-handler.js';
@@ -17,7 +18,7 @@ import { HealthMonitor } from './health/health-monitor.js';
 import { ToolRouter } from './routing/tool-router.js';
 import { ConnectionPool } from './pool/connection-pool.js';
 import { getPackageVersion } from './utils/package-version.js';
-import { SessionManager } from './session/session-manager.js';
+import { SessionManager, type SessionContext } from './session/session-manager.js';
 import { MetricsService } from './metrics/service.js';
 import type { ConfigProvider } from './types/config.js';
 import type { RequestContext } from './types/context.js';
@@ -47,10 +48,16 @@ export class ServerModeRunner {
   private running = false;
   private configProvider: ConfigProvider;
   private unwatchConfig: (() => void) | null = null;
+  // SSE connections keyed by session ID — used to push server notifications to clients
+  private sseConnections: Map<string, ServerResponse> = new Map();
 
   constructor(
     private config: SystemConfig,
-    configProvider: ConfigProvider
+    configProvider: ConfigProvider,
+    private options: {
+      onShutdownComplete?: (() => void) | undefined;
+      toolDiscoveryConfig?: ToolDiscoveryConfig | undefined;
+    } = {}
   ) {
     this.fastify = Fastify({
       logger: false, // We use our own logger
@@ -88,6 +95,11 @@ export class ServerModeRunner {
       return this.handleMcpRequest(request, reply);
     });
 
+    // SSE endpoint for server-to-client notifications (MCP Streamable HTTP spec)
+    this.fastify.get('/mcp', async (request: FastifyRequest, reply: FastifyReply) => {
+      return this.handleSseConnection(request, reply);
+    });
+
     // Health check endpoint
     this.fastify.get('/health', async (request: FastifyRequest, reply: FastifyReply) => {
       return this.handleHealthCheck(request, reply);
@@ -112,6 +124,63 @@ export class ServerModeRunner {
         status: 'running',
       };
     });
+  }
+
+  /**
+   * Handle SSE connection for server-to-client notifications (GET /mcp)
+   *
+   * Per MCP Streamable HTTP spec, clients open a persistent GET /mcp SSE stream
+   * so the server can push notifications (e.g. tools/list_changed) at any time.
+   */
+  private handleSseConnection(request: FastifyRequest, reply: FastifyReply): void {
+    // Hijack the response so Fastify never touches it after this handler returns.
+    // Without this, Fastify tries to send its own response once the async handler
+    // resolves, writing to an already-in-use (or closed) stream and triggering
+    // "Not connected" errors in downstream clients.
+    void reply.hijack();
+
+    const sessionId = this.getSessionId(request);
+    const res = reply.raw;
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'X-Session-ID': sessionId,
+    });
+
+    // Initial comment — confirms the stream is open without triggering JSON parsing
+    res.write(': connected\n\n');
+
+    this.sseConnections.set(sessionId, res);
+
+    // Clean up when client disconnects
+    request.raw.on('close', () => {
+      this.sseConnections.delete(sessionId);
+      try {
+        res.end();
+      } catch {
+        /* already closed */
+      }
+    });
+    // The response stays open naturally because res.end() has not been called.
+    // Fastify won't close it because we called reply.hijack().
+  }
+
+  /**
+   * Send an SSE event to all connected SSE clients
+   */
+  private broadcastSseEvent(event: string, data: unknown): void {
+    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const [sessionId, res] of this.sseConnections.entries()) {
+      try {
+        res.write(payload);
+      } catch {
+        // Client disconnected — remove stale entry
+        this.sseConnections.delete(sessionId);
+      }
+    }
   }
 
   /**
@@ -153,9 +222,32 @@ export class ServerModeRunner {
           }
         }
 
-        const sessionContext: { tagFilter?: TagFilter } = {};
+        // Parse smart discovery override from HTTP header
+        // X-MCP-Smart-Discovery: false  → disable smart discovery for this session
+        // X-MCP-Smart-Discovery: true   → enable smart discovery for this session
+        // (absent)                      → use server default (--no-smart-discovery flag)
+        let sessionSmartDiscovery: boolean | undefined;
+        const smartDiscoveryHeader = request.headers['x-mcp-smart-discovery'];
+        if (typeof smartDiscoveryHeader === 'string') {
+          const val = smartDiscoveryHeader.trim().toLowerCase();
+          if (val === 'false' || val === '0' || val === 'off') {
+            sessionSmartDiscovery = false;
+          } else if (val === 'true' || val === '1' || val === 'on') {
+            sessionSmartDiscovery = true;
+          }
+          if (sessionSmartDiscovery !== undefined) {
+            console.error(
+              `Smart discovery from header: ${sessionSmartDiscovery ? 'enabled' : 'disabled'}`
+            );
+          }
+        }
+
+        const sessionContext: SessionContext = {};
         if (tagFilter) {
           sessionContext.tagFilter = tagFilter;
+        }
+        if (sessionSmartDiscovery !== undefined) {
+          sessionContext.smartDiscovery = sessionSmartDiscovery;
         }
         session = this.sessionManager.createSession(agentId, sessionContext);
       }
@@ -199,6 +291,9 @@ export class ServerModeRunner {
         if (sessionTagFilter) {
           context.tagFilter = sessionTagFilter;
         }
+        if (session.context.smartDiscovery !== undefined) {
+          context.smartDiscovery = session.context.smartDiscovery;
+        }
 
         // Track active request
         this.sessionManager.incrementActiveRequests(session.id);
@@ -230,7 +325,8 @@ export class ServerModeRunner {
         }
       } else if ('method' in message && message.method) {
         // Notification: has method but no id — must not send any JSON-RPC response per MCP spec
-        void reply.code(204).send();
+        // Use 202 Accepted instead of 204 No Content for compatibility with MCP clients
+        void reply.code(202).send();
       } else {
         // Not a request or notification
         void reply.code(400).send({
@@ -406,6 +502,9 @@ export class ServerModeRunner {
       // Initialize protocol handler
       this.protocolHandler = new McpProtocolHandler(this.toolRouter, {
         maxBatchSize: 100,
+        ...(this.options.toolDiscoveryConfig !== undefined && {
+          toolDiscoveryConfig: this.options.toolDiscoveryConfig,
+        }),
       });
 
       // Start health monitoring if enabled
@@ -436,9 +535,14 @@ export class ServerModeRunner {
 
       await this.fastify.listen({ port, host });
 
-      // Listen for tool list changes (log only, notification sending not implemented in HTTP mode)
+      // Broadcast tools/list_changed notification to all connected SSE clients
       this.toolRouter.on('cacheInvalidated', () => {
-        console.error('Tool list changed - clients should refresh tools/list');
+        console.error('Tool list changed - notifying connected clients via SSE');
+        this.broadcastSseEvent('message', {
+          jsonrpc: '2.0',
+          method: 'notifications/tools/list_changed',
+          params: {},
+        });
       });
 
       this.running = true;
@@ -593,6 +697,16 @@ export class ServerModeRunner {
         console.error('Health monitoring stopped');
       }
 
+      // Close all SSE connections
+      for (const res of this.sseConnections.values()) {
+        try {
+          res.end();
+        } catch {
+          /* ignore */
+        }
+      }
+      this.sseConnections.clear();
+
       // Close all sessions
       await this.sessionManager.closeAllSessions();
       console.error('All sessions closed');
@@ -616,6 +730,7 @@ export class ServerModeRunner {
       }
 
       console.error('MCP Router shutdown complete');
+      this.options.onShutdownComplete?.();
     } catch (error) {
       console.error(
         `Error during shutdown: ${error instanceof Error ? error.message : String(error)}`

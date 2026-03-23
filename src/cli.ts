@@ -16,6 +16,7 @@ import { FileStorageAdapter } from './storage/file.js';
 import type { SystemConfig, ToolDiscoveryConfig } from './types/config.js';
 import type { TagFilter } from './types/tool.js';
 import { getPackageVersion } from './utils/package-version.js';
+import { silenceStderrForShutdown } from './utils/silence-stderr-shutdown.js';
 
 /**
  * CLI argument definitions
@@ -32,6 +33,10 @@ interface CliArgs {
   validate?: boolean | undefined;
   init?: boolean | undefined;
   dryRun?: boolean | undefined;
+  daemon?: boolean | undefined;
+  lines?: string | undefined;
+  follow?: boolean | undefined;
+  positionals?: string[];
 }
 
 /**
@@ -57,6 +62,15 @@ OPTIONS:
   --validate                  Validate configuration without starting
   --init                      Initialize configuration directory with defaults
   --dry-run                   Simulate startup without actually starting services
+  -d, --daemon                Start server in background (server mode only)
+
+SERVER SUBCOMMANDS:
+  onemcp server status        Show background server status (PID, port, uptime)
+  onemcp server stop          Stop the background server
+  onemcp server restart       Restart the background server
+  onemcp server logs          Show server logs (default: last 50 lines)
+    --lines <n>               Number of log lines to show
+    --follow                  Follow log output (like tail -f)
 
 MODES:
   cli                         Stdio-based communication (default)
@@ -76,8 +90,12 @@ SMART TOOL DISCOVERY:
                                 Use --no-smart-discovery to disable
 
 HEADER FILTERING (Server mode):
-  X-MCP-Tags: "tag1,tag2"      HTTP header to filter services by tags (OR logic)
-                              Example: curl -H "X-MCP-Tags: production,api" http://localhost:3000/mcp
+  X-MCP-Tags: "tag1,tag2"           HTTP header to filter services by tags (OR logic)
+                                      Example: curl -H "X-MCP-Tags: production,api" http://localhost:3000/mcp
+  X-MCP-Smart-Discovery: "true"      HTTP header to control smart tool discovery per connection
+                                      Values: true/1/on (enable), false/0/off (disable)
+                                      Overrides --no-smart-discovery server default
+                                      Example: curl -H "X-MCP-Smart-Discovery: false" http://localhost:3000/mcp
 
 ENVIRONMENT VARIABLES:
   ONEMCP_CONFIG_DIR           Override configuration directory location
@@ -94,6 +112,18 @@ EXAMPLES:
 
   # Start in server mode
   onemcp --mode server --port 8080
+
+  # Start server in background (daemon mode)
+  onemcp --mode server --daemon
+  onemcp --mode server -d
+
+  # Manage background server
+  onemcp server status
+  onemcp server stop
+  onemcp server restart
+  onemcp server logs
+  onemcp server logs --lines 100
+  onemcp server logs --follow
 
   # Start in server mode with HTTP header tag filter
   onemcp --mode server
@@ -127,11 +157,23 @@ function displayVersion(): void {
 }
 
 /**
+ * Returns process.argv[1] (the script path), or exits with an error if undefined.
+ */
+function requireExecutablePath(): string {
+  const p = process.argv[1];
+  if (p === undefined) {
+    process.stderr.write('Cannot determine executable path.\n');
+    process.exit(1);
+  }
+  return p;
+}
+
+/**
  * Parse command-line arguments
  */
 function parseCliArgs(): CliArgs {
   try {
-    const { values } = parseArgs({
+    const { values, positionals } = parseArgs({
       allowNegative: true,
       options: {
         mode: {
@@ -175,9 +217,19 @@ function parseCliArgs(): CliArgs {
         'dry-run': {
           type: 'boolean',
         },
+        daemon: {
+          type: 'boolean',
+          short: 'd',
+        },
+        lines: {
+          type: 'string',
+        },
+        follow: {
+          type: 'boolean',
+        },
       },
       strict: true,
-      allowPositionals: false,
+      allowPositionals: true,
     });
 
     return {
@@ -192,6 +244,10 @@ function parseCliArgs(): CliArgs {
       validate: values.validate,
       init: values.init,
       dryRun: values['dry-run'],
+      daemon: values.daemon,
+      lines: values.lines,
+      follow: values.follow,
+      positionals,
     };
   } catch (error) {
     process.stderr.write(
@@ -400,6 +456,35 @@ async function main(): Promise<void> {
   // Resolve configuration directory
   const configDir = resolveConfigDir(args);
 
+  // Handle "onemcp server <subcommand>" early dispatch (no config loading needed)
+  if (args.positionals && args.positionals[0] === 'server') {
+    const { stopDaemon, restartDaemon, printDaemonStatus, showLogs } =
+      await import('./daemon/server-daemon.js');
+    const subcommand = args.positionals[1];
+    switch (subcommand) {
+      case 'status':
+        printDaemonStatus(configDir);
+        return;
+      case 'stop':
+        await stopDaemon(configDir);
+        return;
+      case 'restart': {
+        const execPath = requireExecutablePath();
+        await restartDaemon(configDir, execPath);
+        return;
+      }
+      case 'logs': {
+        const lines = args.lines ? parseInt(args.lines, 10) : 50;
+        showLogs(configDir, isNaN(lines) ? 50 : lines, args.follow ?? false);
+        return;
+      }
+      default:
+        process.stderr.write(`Unknown server subcommand: ${subcommand ?? '(none)'}\n`);
+        process.stderr.write('Available subcommands: status, stop, restart, logs\n');
+        process.exit(1);
+    }
+  }
+
   // Handle init flag
   if (args.init) {
     initializeConfigDir(configDir);
@@ -490,15 +575,20 @@ async function main(): Promise<void> {
       const runner = new CliModeRunner(config, configProvider, tagFilter, toolDiscoveryConfig);
 
       // Set up graceful shutdown handlers
-      const shutdown = async (signal: string) => {
-        process.stderr.write(`\nReceived ${signal}, shutting down gracefully...\n`);
+      const shutdown = async (_signal: string) => {
+        // In CLI (stdio) mode the process runs as a subprocess of tools like MCP Inspector.
+        // The inspector pipes our stderr and forwards every chunk to the browser via SSE.
+        // When the user clicks "Disconnect", the browser SSE closes first, then the inspector
+        // sends SIGTERM to us. Any stderr write at that point causes the inspector to call
+        // webAppTransport.send() on a closed transport and crash with "Not connected".
+        // Silence stderr for the entire shutdown sequence to prevent this race condition.
+        // Override write to a no-op so console.error() calls inside runner.stop() are
+        // also suppressed without causing stream errors.
+        silenceStderrForShutdown();
         try {
           await runner.stop();
           process.exit(0);
-        } catch (error) {
-          process.stderr.write(
-            `Error during shutdown: ${error instanceof Error ? error.message : String(error)}\n`
-          );
+        } catch {
           process.exit(1);
         }
       };
@@ -512,8 +602,57 @@ async function main(): Promise<void> {
       const { runApp } = await import('./tui.js');
       await runApp(config, configProvider);
     } else {
+      // Daemon mode: spawn detached process and exit
+      if (args.daemon) {
+        const { spawnDaemon, readPidFile, isProcessRunning } =
+          await import('./daemon/server-daemon.js');
+
+        // Check for existing daemon
+        const existingPid = readPidFile(configDir);
+        if (existingPid !== null && isProcessRunning(existingPid)) {
+          process.stderr.write(`Server is already running (PID ${existingPid})\n`);
+          process.exit(1);
+        }
+
+        // Build child args without --daemon/-d flag
+        const childArgs = process.argv.slice(2).filter((a) => a !== '--daemon' && a !== '-d');
+
+        // Ensure --mode server is present
+        if (!childArgs.includes('--mode') && !childArgs.includes('-m')) {
+          childArgs.push('--mode', 'server');
+        }
+
+        const port = config.port ?? 3000;
+        const execPath = requireExecutablePath();
+        spawnDaemon(execPath, childArgs, configDir, port);
+        return;
+      }
+
       const { ServerModeRunner } = await import('./server-mode.js');
-      const runner = new ServerModeRunner(config, configProvider);
+
+      // If running as daemon child, clean up PID file on shutdown
+      const isDaemonChild = process.env['ONEMCP_DAEMON'] === '1';
+      const runnerOptions: {
+        onShutdownComplete?: () => void;
+        toolDiscoveryConfig?: ToolDiscoveryConfig;
+      } = {};
+      if (isDaemonChild) {
+        runnerOptions.onShutdownComplete = () => {
+          void import('./daemon/server-daemon.js').then(({ removePidFile }) =>
+            removePidFile(configDir)
+          );
+        };
+      }
+      if (args['smart-discovery'] !== undefined) {
+        runnerOptions.toolDiscoveryConfig = {
+          smartDiscovery: args['smart-discovery'],
+          maxResults: 10,
+          searchDescription: true,
+        };
+        console.error(`Smart tool discovery: ${args['smart-discovery'] ? 'enabled' : 'disabled'}`);
+      }
+
+      const runner = new ServerModeRunner(config, configProvider, runnerOptions);
 
       // Set up graceful shutdown handlers
       const shutdown = async (signal: string) => {

@@ -162,7 +162,9 @@ export class McpProtocolHandler {
       throw new Error('Protocol not initialized');
     }
 
-    if (this.toolDiscoveryConfig.smartDiscovery) {
+    // Per-session header overrides server default; fall back to server-level config
+    const smartDiscovery = _context.smartDiscovery ?? this.toolDiscoveryConfig.smartDiscovery;
+    if (smartDiscovery) {
       return {
         tools: [
           {

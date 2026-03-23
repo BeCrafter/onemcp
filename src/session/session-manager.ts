@@ -15,6 +15,8 @@ export interface SessionContext {
   tagFilter?: TagFilter;
   resourceLimits?: ResourceLimits;
   metadata?: Record<string, unknown>;
+  /** Per-session smart discovery override */
+  smartDiscovery?: boolean;
 }
 
 /**

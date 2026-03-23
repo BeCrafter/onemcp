@@ -23,6 +23,8 @@ export interface RequestContext {
   timestamp: Date;
   /** Tag filter for service/tool filtering */
   tagFilter?: TagFilter;
+  /** Per-session smart discovery override (overrides server default when set) */
+  smartDiscovery?: boolean;
 }
 
 /**

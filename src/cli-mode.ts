@@ -22,6 +22,7 @@ import { ErrorCode } from './types/jsonrpc.js';
 import type { RequestContext } from './types/context.js';
 import type { TagFilter } from './types/tool.js';
 import { randomUUID } from 'node:crypto';
+import { silenceStderrForShutdown } from './utils/silence-stderr-shutdown.js';
 
 /**
  * CLI Mode Runner class
@@ -229,9 +230,13 @@ export class CliModeRunner {
 
     // Handle stdin close
     this.readline.on('close', () => {
-      console.error('stdin closed, shutting down...');
-      this.stop().catch((error) => {
-        console.error(`Error during shutdown: ${error}`);
+      // Silence stderr immediately. In CLI/stdio mode, the MCP Inspector pipes our stderr
+      // and forwards every chunk to the browser via SSEServerTransport. When the user
+      // clicks "Disconnect", the browser SSE closes first (making webAppTransport unable
+      // to send), then stdin EOF arrives here. Any console.error() at this point causes
+      // the inspector to call webAppTransport.send() on a closed transport → "Not connected".
+      silenceStderrForShutdown();
+      this.stop().catch(() => {
         process.exit(1);
       });
     });
@@ -344,7 +349,12 @@ export class CliModeRunner {
       return;
     }
 
-    console.error('Shutting down MCP Router...');
+    // Ensure stderr is silenced for this entire shutdown sequence.
+    // In CLI/stdio mode, any stderr write is forwarded by the inspector to the browser
+    // SSE transport. If that transport is already closed, the inspector crashes.
+    // This is idempotent — safe to call even if already silenced by the signal handler.
+    silenceStderrForShutdown();
+
     this.running = false;
 
     try {
