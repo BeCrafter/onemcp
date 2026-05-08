@@ -168,10 +168,7 @@ export class ToolDiscoveryManager extends EventEmitter {
     const inFlight = new Map<string, Promise<void>>();
 
     const startNext = (): void => {
-      while (
-        this.discoveryQueue.length > 0 &&
-        inFlight.size < this.config.maxConcurrent
-      ) {
+      while (this.discoveryQueue.length > 0 && inFlight.size < this.config.maxConcurrent) {
         const item = this.discoveryQueue.shift();
         if (item === undefined) break;
 

@@ -336,7 +336,7 @@ async function discoverToolsViaSse(service: ServiceDefinition, timeout: number):
       if (done) return;
 
       // Resolve the POST URL (may be relative or absolute)
-      const data = (rawEvent as MessageEvent).data as string;
+      const data = rawEvent.data as string;
       let postUrl: string;
       try {
         postUrl =
@@ -357,9 +357,7 @@ async function discoverToolsViaSse(service: ServiceDefinition, timeout: number):
           if (!r.ok) throw new Error(`POST ${postUrl} failed: HTTP ${r.status}`);
         });
 
-      const sendRequest = (
-        msg: Record<string, unknown>
-      ): Promise<Record<string, unknown>> =>
+      const sendRequest = (msg: Record<string, unknown>): Promise<Record<string, unknown>> =>
         new Promise((res, rej) => {
           const id = msg['id'] as string;
           pending.set(id, res);
@@ -405,11 +403,10 @@ async function discoverToolsViaSse(service: ServiceDefinition, timeout: number):
           );
         }
 
-        const rawTools = (
-          (toolsResp['result'] as Record<string, unknown> | undefined)?.[
-            'tools'
-          ] as Array<{ name: string; description?: string; inputSchema?: unknown }> | undefined
-        ) ?? [];
+        const rawTools =
+          ((toolsResp['result'] as Record<string, unknown> | undefined)?.['tools'] as
+            | Array<{ name: string; description?: string; inputSchema?: unknown }>
+            | undefined) ?? [];
 
         if (!done) {
           done = true;

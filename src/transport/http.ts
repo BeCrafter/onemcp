@@ -106,7 +106,7 @@ export class HttpTransport extends BaseTransport {
       if (typeof this.eventSource.addEventListener === 'function') {
         this.eventSource.addEventListener('endpoint', (event) => {
           try {
-            const endpointPath = (event as MessageEvent).data as string;
+            const endpointPath = event.data as string;
             if (endpointPath.startsWith('http://') || endpointPath.startsWith('https://')) {
               this.postUrl = endpointPath;
             } else {
