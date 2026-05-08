@@ -163,42 +163,37 @@ export class ToolDiscoveryManager extends EventEmitter {
    * @param maxRetries - Maximum retry attempts (0 = no retry, undefined = use config default)
    */
   private async processQueue(maxRetries?: number): Promise<void> {
-    const promises: Array<Promise<void>> = [];
+    // Use a Map so completed promises are removed from the race pool,
+    // preventing Promise.race from spinning infinitely on already-resolved entries.
+    const inFlight = new Map<string, Promise<void>>();
 
-    while (this.discoveryQueue.length > 0 || this.activeDiscoveries.size > 0) {
-      // Start new discoveries up to maxConcurrent limit
+    const startNext = (): void => {
       while (
         this.discoveryQueue.length > 0 &&
-        this.activeDiscoveries.size < this.config.maxConcurrent
+        inFlight.size < this.config.maxConcurrent
       ) {
         const item = this.discoveryQueue.shift();
-        if (item === undefined) {
-          break;
-        }
+        if (item === undefined) break;
 
         const { serviceName, service } = item;
         this.activeDiscoveries.add(serviceName);
         this.statusMap.set(serviceName, 'in-progress');
 
-        // Start discovery (fire-and-forget with tracking)
         const promise = this.discoverService(serviceName, service, 0, maxRetries).finally(() => {
           this.activeDiscoveries.delete(serviceName);
+          inFlight.delete(serviceName);
         });
 
-        promises.push(promise);
+        inFlight.set(serviceName, promise);
       }
+    };
 
-      // Wait for at least one discovery to complete before continuing
-      if (this.activeDiscoveries.size >= this.config.maxConcurrent) {
-        await Promise.race(promises);
-      } else if (this.discoveryQueue.length === 0) {
-        // No more items to queue, wait for all active to complete
-        break;
-      }
+    startNext();
+
+    while (inFlight.size > 0) {
+      await Promise.race(inFlight.values());
+      startNext();
     }
-
-    // Wait for all remaining discoveries to complete
-    await Promise.all(promises);
   }
 
   /**

@@ -507,7 +507,10 @@ export class ConnectionPool extends EventEmitter {
       if (this.service.headers) {
         config.headers = this.service.headers;
       }
-      return new HttpTransport(config);
+      const transport = new HttpTransport(config);
+      // Wait for SSE connection to be ready (endpoint event received or fallback timeout)
+      await transport.waitForReady();
+      return transport;
     } else if (this.service.transport === 'http') {
       // Create HTTP transport
       if (!this.service.url) {

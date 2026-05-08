@@ -61,6 +61,7 @@ vi.mock('../../src/transport/http.js', () => {
       });
       this.close = vi.fn().mockResolvedValue(undefined);
       this.getType = vi.fn().mockReturnValue('http');
+      this.waitForReady = vi.fn().mockResolvedValue(undefined);
       return this;
     }),
   };

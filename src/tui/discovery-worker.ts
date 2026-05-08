@@ -3,6 +3,7 @@
  * Handles tool discovery for individual services
  */
 
+import EventSource from 'eventsource';
 import { StdioTransport } from '../transport/stdio.js';
 import { getPackageVersion } from '../utils/package-version.js';
 import type { ServiceDefinition } from '../types/service.js';
@@ -258,6 +259,185 @@ async function discoverToolsViaStdio(service: ServiceDefinition, timeout: number
 }
 
 /**
+ * Discover tools via standard MCP SSE transport (two-phase handshake).
+ *
+ * Protocol:
+ *  1. Client opens SSE connection (GET sseUrl)
+ *  2. Server sends 'endpoint' SSE event containing the POST URL (may be relative)
+ *  3. Client POSTs JSON-RPC messages to that URL; responses arrive via SSE 'message' events
+ */
+async function discoverToolsViaSse(service: ServiceDefinition, timeout: number): Promise<Tool[]> {
+  if (service.url === undefined || service.url === null) {
+    return [];
+  }
+
+  const sseUrl = service.url;
+  const extraHeaders: Record<string, string> =
+    service.headers !== undefined && service.headers !== null ? { ...service.headers } : {};
+
+  return new Promise<Tool[]>((resolve, reject) => {
+    let done = false;
+
+    const fail = (err: Error): void => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      es.close();
+      const isTimeout = err.message.toLowerCase().includes('timeout');
+      reject(
+        new DiscoveryError(
+          isTimeout ? DiscoveryErrorType.TIMEOUT : DiscoveryErrorType.CONNECTION_FAILED,
+          service.name,
+          err.message,
+          err
+        )
+      );
+    };
+
+    const timer = setTimeout(
+      () => fail(new Error(`Discovery timeout after ${timeout}ms`)),
+      timeout
+    );
+
+    const es = new EventSource(sseUrl);
+
+    // Map from request-id → resolver, so we can match SSE message events to requests
+    const pending = new Map<string, (msg: Record<string, unknown>) => void>();
+
+    es.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data as string) as Record<string, unknown>;
+        const id = msg['id'] as string | undefined;
+        if (id !== undefined) {
+          const handler = pending.get(id);
+          if (handler !== undefined) {
+            pending.delete(id);
+            handler(msg);
+          }
+        }
+      } catch {
+        // Ignore unparseable messages
+      }
+    };
+
+    es.onerror = () => {
+      // Only treat as failure if we haven't finished yet
+      if (!done) {
+        fail(new Error('SSE connection failed'));
+      }
+    };
+
+    if (typeof es.addEventListener !== 'function') {
+      fail(new Error('EventSource does not support addEventListener'));
+      return;
+    }
+
+    es.addEventListener('endpoint', (rawEvent) => {
+      if (done) return;
+
+      // Resolve the POST URL (may be relative or absolute)
+      const data = (rawEvent as MessageEvent).data as string;
+      let postUrl: string;
+      try {
+        postUrl =
+          data.startsWith('http://') || data.startsWith('https://')
+            ? data
+            : new URL(data, new URL(sseUrl)).href;
+      } catch {
+        fail(new Error(`Invalid endpoint URL from server: ${data}`));
+        return;
+      }
+
+      const postJson = (body: unknown): Promise<void> =>
+        fetch(postUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...extraHeaders },
+          body: JSON.stringify(body),
+        }).then((r) => {
+          if (!r.ok) throw new Error(`POST ${postUrl} failed: HTTP ${r.status}`);
+        });
+
+      const sendRequest = (
+        msg: Record<string, unknown>
+      ): Promise<Record<string, unknown>> =>
+        new Promise((res, rej) => {
+          const id = msg['id'] as string;
+          pending.set(id, res);
+          postJson(msg).catch((err: Error) => {
+            pending.delete(id);
+            rej(err);
+          });
+        });
+
+      const run = async (): Promise<void> => {
+        const initResp = await sendRequest({
+          jsonrpc: '2.0',
+          id: `init-${Date.now()}`,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2024-11-05',
+            capabilities: {},
+            clientInfo: { name: 'onemcp-tui', version: getPackageVersion() },
+          },
+        });
+
+        if (initResp['error'] !== undefined) {
+          throw new Error(
+            String((initResp['error'] as Record<string, unknown>)['message'] ?? 'initialize failed')
+          );
+        }
+
+        // 'initialized' is a notification — no response expected
+        await postJson({ jsonrpc: '2.0', method: 'initialized', params: {} });
+
+        const toolsResp = await sendRequest({
+          jsonrpc: '2.0',
+          id: `tools-${Date.now()}`,
+          method: 'tools/list',
+          params: {},
+        });
+
+        if (toolsResp['error'] !== undefined) {
+          throw new Error(
+            String(
+              (toolsResp['error'] as Record<string, unknown>)['message'] ?? 'tools/list failed'
+            )
+          );
+        }
+
+        const rawTools = (
+          (toolsResp['result'] as Record<string, unknown> | undefined)?.[
+            'tools'
+          ] as Array<{ name: string; description?: string; inputSchema?: unknown }> | undefined
+        ) ?? [];
+
+        if (!done) {
+          done = true;
+          clearTimeout(timer);
+          es.close();
+          resolve(
+            rawTools.map((t) => ({
+              name: t.name,
+              namespacedName: `${service.name}__${t.name}`,
+              serviceName: service.name,
+              description: t.description ?? '',
+              inputSchema: (t.inputSchema as {
+                type: 'object';
+                properties: Record<string, unknown>;
+                required?: string[];
+              }) ?? { type: 'object', properties: {} },
+              enabled: true,
+            }))
+          );
+        }
+      };
+
+      run().catch(fail);
+    });
+  });
+}
+
+/**
  * Discover tools via HTTP transport
  */
 async function discoverToolsViaHttp(service: ServiceDefinition, timeout: number): Promise<Tool[]> {
@@ -431,6 +611,23 @@ async function discoverToolsViaHttp(service: ServiceDefinition, timeout: number)
 }
 
 /**
+ * Fetch all tools for a service, returning full tool objects.
+ * Used by ServiceTools view to display tool details.
+ */
+export async function fetchServiceTools(
+  service: ServiceDefinition,
+  timeout: number
+): Promise<Tool[]> {
+  if (service.transport === 'stdio') {
+    return discoverToolsViaStdio(service, timeout);
+  } else if (service.transport === 'sse') {
+    return discoverToolsViaSse(service, timeout);
+  } else {
+    return discoverToolsViaHttp(service, timeout);
+  }
+}
+
+/**
  * Discover tools for a service
  * @param service - Service definition
  * @param timeout - Timeout in milliseconds
@@ -441,14 +638,7 @@ export async function discoverServiceTools(
   timeout: number
 ): Promise<number> {
   try {
-    let tools: Tool[];
-
-    if (service.transport === 'stdio') {
-      tools = await discoverToolsViaStdio(service, timeout);
-    } else {
-      tools = await discoverToolsViaHttp(service, timeout);
-    }
-
+    const tools = await fetchServiceTools(service, timeout);
     return tools.length;
   } catch (err) {
     if (err instanceof DiscoveryError) {

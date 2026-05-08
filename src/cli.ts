@@ -51,7 +51,7 @@ USAGE:
   onemcp [OPTIONS]
 
 OPTIONS:
-  -m, --mode <mode>           Deployment mode: cli, server, or tui (default: cli)
+  -m, --mode <mode>           Deployment mode: cli, server, or tui (from config.json if not specified)
   -c, --config-dir <path>     Configuration directory (default: ~/.onemcp)
   -p, --port <port>           Server port for server mode (default: 3000)
   -l, --log-level <level>    Log level: DEBUG, INFO, WARN, ERROR (default: INFO)
@@ -72,10 +72,11 @@ SERVER SUBCOMMANDS:
     --lines <n>               Number of log lines to show
     --follow                  Follow log output (like tail -f)
 
-MODES:
-  cli                         Stdio-based communication (default)
+MODES (set via --mode or in config.json):
+  cli                         Stdio-based communication
   server                      HTTP server mode
   tui                         Interactive terminal UI for configuration management
+  Note: mode must be set in config.json (required field). --mode flag overrides config value.
 
 TAG FILTERING:
   -t, --tag                   Filter services by tags (CLI mode only)

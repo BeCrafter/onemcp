@@ -4,7 +4,7 @@
 
 import EventSource from 'eventsource';
 import fetch from 'node-fetch';
-import { BaseTransport, TransportError } from './base.js';
+import { BaseTransport, TransportError, TransportState } from './base.js';
 import type { JsonRpcMessage } from '../types/jsonrpc.js';
 import type { TransportType } from '../types/service.js';
 
@@ -47,6 +47,12 @@ export class HttpTransport extends BaseTransport {
   private readonly maxReconnectAttempts: number;
   private readonly reconnectDelay: number;
   private sessionId: string | null = null;
+  /** Post URL received from SSE 'endpoint' event (standard MCP SSE protocol) */
+  private postUrl: string | null = null;
+  /** Resolves when SSE connection is ready (endpoint received or connection opened) */
+  private connectionReadyResolve: (() => void) | null = null;
+  private connectionReadyReject: ((error: Error) => void) | null = null;
+  private readonly connectionReady: Promise<void>;
 
   constructor(private config: HttpTransportConfig) {
     super();
@@ -55,10 +61,18 @@ export class HttpTransport extends BaseTransport {
     this.reconnectDelay = config.reconnectDelay || 1000; // 1 second default
 
     if (config.mode === 'sse') {
+      // connectionReady always resolves (never rejects) to avoid unhandled rejections.
+      // Connection errors are emitted via the 'error' event and checked in doSend via state.
+      const inner = new Promise<void>((resolve, reject) => {
+        this.connectionReadyResolve = resolve;
+        this.connectionReadyReject = reject;
+      });
+      this.connectionReady = inner.catch(() => {});
       this.initializeSSE();
     } else {
       // For HTTP mode, mark as connected immediately
       // Actual connection happens per-request
+      this.connectionReady = Promise.resolve();
       this.setConnected();
     }
   }
@@ -72,10 +86,46 @@ export class HttpTransport extends BaseTransport {
 
   /**
    * Initialize SSE connection
+   *
+   * Standard MCP SSE protocol:
+   *  1. Client connects to SSE URL (GET)
+   *  2. Server sends an 'endpoint' SSE event with the POST URL (may include sessionId)
+   *  3. Client POSTs messages to the endpoint URL
+   *  4. Server pushes responses via SSE 'message' events
+   *
+   * Some servers also accept POST to the SSE URL directly (non-standard).
+   * We handle both by using the endpoint URL when provided.
    */
   private initializeSSE(): void {
     try {
       this.eventSource = new EventSource(this.config.url);
+
+      // Handle 'endpoint' event — standard MCP SSE handshake
+      // The server sends this event once to tell the client where to POST messages
+      // Guard: some minimal EventSource implementations may not have addEventListener
+      if (typeof this.eventSource.addEventListener === 'function') {
+        this.eventSource.addEventListener('endpoint', (event) => {
+          try {
+            const endpointPath = (event as MessageEvent).data as string;
+            if (endpointPath.startsWith('http://') || endpointPath.startsWith('https://')) {
+              this.postUrl = endpointPath;
+            } else {
+              // Relative URL — resolve against the SSE base URL
+              const base = new URL(this.config.url);
+              this.postUrl = new URL(endpointPath, base).href;
+            }
+            this.reconnectAttempts = 0;
+            this.setConnected();
+            if (this.connectionReadyResolve) {
+              this.connectionReadyResolve();
+              this.connectionReadyResolve = null;
+              this.connectionReadyReject = null;
+            }
+          } catch (error) {
+            console.error('Failed to parse SSE endpoint event:', error);
+          }
+        });
+      }
 
       // Handle incoming messages
       this.eventSource.onmessage = (event) => {
@@ -87,10 +137,21 @@ export class HttpTransport extends BaseTransport {
         }
       };
 
-      // Handle connection open
+      // Handle connection open — for servers that don't send an 'endpoint' event,
+      // fall back to using the SSE URL itself as the POST target
       this.eventSource.onopen = () => {
         this.reconnectAttempts = 0;
-        this.setConnected();
+        // Only resolve if we haven't already resolved via 'endpoint' event
+        // Give the server a short grace period to send 'endpoint' before falling back
+        setTimeout(() => {
+          if (this.connectionReadyResolve) {
+            // No 'endpoint' event received — assume POST goes to the same URL
+            this.setConnected();
+            this.connectionReadyResolve();
+            this.connectionReadyResolve = null;
+            this.connectionReadyReject = null;
+          }
+        }, 500);
       };
 
       // Handle errors - consume the error to prevent unhandled error event
@@ -107,15 +168,25 @@ export class HttpTransport extends BaseTransport {
         // Error is already handled in handleSSEError, this listener prevents unhandled error event
       });
     } catch (error) {
-      this.handleError(
-        new TransportError(
-          `Failed to initialize SSE: ${error instanceof Error ? error.message : String(error)}`,
-          'SSE_INIT_FAILED',
-          error instanceof Error ? error : undefined
-        )
+      const transportError = new TransportError(
+        `Failed to initialize SSE: ${error instanceof Error ? error.message : String(error)}`,
+        'SSE_INIT_FAILED',
+        error instanceof Error ? error : undefined
       );
-      // Don't throw, let the error be handled by the caller
+      this.handleError(transportError);
+      if (this.connectionReadyReject) {
+        this.connectionReadyReject(transportError);
+        this.connectionReadyResolve = null;
+        this.connectionReadyReject = null;
+      }
     }
+  }
+
+  /**
+   * Wait for SSE connection to be ready (endpoint received or fallback)
+   */
+  public waitForReady(): Promise<void> {
+    return this.connectionReady;
   }
 
   /**
@@ -147,6 +218,13 @@ export class HttpTransport extends BaseTransport {
         'SSE_CONNECTION_FAILED'
       );
       this.handleError(transportError);
+
+      // Reject the connectionReady promise if it hasn't resolved yet
+      if (this.connectionReadyReject) {
+        this.connectionReadyReject(transportError);
+        this.connectionReadyResolve = null;
+        this.connectionReadyReject = null;
+      }
 
       // Reject all waiting receivers with a different error that won't propagate
       const connectionLostError = new Error('SSE connection lost');
@@ -181,8 +259,20 @@ export class HttpTransport extends BaseTransport {
 
   /**
    * Send a message via HTTP POST
+   *
+   * For SSE mode, uses the postUrl received from the 'endpoint' SSE event.
+   * Falls back to the original SSE URL if no endpoint was provided.
    */
   protected async doSend(message: JsonRpcMessage): Promise<void> {
+    // For SSE mode, wait until we know the POST target URL before sending.
+    // connectionReady always resolves; check state afterwards for failures.
+    if (this.config.mode === 'sse') {
+      await this.connectionReady;
+      if (this.state === TransportState.ERROR || this.state === TransportState.CLOSED) {
+        throw new TransportError('SSE connection is not available', 'SSE_NOT_CONNECTED');
+      }
+    }
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.timeout);
@@ -199,7 +289,10 @@ export class HttpTransport extends BaseTransport {
         headers['mcp-session-id'] = this.sessionId;
       }
 
-      const response = await fetch(this.config.url, {
+      // Use endpoint URL from SSE handshake if available, otherwise fall back to config URL
+      const targetUrl = this.postUrl ?? this.config.url;
+
+      const response = await fetch(targetUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(message),

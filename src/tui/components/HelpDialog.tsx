@@ -76,14 +76,6 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
       </Box>
 
       <Box flexDirection="column" borderStyle="single" paddingX={1} marginBottom={1}>
-        <Text bold color="yellow">JSON Editor</Text>
-        <Box flexDirection="column" marginLeft={2}>
-          <Text><Text color="cyan">Ctrl+S</Text> - Save JSON</Text>
-          <Text><Text color="cyan">Esc</Text> - Cancel and return</Text>
-        </Box>
-      </Box>
-
-      <Box flexDirection="column" borderStyle="single" paddingX={1} marginBottom={1}>
         <Text bold color="yellow">Client Tag Filtering</Text>
         <Box flexDirection="column" marginLeft={2}>
           <Text><Text color="cyan">tagFilter</Text> - Clients specify tags in initialize request params</Text>
