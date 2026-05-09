@@ -56,7 +56,7 @@ OPTIONS:
   -p, --port <port>           Server port for server mode (default: 3000)
   -l, --log-level <level>    Log level: DEBUG, INFO, WARN, ERROR (default: INFO)
   -t, --tag <tags>            Tag filter for service/tool filtering (comma-separated, OR logic)
-  --smart-discovery          Enable smart tool discovery mode (default: enabled)
+  --smart-discovery          Enable smart tool discovery mode (default: disabled)
   -h, --help                  Display this help message
   -v, --version               Display version information
   --validate                  Validate configuration without starting
@@ -85,18 +85,18 @@ TAG FILTERING:
                                 Services without tags are always available
 
 SMART TOOL DISCOVERY:
-  --smart-discovery            Enable smart tool discovery mode (default: enabled)
+  --smart-discovery            Enable smart tool discovery mode (default: disabled)
                                 When enabled, tools/list only returns a search tool
                                 Users search for tools instead of seeing all at once
-                                Use --no-smart-discovery to disable
+                                Use --smart-discovery to enable
 
 HEADER FILTERING (Server mode):
   X-MCP-Tags: "tag1,tag2"           HTTP header to filter services by tags (OR logic)
                                       Example: curl -H "X-MCP-Tags: production,api" http://localhost:3000/mcp
   X-MCP-Smart-Discovery: "true"      HTTP header to control smart tool discovery per connection
                                       Values: true/1/on (enable), false/0/off (disable)
-                                      Overrides --no-smart-discovery server default
-                                      Example: curl -H "X-MCP-Smart-Discovery: false" http://localhost:3000/mcp
+                                      Overrides server default
+                                      Example: curl -H "X-MCP-Smart-Discovery: true" http://localhost:3000/mcp
 
 ENVIRONMENT VARIABLES:
   ONEMCP_CONFIG_DIR           Override configuration directory location
@@ -108,8 +108,8 @@ EXAMPLES:
   # Start in CLI mode with tag filter
   onemcp --tag production,api
 
-  # Disable smart tool discovery
-  onemcp --no-smart-discovery
+  # Enable smart tool discovery
+  onemcp --smart-discovery
 
   # Start in server mode
   onemcp --mode server --port 8080
@@ -199,7 +199,6 @@ function parseCliArgs(): CliArgs {
         },
         'smart-discovery': {
           type: 'boolean',
-          negate: true,
         },
         help: {
           type: 'boolean',
@@ -655,11 +654,19 @@ async function main(): Promise<void> {
 
       const runner = new ServerModeRunner(config, configProvider, runnerOptions);
 
-      // Set up graceful shutdown handlers
+      // Set up graceful shutdown handlers with timeout
       const shutdown = async (signal: string) => {
         process.stderr.write(`\nReceived ${signal}, shutting down gracefully...\n`);
         try {
-          await runner.stop();
+          // Race between graceful shutdown and timeout
+          await Promise.race([
+            runner.stop(),
+            new Promise<never>((_, reject) => {
+              setTimeout(() => {
+                reject(new Error('Shutdown timeout after 5 seconds'));
+              }, 5000);
+            }),
+          ]);
           process.exit(0);
         } catch (error) {
           process.stderr.write(

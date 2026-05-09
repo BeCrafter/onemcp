@@ -95,7 +95,7 @@ export class McpProtocolHandler {
       this.tagFilter = options.tagFilter;
     }
     this.toolDiscoveryConfig = options?.toolDiscoveryConfig ?? {
-      smartDiscovery: true,
+      smartDiscovery: false,
       maxResults: 10,
       searchDescription: true,
     };

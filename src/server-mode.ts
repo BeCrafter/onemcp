@@ -225,7 +225,7 @@ export class ServerModeRunner {
         // Parse smart discovery override from HTTP header
         // X-MCP-Smart-Discovery: false  → disable smart discovery for this session
         // X-MCP-Smart-Discovery: true   → enable smart discovery for this session
-        // (absent)                      → use server default (--no-smart-discovery flag)
+        // (absent)                      → use server default (--smart-discovery flag or default: disabled)
         let sessionSmartDiscovery: boolean | undefined;
         const smartDiscoveryHeader = request.headers['x-mcp-smart-discovery'];
         if (typeof smartDiscoveryHeader === 'string') {
