@@ -217,11 +217,19 @@ export class McpProtocolHandler {
       const args = params.arguments ?? {};
       const query = args['query'] ?? '';
       const limit = args['limit'];
-      const searchParams = {
+      const searchParams: {
+        query: string;
+        limit: number;
+        searchDescription: boolean;
+        synonyms?: Record<string, string[]>;
+      } = {
         query: String(query),
         limit: typeof limit === 'number' ? limit : (this.toolDiscoveryConfig.maxResults ?? 10),
         searchDescription: this.toolDiscoveryConfig.searchDescription ?? true,
       };
+      if (this.toolDiscoveryConfig.synonyms) {
+        searchParams.synonyms = this.toolDiscoveryConfig.synonyms;
+      }
       return searchTools(allTools, searchParams);
     }
 

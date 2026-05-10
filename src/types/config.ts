@@ -104,6 +104,12 @@ export interface ToolDiscoveryConfig {
    * When false (default), pre-warm the cache in the background without blocking startup.
    */
   eagerVerify?: boolean;
+  /**
+   * Custom synonym mappings to extend the built-in synonym table.
+   * Key: query term (lowercase); Value: array of equivalent terms.
+   * Example: { "deploy": ["publish", "release", "push"] }
+   */
+  synonyms?: Record<string, string[]>;
 }
 
 /**
