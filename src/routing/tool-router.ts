@@ -21,6 +21,7 @@ import type {
   JsonRpcErrorResponse,
 } from '../types/jsonrpc.js';
 import { ErrorCode } from '../types/jsonrpc.js';
+import { enhanceDescription } from '../protocol/description-enhancer.js';
 import Ajv from 'ajv';
 import { EventEmitter } from 'events';
 
@@ -561,7 +562,7 @@ export class ToolRouter extends EventEmitter {
           name: toolObj.name,
           namespacedName,
           serviceName: service.name,
-          description: toolObj.description || '',
+          description: enhanceDescription(toolObj.name, service.name, toolObj.description || ''),
           inputSchema: toolObj.inputSchema || {
             type: 'object',
             properties: {},
