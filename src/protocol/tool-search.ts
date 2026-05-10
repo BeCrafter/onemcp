@@ -165,14 +165,8 @@ export function expandTokens(tokens: string[], synonymMap: Record<string, string
 export function tokenizeQuery(query: string): string[] {
   // Insert a split point at CJK ↔ non-CJK transitions, then split on separators
   const marked = query
-    .replace(
-      /([^\u4e00-\u9fff\u3400-\u4dbf])(?=[\u4e00-\u9fff\u3400-\u4dbf])/g,
-      '$1 '
-    )
-    .replace(
-      /([\u4e00-\u9fff\u3400-\u4dbf])(?=[^\u4e00-\u9fff\u3400-\u4dbf])/g,
-      '$1 '
-    );
+    .replace(/([^\u4e00-\u9fff\u3400-\u4dbf])(?=[\u4e00-\u9fff\u3400-\u4dbf])/g, '$1 ')
+    .replace(/([\u4e00-\u9fff\u3400-\u4dbf])(?=[^\u4e00-\u9fff\u3400-\u4dbf])/g, '$1 ');
   return marked
     .toLowerCase()
     .split(/[\s\-_]+/)
