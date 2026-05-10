@@ -34,9 +34,9 @@ const CACHE_TTL_MS: number = 60_000;
 const MAX_CONCURRENT_DISCOVERY = 10;
 
 /**
- * Tool cache entry
+ * Per-service tool cache entry
  */
-interface ToolCacheEntry {
+interface ServiceToolCacheEntry {
   tools: Tool[];
   timestamp: Date;
 }
@@ -49,10 +49,15 @@ interface ToolCacheEntry {
  * tool routing solution.
  */
 export class ToolRouter extends EventEmitter {
-  private toolCache: ToolCacheEntry | null = null;
+  /** Per-service tool cache; key = service name */
+  private serviceToolCache: Map<string, ServiceToolCacheEntry> = new Map();
   private connectionPools: Map<string, ConnectionPool> = new Map();
   /** In-flight discovery promise per tag-filter key for request coalescing */
   private inFlightDiscovery: Map<string, Promise<Tool[]>> = new Map();
+  /** Compiled Ajv validators keyed by namespaced tool name; cleared on cache invalidation */
+  private readonly validatorCache: Map<string, ReturnType<Ajv['compile']>> = new Map();
+  /** Single shared Ajv instance for schema compilation */
+  private readonly ajv: Ajv = new Ajv({ allErrors: true });
 
   constructor(
     private readonly serviceRegistry: ServiceRegistry,
@@ -197,13 +202,28 @@ export class ToolRouter extends EventEmitter {
   public async discoverTools(tagFilter?: TagFilter): Promise<Tool[]> {
     const cacheKey = this.tagFilterKey(tagFilter);
 
-    // Use cache when no tag filter, cache exists, and not expired (Requirement 2.3)
-    if (!tagFilter && this.toolCache) {
-      const ageMs = Date.now() - this.toolCache.timestamp.getTime();
-      if (CACHE_TTL_MS === 0 || ageMs < CACHE_TTL_MS) {
-        return this.toolCache.tools;
+    // For unfiltered queries, check per-service cache (Requirement 2.3)
+    if (!tagFilter) {
+      const services = this.serviceRegistry.list().filter((s) => s.enabled);
+      const now = Date.now();
+      const allCached: Tool[] = [];
+      let allHit = services.length > 0;
+      for (const service of services) {
+        const entry = this.serviceToolCache.get(service.name);
+        if (!entry) {
+          allHit = false;
+          break;
+        }
+        const ageMs = now - entry.timestamp.getTime();
+        if (CACHE_TTL_MS !== 0 && ageMs >= CACHE_TTL_MS) {
+          allHit = false;
+          break;
+        }
+        allCached.push(...entry.tools);
       }
-      this.toolCache = null;
+      if (allHit) {
+        return allCached;
+      }
     }
 
     // Request coalescing: reuse in-flight discovery for the same tag filter
@@ -226,7 +246,7 @@ export class ToolRouter extends EventEmitter {
       return '';
     }
     const tags = [...tagFilter.tags].sort();
-    return JSON.stringify({ tags, logic: tagFilter.logic });
+    return `${tagFilter.logic}:${tags.join(',')}`;
   }
 
   /**
@@ -262,6 +282,9 @@ export class ToolRouter extends EventEmitter {
     );
 
     const allTools: Tool[] = [];
+    const cacheWasEmpty = this.serviceToolCache.size === 0;
+    const timestamp = new Date();
+
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       const service = healthyServices[i];
@@ -270,6 +293,13 @@ export class ToolRouter extends EventEmitter {
       }
       if (result.status === 'fulfilled') {
         allTools.push(...result.value.tools);
+        // Store per-service cache entry for incremental invalidation
+        if (!tagFilter) {
+          this.serviceToolCache.set(service.name, {
+            tools: result.value.tools,
+            timestamp,
+          });
+        }
       } else {
         const reason: unknown = result.reason;
         console.error(
@@ -280,17 +310,9 @@ export class ToolRouter extends EventEmitter {
       }
     }
 
-    if (!tagFilter) {
-      const wasEmpty = this.toolCache === null;
-      this.toolCache = {
-        tools: allTools,
-        timestamp: new Date(),
-      };
-      // Emit cacheInvalidated event when cache is populated from empty state
-      // This notifies clients that tools are now available
-      if (wasEmpty) {
-        this.emit('cacheInvalidated');
-      }
+    // Notify clients when cache is populated from empty state
+    if (!tagFilter && cacheWasEmpty && this.serviceToolCache.size > 0) {
+      this.emit('cacheInvalidated');
     }
 
     return allTools;
@@ -340,8 +362,22 @@ export class ToolRouter extends EventEmitter {
    * Requirement 2.4: Cache invalidation on service changes
    */
   public invalidateCache(): void {
-    this.toolCache = null;
+    this.serviceToolCache.clear();
     this.inFlightDiscovery.clear();
+    this.validatorCache.clear();
+    this.emit('cacheInvalidated');
+  }
+
+  /**
+   * Invalidate the cache for a single service, leaving other services' caches intact.
+   * Use this when only one service changes to avoid redundant re-discovery.
+   */
+  public invalidateServiceCache(serviceName: string): void {
+    this.serviceToolCache.delete(serviceName);
+    // Clear all compiled validators (minor overhead; re-compiled on next call)
+    this.validatorCache.clear();
+    // Cancel any in-flight full-discovery promise
+    this.inFlightDiscovery.delete('');
     this.emit('cacheInvalidated');
   }
 
@@ -389,8 +425,8 @@ export class ToolRouter extends EventEmitter {
     // Persist the updated service configuration (Requirement 3.4)
     await this.serviceRegistry.register(service);
 
-    // Invalidate cache to reflect the change
-    this.invalidateCache();
+    // Invalidate only this service's cache to reflect the tool state change
+    this.invalidateServiceCache(serviceName);
 
     // Emit event (Requirement 3.9)
     this.emit('toolStateChanged', {
@@ -666,7 +702,7 @@ export class ToolRouter extends EventEmitter {
    * @private
    */
   private handleServiceUnhealthy(serviceName: string): void {
-    this.invalidateCache();
+    this.invalidateServiceCache(serviceName);
     this.emit('serviceToolsUnloaded', serviceName);
   }
 
@@ -680,7 +716,7 @@ export class ToolRouter extends EventEmitter {
    * @private
    */
   private handleServiceRecovered(serviceName: string): void {
-    this.invalidateCache();
+    this.invalidateServiceCache(serviceName);
     this.emit('serviceToolsLoaded', serviceName);
   }
 
@@ -881,11 +917,12 @@ export class ToolRouter extends EventEmitter {
    * @private
    */
   private validateToolParameters(tool: Tool, params: unknown, context: RequestContext): void {
-    // Create Ajv instance for schema validation
-    const ajv = new Ajv({ allErrors: true });
-
-    // Compile the schema
-    const validate = ajv.compile(tool.inputSchema);
+    // Reuse compiled validator; compile once per tool schema then cache
+    let validate = this.validatorCache.get(tool.namespacedName);
+    if (!validate) {
+      validate = this.ajv.compile(tool.inputSchema);
+      this.validatorCache.set(tool.namespacedName, validate);
+    }
 
     // Validate the parameters
     const valid = validate(params);

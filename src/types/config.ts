@@ -99,6 +99,11 @@ export interface ToolDiscoveryConfig {
   maxResults?: number;
   /** Whether to search in tool descriptions (default: true) */
   searchDescription?: boolean;
+  /**
+   * When true, block startup until all service connections are verified and tool cache is warm.
+   * When false (default), pre-warm the cache in the background without blocking startup.
+   */
+  eagerVerify?: boolean;
 }
 
 /**
