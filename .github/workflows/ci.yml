@@ -7,22 +7,16 @@ on:
     branches: [main, dev]
 
 jobs:
-  # ── Job 1: Platform-independent checks (runs once) ──────────────────
-  lint-and-typecheck:
-    name: Lint & Typecheck
+  # ── Build + Lint + Typecheck (single job, runs once) ──────────────────
+  build:
+    name: Build & Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.x'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup Node.js
+        uses: ./.github/actions/setup
 
       - name: Run linter
         run: npm run lint
@@ -30,10 +24,20 @@ jobs:
       - name: Run type check
         run: npm run typecheck
 
-  # ── Job 2: Cross-platform build + unit tests ─────────────────────────
+      - name: Build
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 1
+
+  # ── Cross-platform unit & property tests ─────────────────────────────
   test:
     name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
-    needs: lint-and-typecheck
+    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -44,17 +48,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node }}
-        uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: ./.github/actions/setup
         with:
           node-version: ${{ matrix.node }}
-          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
 
       - name: Run unit and property tests
         run: npx vitest --run tests/unit tests/property
@@ -62,47 +65,38 @@ jobs:
       - name: Smoke test (verify binary runs)
         run: node dist/cli.js --version
 
-  # ── Job 3: Integration tests (Linux only, after all matrix jobs pass) ─
+  # ── Integration tests (Linux only) ──────────────────────────────────
   integration:
     name: Integration Tests
-    needs: test
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22.x
-        uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: ./.github/actions/setup
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
         with:
-          node-version: '22.x'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
+          name: dist
+          path: dist/
 
       - name: Run integration tests
         run: npx vitest run tests/integration
 
-  # ── Job 4: Coverage report (Linux + Node 22 only) ────────────────────
+  # ── Coverage report ─────────────────────────────────────────────────
   coverage:
     name: Coverage
-    needs: test
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.x'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup Node.js
+        uses: ./.github/actions/setup
 
       - name: Run tests with coverage
         run: npm run test:coverage
