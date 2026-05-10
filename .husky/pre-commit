@@ -1,0 +1,11 @@
+#!/bin/sh
+
+echo "Running pre-commit checks..."
+
+npm run lint:fix || { echo "❌ Lint failed. Fix the issues and try again."; exit 1; }
+
+npm run format:check || { echo "❌ Format check failed. Run 'npm run format' and try again."; exit 1; }
+
+npm run typecheck || { echo "❌ Type check failed. Fix the type errors and try again."; exit 1; }
+
+echo "✅ All pre-commit checks passed."
