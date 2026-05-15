@@ -23,39 +23,76 @@ jobs:
       - name: Configure npm registry
         run: npm config set registry https://registry.npmjs.org
 
-      - name: Fetch main branch
-        run: git fetch origin main --depth=1
-
-      - name: Ensure tag points to main HEAD
+      - name: Fetch main and dev branches
         run: |
-          TAG_COMMIT=$(git rev-parse "${GITHUB_REF}^{}")
-          MAIN_HEAD=$(git rev-parse origin/main)
-          if [ "$TAG_COMMIT" != "$MAIN_HEAD" ]; then
-            echo "Tag does not point to main HEAD. Refusing to publish."
-            exit 1
-          fi
+          git fetch origin main --depth=1
+          git fetch origin dev --depth=1
 
-      - name: Compute publish metadata
+      - name: Validate tag and compute publish metadata
         id: meta
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "$VERSION" == *"-"* ]]; then
-            if [[ "$VERSION" == *"-dev."* ]]; then
-              NPM_TAG="dev"
-            elif [[ "$VERSION" == *"-alpha."* ]]; then
-              NPM_TAG="alpha"
-            elif [[ "$VERSION" == *"-beta."* ]]; then
-              NPM_TAG="beta"
-            elif [[ "$VERSION" == *"-rc."* ]]; then
-              NPM_TAG="rc"
-            else
-              NPM_TAG="next"
-            fi
+          TAG_COMMIT=$(git rev-parse "${GITHUB_REF}^{}")
+          MAIN_HEAD=$(git rev-parse origin/main)
+          DEV_HEAD=$(git rev-parse origin/dev)
+
+          if [[ "$VERSION" == *"-dev."* ]]; then
+            NPM_TAG="dev"
+            EXPECTED="dev"
+            SYNC_BRANCH="dev"
+          elif [[ "$VERSION" == *"-alpha."* ]]; then
+            NPM_TAG="alpha"
+            EXPECTED="any"
+            SYNC_BRANCH=""
+          elif [[ "$VERSION" == *"-beta."* ]]; then
+            NPM_TAG="beta"
+            EXPECTED="any"
+            SYNC_BRANCH=""
+          elif [[ "$VERSION" == *"-rc."* ]]; then
+            NPM_TAG="rc"
+            EXPECTED="any"
+            SYNC_BRANCH=""
+          elif [[ "$VERSION" == *"-"* ]]; then
+            NPM_TAG="next"
+            EXPECTED="any"
+            SYNC_BRANCH=""
           else
             NPM_TAG="latest"
+            EXPECTED="main"
+            SYNC_BRANCH="main"
           fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
+
+          case "$EXPECTED" in
+            main)
+              if [ "$TAG_COMMIT" != "$MAIN_HEAD" ]; then
+                echo "Stable release tag must point to main HEAD. Refusing to publish."
+                echo "  tag commit : $TAG_COMMIT"
+                echo "  main HEAD  : $MAIN_HEAD"
+                exit 1
+              fi
+              ;;
+            dev)
+              if [ "$TAG_COMMIT" != "$DEV_HEAD" ]; then
+                echo "-dev.N prerelease tag must point to dev HEAD. Refusing to publish."
+                echo "  tag commit : $TAG_COMMIT"
+                echo "  dev HEAD   : $DEV_HEAD"
+                exit 1
+              fi
+              ;;
+            any)
+              if [ "$TAG_COMMIT" != "$MAIN_HEAD" ] && [ "$TAG_COMMIT" != "$DEV_HEAD" ]; then
+                echo "Prerelease tag must point to main or dev HEAD. Refusing to publish."
+                echo "  tag commit : $TAG_COMMIT"
+                echo "  main HEAD  : $MAIN_HEAD"
+                echo "  dev HEAD   : $DEV_HEAD"
+                exit 1
+              fi
+              ;;
+          esac
+
+          echo "version=$VERSION"          >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$NPM_TAG"          >> "$GITHUB_OUTPUT"
+          echo "sync_branch=$SYNC_BRANCH"  >> "$GITHUB_OUTPUT"
 
       - name: Sync package version with tag
         run: npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version
@@ -68,16 +105,19 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Checkout main for version sync
+      - name: Checkout sync branch for version bump
+        if: steps.meta.outputs.sync_branch != ''
         uses: actions/checkout@v6
         with:
-          ref: main
+          ref: ${{ steps.meta.outputs.sync_branch }}
           fetch-depth: 0
 
-      - name: Sync version on main branch
+      - name: Sync version on ${{ steps.meta.outputs.sync_branch }} branch
+        if: steps.meta.outputs.sync_branch != ''
         run: npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version
 
       - name: Commit and push version bump
+        if: steps.meta.outputs.sync_branch != ''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -86,5 +126,5 @@ jobs:
             echo "No version changes to commit"
             exit 0
           fi
-          git commit -m "chore: sync version with tag"
-          git push origin HEAD:main
+          git commit -m "chore: sync version with tag ${{ github.ref_name }}"
+          git push origin HEAD:${{ steps.meta.outputs.sync_branch }}
