@@ -25,7 +25,7 @@ export interface ServiceFormUnifiedProps {
 /**
  * Form field type
  */
-type FormField = 
+type FormField =
   | 'name'
   | 'transport'
   | 'command'
@@ -37,7 +37,10 @@ type FormField =
   | 'enabled'
   | 'maxConnections'
   | 'idleTimeout'
-  | 'connectionTimeout';
+  | 'connectionTimeout'
+  | 'triggerHintsStart'
+  | 'triggerHintsEnd'
+  | 'triggerHintsPhrases';
 
 /**
  * Field configuration
@@ -54,7 +57,7 @@ interface FieldConfig {
 /**
  * Form data structure
  */
-interface FormData {
+export interface FormData {
   name: string;
   transport: TransportType;
   command: string;
@@ -67,6 +70,9 @@ interface FormData {
   maxConnections: string;
   idleTimeout: string;
   connectionTimeout: string;
+  triggerHintsStart: string;
+  triggerHintsEnd: string;
+  triggerHintsPhrases: string;
 }
 
 /**
@@ -177,6 +183,27 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
       help: 'Maximum time to wait for connection in ms (min: 1000, default: 30000)',
       required: false,
       type: 'text',
+    },
+    {
+      field: 'triggerHintsStart',
+      label: 'Trigger: On Session Start',
+      help: 'Reason for the LLM to call this service at conversation start (optional, e.g. "recall role memory").',
+      required: false,
+      type: 'text',
+    },
+    {
+      field: 'triggerHintsEnd',
+      label: 'Trigger: On Session End',
+      help: 'Reason to call before the conversation ends (optional, e.g. "persist new memory").',
+      required: false,
+      type: 'text',
+    },
+    {
+      field: 'triggerHintsPhrases',
+      label: 'Trigger Phrases',
+      help: 'Extra phrases that should make the LLM search this service (comma-separated, optional).',
+      required: false,
+      type: 'text',
     }
   );
 
@@ -239,7 +266,7 @@ function validateField(field: FormField, value: any, transport: TransportType): 
 /**
  * Convert form data to service definition
  */
-function formDataToService(data: FormData): ServiceDefinition {
+export function formDataToService(data: FormData): ServiceDefinition {
   const service: ServiceDefinition = {
     name: data.name.trim(),
     transport: data.transport,
@@ -284,6 +311,18 @@ function formDataToService(data: FormData): ServiceDefinition {
     }
   }
 
+  const phrases = data.triggerHintsPhrases
+    .split(',')
+    .map(p => p.trim())
+    .filter(p => p.length > 0);
+  const hints: NonNullable<ServiceDefinition['triggerHints']> = {};
+  if (data.triggerHintsStart.trim()) hints.onSessionStart = data.triggerHintsStart.trim();
+  if (data.triggerHintsEnd.trim()) hints.onSessionEnd = data.triggerHintsEnd.trim();
+  if (phrases.length > 0) hints.phrases = phrases;
+  if (Object.keys(hints).length > 0) {
+    service.triggerHints = hints;
+  }
+
   return service;
 }
 
@@ -314,6 +353,9 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
         maxConnections: service.connectionPool.maxConnections.toString(),
         idleTimeout: service.connectionPool.idleTimeout.toString(),
         connectionTimeout: service.connectionPool.connectionTimeout.toString(),
+        triggerHintsStart: service.triggerHints?.onSessionStart || '',
+        triggerHintsEnd: service.triggerHints?.onSessionEnd || '',
+        triggerHintsPhrases: service.triggerHints?.phrases?.join(', ') || '',
       };
     } else {
       return {
@@ -329,6 +371,9 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
         maxConnections: '5',
         idleTimeout: '60000',
         connectionTimeout: '30000',
+        triggerHintsStart: '',
+        triggerHintsEnd: '',
+        triggerHintsPhrases: '',
       };
     }
   });
@@ -344,6 +389,12 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   const fieldConfigs = getFieldConfigs(formData.transport);
   const requiredFields = fieldConfigs.filter(c => c.required).map(c => c.field);
   const connectionPoolFields: FormField[] = ['maxConnections', 'idleTimeout', 'connectionTimeout'];
+  const advancedOnlyFields: FormField[] = [
+    ...connectionPoolFields,
+    'triggerHintsStart',
+    'triggerHintsEnd',
+    'triggerHintsPhrases',
+  ];
 
   // Calculate visible fields based on terminal height
   const HEADER_LINES = 4;
@@ -408,8 +459,8 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   };
 
   const isFieldVisible = (config: FieldConfig): boolean => {
-    const isConnectionPool = connectionPoolFields.includes(config.field);
-    return (config.required || !isConnectionPool) || (showAdvanced && isConnectionPool);
+    const isAdvanced = advancedOnlyFields.includes(config.field);
+    return (config.required || !isAdvanced) || (showAdvanced && isAdvanced);
   };
 
   // Handle field navigation
@@ -586,8 +637,8 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   const renderField = (config: FieldConfig, isCurrent: boolean) => {
     const error = fieldErrors.get(config.field);
     const hasError = touched.has(config.field) && error;
-    const isConnectionPool = connectionPoolFields.includes(config.field);
-    const isVisible = (config.required || !isConnectionPool) || (showAdvanced && isConnectionPool);
+    const isAdvanced = advancedOnlyFields.includes(config.field);
+    const isVisible = (config.required || !isAdvanced) || (showAdvanced && isAdvanced);
 
     if (!isVisible) {
       return null;

@@ -13,16 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: ./.github/actions/setup
         with:
-          node-version: 18
-          registry-url: https://registry.npmjs.org
+          node-version: '22'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Configure npm registry
+        run: npm config set registry https://registry.npmjs.org
 
       - name: Fetch main branch
         run: git fetch origin main --depth=1
@@ -61,9 +60,6 @@ jobs:
       - name: Sync package version with tag
         run: npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version
 
-      # - name: Run tests
-      #   run: npm test
-
       - name: Build
         run: npm run build
 
@@ -73,7 +69,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Checkout main for version sync
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0

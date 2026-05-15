@@ -22,6 +22,7 @@ import { SessionManager, type SessionContext } from './session/session-manager.j
 import { MetricsService } from './metrics/service.js';
 import type { ConfigProvider } from './types/config.js';
 import type { RequestContext } from './types/context.js';
+import { collectServiceTriggerHints } from './protocol/smart-discovery-description.js';
 
 /**
  * Server Mode Runner class
@@ -500,10 +501,21 @@ export class ServerModeRunner {
       this.initializeConnectionPools();
 
       // Initialize protocol handler
+      let mergedToolDiscovery: ToolDiscoveryConfig | undefined;
+      if (this.options.toolDiscoveryConfig !== undefined) {
+        const aggregated = collectServiceTriggerHints(this.config.mcpServers);
+        mergedToolDiscovery = {
+          ...this.options.toolDiscoveryConfig,
+          serviceTriggerHints: {
+            ...aggregated,
+            ...(this.options.toolDiscoveryConfig.serviceTriggerHints ?? {}),
+          },
+        };
+      }
       this.protocolHandler = new McpProtocolHandler(this.toolRouter, {
         maxBatchSize: 100,
-        ...(this.options.toolDiscoveryConfig !== undefined && {
-          toolDiscoveryConfig: this.options.toolDiscoveryConfig,
+        ...(mergedToolDiscovery !== undefined && {
+          toolDiscoveryConfig: mergedToolDiscovery,
         }),
       });
 

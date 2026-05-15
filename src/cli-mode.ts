@@ -23,6 +23,7 @@ import type { RequestContext } from './types/context.js';
 import type { TagFilter } from './types/tool.js';
 import { randomUUID } from 'node:crypto';
 import { silenceStderrForShutdown } from './utils/silence-stderr-shutdown.js';
+import { collectServiceTriggerHints } from './protocol/smart-discovery-description.js';
 
 /**
  * CLI Mode Runner class
@@ -82,7 +83,15 @@ export class CliModeRunner {
       handlerOptions.tagFilter = tagFilterParam;
     }
     if (toolDiscoveryConfigParam) {
-      handlerOptions.toolDiscoveryConfig = toolDiscoveryConfigParam;
+      const aggregated = collectServiceTriggerHints(this.config.mcpServers);
+      const merged: ToolDiscoveryConfig = {
+        ...toolDiscoveryConfigParam,
+        serviceTriggerHints: {
+          ...aggregated,
+          ...(toolDiscoveryConfigParam.serviceTriggerHints ?? {}),
+        },
+      };
+      handlerOptions.toolDiscoveryConfig = merged;
     }
     this.protocolHandler = new McpProtocolHandler(this.toolRouter, handlerOptions);
   }
@@ -104,18 +113,31 @@ export class CliModeRunner {
       // Create connection pools for all enabled services
       await this.initializeConnectionPools();
 
-      // Verify connections for all enabled services in smart discovery mode
-      // This ensures services are reachable before accepting requests
+      // Pre-warm tool cache in smart discovery mode
       if (this.toolDiscoveryConfig?.smartDiscovery) {
-        console.error('Verifying connections for all enabled services...');
-        try {
-          await this.toolRouter.verifyConnections(this.tagFilter);
-          console.error('All connections verified successfully');
-        } catch (error) {
-          console.error(
-            `Connection verification failed: ${error instanceof Error ? error.message : String(error)}`
-          );
-          throw error;
+        if (this.toolDiscoveryConfig.eagerVerify) {
+          // Blocking: verify connections then warm tool cache before accepting requests
+          console.error('Verifying connections for all enabled services (eager)...');
+          try {
+            await this.toolRouter.verifyConnections(this.tagFilter);
+            console.error('All connections verified');
+          } catch (error) {
+            console.error(
+              `Connection verification failed: ${error instanceof Error ? error.message : String(error)}`
+            );
+            throw error;
+          }
+          console.error('Pre-warming tool cache...');
+          await this.toolRouter.discoverTools(this.tagFilter);
+          console.error('Tool cache warmed');
+        } else {
+          // Non-blocking: warm cache in background; first search_tools may wait briefly
+          console.error('Pre-warming tool cache in background...');
+          void this.toolRouter.discoverTools(this.tagFilter).catch((error: unknown) => {
+            console.error(
+              `Background cache warm-up failed: ${error instanceof Error ? error.message : String(error)}`
+            );
+          });
         }
       }
 

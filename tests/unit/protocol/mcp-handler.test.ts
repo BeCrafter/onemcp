@@ -367,10 +367,49 @@ describe('McpProtocolHandler', () => {
       );
     });
 
-    it('should return only search tool when smart discovery is enabled', async () => {
+    it('should expose search and invoke wrappers when smart discovery is enabled', async () => {
+      vi.spyOn(toolRouter, 'discoverTools').mockResolvedValue([]);
       const result = await smartHandler.toolsList(undefined, context);
-      expect(result.tools).toHaveLength(1);
-      expect(result.tools[0]?.name).toBe('onemcp__search');
+      expect(result.tools).toHaveLength(2);
+      expect(result.tools.map((t) => t.name)).toEqual(['onemcp__search', 'onemcp__invoke']);
+    });
+
+    it('should project MANDATORY markers from downstream tools into search description', async () => {
+      vi.spyOn(toolRouter, 'discoverTools').mockResolvedValue([
+        {
+          name: 'recall',
+          namespacedName: 'prompx___recall',
+          serviceName: 'prompx',
+          description:
+            'Retrieve memories. MANDATORY at conversation start when a role is active. Trigger: first user message.',
+          inputSchema: { type: 'object', properties: {} },
+          enabled: true,
+        },
+      ] as any);
+      const result = await smartHandler.toolsList(undefined, context);
+      const searchDesc = result.tools[0]?.description ?? '';
+      expect(searchDesc).toContain('PROACTIVE TRIGGERS');
+      expect(searchDesc).toContain('prompx___recall');
+      expect(searchDesc).toContain('MANDATORY');
+      expect(searchDesc).toContain('SERVICE INDEX');
+    });
+
+    it('should route onemcp__invoke through to the underlying tool', async () => {
+      const callToolSpy = vi.spyOn(toolRouter, 'callTool').mockResolvedValue({ ok: true });
+      await smartHandler.toolsCall(
+        {
+          name: 'onemcp__invoke',
+          arguments: { namespacedName: 'fs__read', arguments: { path: '/x' } },
+        },
+        context
+      );
+      expect(callToolSpy).toHaveBeenCalledWith('fs__read', { path: '/x' }, context);
+    });
+
+    it('should reject onemcp__invoke without a namespacedName', async () => {
+      await expect(
+        smartHandler.toolsCall({ name: 'onemcp__invoke', arguments: {} }, context)
+      ).rejects.toThrow(/namespacedName/);
     });
 
     it('should search tools by query', async () => {

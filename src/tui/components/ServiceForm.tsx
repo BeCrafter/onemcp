@@ -38,6 +38,9 @@ type FormField =
   | 'maxConnections'
   | 'idleTimeout'
   | 'connectionTimeout'
+  | 'triggerHintsStart'
+  | 'triggerHintsEnd'
+  | 'triggerHintsPhrases'
   | 'quickMode'
   | 'confirm';
 
@@ -52,7 +55,7 @@ const QUICK_MODE_HTTP_FIELDS: FormField[] = ['url', 'headers', 'tags', 'quickMod
 /**
  * Form data structure
  */
-interface FormData {
+export interface FormData {
   name: string;
   transport: TransportType;
   command: string;
@@ -65,6 +68,9 @@ interface FormData {
   maxConnections: string;
   idleTimeout: string;
   connectionTimeout: string;
+  triggerHintsStart: string;
+  triggerHintsEnd: string;
+  triggerHintsPhrases: string;
 }
 
 /**
@@ -90,12 +96,14 @@ function getFieldOrder(transport: TransportType, quickMode: boolean): FormField[
   if (transport === 'stdio') {
     return [
       'name', 'transport', 'command', 'args', 'env', 'tags',
-      'enabled', 'maxConnections', 'idleTimeout', 'connectionTimeout', 'confirm',
+      'enabled', 'maxConnections', 'idleTimeout', 'connectionTimeout',
+      'triggerHintsStart', 'triggerHintsEnd', 'triggerHintsPhrases', 'confirm',
     ];
   } else {
     return [
       'name', 'transport', 'url', 'headers', 'tags',
-      'enabled', 'maxConnections', 'idleTimeout', 'connectionTimeout', 'confirm',
+      'enabled', 'maxConnections', 'idleTimeout', 'connectionTimeout',
+      'triggerHintsStart', 'triggerHintsEnd', 'triggerHintsPhrases', 'confirm',
     ];
   }
 }
@@ -117,6 +125,9 @@ function getFieldLabel(field: FormField): string {
     maxConnections: 'Max Connections',
     idleTimeout: 'Idle Timeout (ms)',
     connectionTimeout: 'Connection Timeout (ms)',
+    triggerHintsStart: 'Trigger: On Session Start (optional)',
+    triggerHintsEnd: 'Trigger: On Session End (optional)',
+    triggerHintsPhrases: 'Trigger Phrases (comma-separated, optional)',
     confirm: 'Confirm',
     quickMode: 'Quick Mode',
   };
@@ -140,6 +151,9 @@ function getFieldHelp(field: FormField): string {
     maxConnections: 'Maximum number of concurrent connections (default: 5)',
     idleTimeout: 'Time before idle connections are closed (default: 60000)',
     connectionTimeout: 'Maximum time to wait for connection (default: 30000)',
+    triggerHintsStart: 'Reason the LLM should call this service at conversation start (e.g., "recall role memory").',
+    triggerHintsEnd: 'Reason the LLM should call this service before conversation ends (e.g., "persist new memory").',
+    triggerHintsPhrases: 'Extra trigger phrases the LLM should treat as a search signal (e.g., "我是X, switch role").',
     confirm: 'Review and save the configuration',
     quickMode: 'Use quick mode with defaults for advanced options',
   };
@@ -194,7 +208,7 @@ function validateFormData(data: FormData): ValidationError[] {
 /**
  * Convert form data to service definition
  */
-function formDataToService(data: FormData): ServiceDefinition {
+export function formDataToService(data: FormData): ServiceDefinition {
   const service: ServiceDefinition = {
     name: data.name.trim(),
     transport: data.transport,
@@ -239,6 +253,18 @@ function formDataToService(data: FormData): ServiceDefinition {
     }
   }
 
+  const phrases = data.triggerHintsPhrases
+    .split(',')
+    .map(p => p.trim())
+    .filter(p => p.length > 0);
+  const hints: NonNullable<ServiceDefinition['triggerHints']> = {};
+  if (data.triggerHintsStart.trim()) hints.onSessionStart = data.triggerHintsStart.trim();
+  if (data.triggerHintsEnd.trim()) hints.onSessionEnd = data.triggerHintsEnd.trim();
+  if (phrases.length > 0) hints.phrases = phrases;
+  if (Object.keys(hints).length > 0) {
+    service.triggerHints = hints;
+  }
+
   return service;
 }
 
@@ -269,6 +295,9 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
         maxConnections: service.connectionPool.maxConnections.toString(),
         idleTimeout: service.connectionPool.idleTimeout.toString(),
         connectionTimeout: service.connectionPool.connectionTimeout.toString(),
+        triggerHintsStart: service.triggerHints?.onSessionStart || '',
+        triggerHintsEnd: service.triggerHints?.onSessionEnd || '',
+        triggerHintsPhrases: service.triggerHints?.phrases?.join(', ') || '',
       };
     } else {
       return {
@@ -284,6 +313,9 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
         maxConnections: '5',
         idleTimeout: '60000',
         connectionTimeout: '30000',
+        triggerHintsStart: '',
+        triggerHintsEnd: '',
+        triggerHintsPhrases: '',
       };
     }
   });

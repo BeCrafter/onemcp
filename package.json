@@ -32,7 +32,8 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "clean": "node -e \"require('fs').rmSync('dist', {recursive:true, force:true})\"",
-    "prepublishOnly": "npm run clean && npm run build"
+    "prepublishOnly": "npm run clean && npm run build",
+    "prepare": "husky"
   },
   "keywords": [
     "mcp",
@@ -81,6 +82,7 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.1.2",
     "fast-check": "^3.15.0",
+    "husky": "^9.1.7",
     "node-pty": "^1.1.0",
     "nodemon": "^3.0.2",
     "prettier": "^3.1.1",

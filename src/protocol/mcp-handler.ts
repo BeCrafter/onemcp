@@ -17,7 +17,13 @@ import type { ToolDiscoveryConfig } from '../types/config.js';
 import { ErrorCode } from '../types/jsonrpc.js';
 import { ErrorBuilder } from '../errors/error-builder.js';
 import { getPackageVersion } from '../utils/package-version.js';
-import { SEARCH_TOOL_DEFINITION, searchTools } from './tool-search.js';
+import {
+  INVOKE_TOOL_DEFINITION,
+  SEARCH_DESCRIPTION_PREAMBLE,
+  SEARCH_TOOL_DEFINITION,
+  searchTools,
+} from './tool-search.js';
+import { buildSmartDiscoverySearchDescription } from './smart-discovery-description.js';
 
 /**
  * MCP initialize parameters
@@ -165,12 +171,26 @@ export class McpProtocolHandler {
     // Per-session header overrides server default; fall back to server-level config
     const smartDiscovery = _context.smartDiscovery ?? this.toolDiscoveryConfig.smartDiscovery;
     if (smartDiscovery) {
+      const tagFilter = params?.tagFilter ?? _context.tagFilter ?? this.tagFilter;
+      const allTools = await this.toolRouter.discoverTools(tagFilter);
+      const dynamicDescription = buildSmartDiscoverySearchDescription(
+        SEARCH_DESCRIPTION_PREAMBLE,
+        allTools,
+        this.toolDiscoveryConfig.serviceTriggerHints,
+        this.toolDiscoveryConfig.descriptionBudgetBytes
+      );
       return {
         tools: [
           {
             name: SEARCH_TOOL_DEFINITION.name,
-            description: SEARCH_TOOL_DEFINITION.description,
+            description: dynamicDescription,
             inputSchema: SEARCH_TOOL_DEFINITION.inputSchema,
+            enabled: true,
+          },
+          {
+            name: INVOKE_TOOL_DEFINITION.name,
+            description: INVOKE_TOOL_DEFINITION.description,
+            inputSchema: INVOKE_TOOL_DEFINITION.inputSchema,
             enabled: true,
           },
         ],
@@ -217,12 +237,34 @@ export class McpProtocolHandler {
       const args = params.arguments ?? {};
       const query = args['query'] ?? '';
       const limit = args['limit'];
-      const searchParams = {
+      const searchParams: {
+        query: string;
+        limit: number;
+        searchDescription: boolean;
+        synonyms?: Record<string, string[]>;
+      } = {
         query: String(query),
         limit: typeof limit === 'number' ? limit : (this.toolDiscoveryConfig.maxResults ?? 10),
         searchDescription: this.toolDiscoveryConfig.searchDescription ?? true,
       };
+      if (this.toolDiscoveryConfig.synonyms) {
+        searchParams.synonyms = this.toolDiscoveryConfig.synonyms;
+      }
       return searchTools(allTools, searchParams);
+    }
+
+    if (params.name === INVOKE_TOOL_DEFINITION.name) {
+      const args = params.arguments ?? {};
+      const target = typeof args['namespacedName'] === 'string' ? args['namespacedName'] : '';
+      if (!target) {
+        throw new Error('onemcp__invoke: namespacedName is required');
+      }
+      const innerRaw = args['arguments'];
+      const innerArgs =
+        innerRaw && typeof innerRaw === 'object' && !Array.isArray(innerRaw)
+          ? (innerRaw as Record<string, unknown>)
+          : {};
+      return this.toolRouter.callTool(target, innerArgs, context);
     }
 
     const result = await this.toolRouter.callTool(params.name, params.arguments ?? {}, context);
