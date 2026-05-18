@@ -51,6 +51,18 @@ export interface ServiceDefinition {
 
   /** Tool enable/disable states (pattern -> enabled) */
   toolStates?: Record<string, boolean>;
+
+  /**
+   * Optional trigger hints surfaced in the smart-discovery search description.
+   * Use these when the upstream tool descriptions don't already advertise
+   * MANDATORY/Must-Check style markers but the LLM should still call search
+   * proactively for this service.
+   */
+  triggerHints?: {
+    onSessionStart?: string;
+    onSessionEnd?: string;
+    phrases?: string[];
+  };
 }
 
 /**

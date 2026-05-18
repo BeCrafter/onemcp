@@ -28,6 +28,7 @@ interface CliArgs {
   logLevel?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | undefined;
   tag?: string | undefined;
   'smart-discovery'?: boolean | undefined;
+  'eager-verify'?: boolean | undefined;
   help?: boolean | undefined;
   version?: boolean | undefined;
   validate?: boolean | undefined;
@@ -200,6 +201,9 @@ function parseCliArgs(): CliArgs {
         'smart-discovery': {
           type: 'boolean',
         },
+        'eager-verify': {
+          type: 'boolean',
+        },
         help: {
           type: 'boolean',
           short: 'h',
@@ -239,6 +243,7 @@ function parseCliArgs(): CliArgs {
       logLevel: values['log-level'] as 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | undefined,
       tag: values.tag,
       'smart-discovery': values['smart-discovery'],
+      'eager-verify': values['eager-verify'],
       help: values.help,
       version: values.version,
       validate: values.validate,
@@ -568,8 +573,12 @@ async function main(): Promise<void> {
           smartDiscovery: args['smart-discovery'],
           maxResults: 10,
           searchDescription: true,
+          eagerVerify: args['eager-verify'] ?? false,
         };
         console.error(`Smart tool discovery: ${args['smart-discovery'] ? 'enabled' : 'disabled'}`);
+        if (args['eager-verify']) {
+          console.error('Eager connection verification: enabled');
+        }
       }
 
       const runner = new CliModeRunner(config, configProvider, tagFilter, toolDiscoveryConfig);
@@ -648,8 +657,12 @@ async function main(): Promise<void> {
           smartDiscovery: args['smart-discovery'],
           maxResults: 10,
           searchDescription: true,
+          eagerVerify: args['eager-verify'] ?? false,
         };
         console.error(`Smart tool discovery: ${args['smart-discovery'] ? 'enabled' : 'disabled'}`);
+        if (args['eager-verify']) {
+          console.error('Eager connection verification: enabled');
+        }
       }
 
       const runner = new ServerModeRunner(config, configProvider, runnerOptions);

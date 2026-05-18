@@ -52,3 +52,4 @@ config.json
 backup/
 *.bak
 .sisyphus
+.omc/

@@ -21,7 +21,7 @@ export interface ServiceJsonEditorProps {
 /**
  * Validation result
  */
-interface ValidationResult {
+export interface ValidationResult {
   valid: boolean;
   errors: string[];
   services?: ServiceDefinition[];
@@ -30,7 +30,7 @@ interface ValidationResult {
 /**
  * Validate JSON and parse services
  */
-function validateJson(jsonText: string): ValidationResult {
+export function validateJson(jsonText: string): ValidationResult {
   if (!jsonText.trim()) {
     return {
       valid: false,
@@ -80,6 +80,14 @@ function validateJson(jsonText: string): ValidationResult {
 
           if (config.toolStates) {
             service.toolStates = config.toolStates;
+          }
+
+          if (
+            config.triggerHints &&
+            typeof config.triggerHints === 'object' &&
+            !Array.isArray(config.triggerHints)
+          ) {
+            service.triggerHints = config.triggerHints as NonNullable<ServiceDefinition['triggerHints']>;
           }
 
           return service;

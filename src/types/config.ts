@@ -3,6 +3,7 @@
  */
 
 import type { ServiceDefinition, ConnectionPoolConfig } from './service.js';
+import type { TriggerHints } from '../protocol/smart-discovery-description.js';
 
 /**
  * Deployment mode
@@ -99,6 +100,30 @@ export interface ToolDiscoveryConfig {
   maxResults?: number;
   /** Whether to search in tool descriptions (default: true) */
   searchDescription?: boolean;
+  /**
+   * When true, block startup until all service connections are verified and tool cache is warm.
+   * When false (default), pre-warm the cache in the background without blocking startup.
+   */
+  eagerVerify?: boolean;
+  /**
+   * Custom synonym mappings to extend the built-in synonym table.
+   * Key: query term (lowercase); Value: array of equivalent terms.
+   * Example: { "deploy": ["publish", "release", "push"] }
+   */
+  synonyms?: Record<string, string[]>;
+  /**
+   * Per-service trigger hints surfaced in the smart-discovery search description.
+   * Key: service name (matches `mcpServers` entry). Value: hints injected into the
+   * PROACTIVE TRIGGERS / TRIGGER PHRASES sections in addition to whatever the
+   * heuristic extractor finds in each tool's own description.
+   */
+  serviceTriggerHints?: Record<string, TriggerHints>;
+  /**
+   * Maximum length (in characters) of the dynamically composed search description.
+   * Lower-priority service entries are dropped first when the budget is exceeded.
+   * Defaults to 8000.
+   */
+  descriptionBudgetBytes?: number;
 }
 
 /**
