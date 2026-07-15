@@ -510,6 +510,10 @@ export class ConnectionPool extends EventEmitter {
       const transport = new HttpTransport(config);
       // Wait for SSE connection to be ready (endpoint event received or fallback timeout)
       await transport.waitForReady();
+      // Verify transport is actually connected after ready promise resolves
+      if (!transport.isConnected()) {
+        throw new Error('SSE connection failed: transport not in connected state');
+      }
       return transport;
     } else if (this.service.transport === 'http') {
       // Create HTTP transport
@@ -577,7 +581,7 @@ export class ConnectionPool extends EventEmitter {
     // Send initialized notification per MCP protocol spec
     const initializedNotification = {
       jsonrpc: '2.0' as const,
-      method: 'initialized',
+      method: 'notifications/initialized',
       params: {},
     };
     await connection.transport.send(initializedNotification);

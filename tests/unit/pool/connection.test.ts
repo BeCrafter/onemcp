@@ -23,6 +23,7 @@ describe('Connection utilities', () => {
       receive: vi.fn(),
       close: vi.fn(),
       getType: vi.fn().mockReturnValue('stdio'),
+      isConnected: vi.fn().mockReturnValue(true),
     } as unknown as Transport;
   });
 

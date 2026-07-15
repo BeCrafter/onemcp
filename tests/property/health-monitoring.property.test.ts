@@ -39,6 +39,7 @@ vi.mock('../../src/transport/stdio.js', () => {
       });
       this.close = vi.fn().mockResolvedValue(undefined);
       this.getType = vi.fn().mockReturnValue('stdio');
+      this.isConnected = vi.fn().mockReturnValue(true);
       this.process = { killed: false, exitCode: null };
       return this;
     }),
@@ -65,6 +66,7 @@ vi.mock('../../src/transport/http.js', () => {
       });
       this.close = vi.fn().mockResolvedValue(undefined);
       this.getType = vi.fn().mockReturnValue('http');
+      this.isConnected = vi.fn().mockReturnValue(true);
       return this;
     }),
   };

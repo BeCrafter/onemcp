@@ -934,6 +934,7 @@ describe('ToolRouter', () => {
         }),
         close: vi.fn(),
         getType: vi.fn().mockReturnValue('stdio'),
+        isConnected: vi.fn().mockReturnValue(true),
       };
 
       const mockConnection = {
@@ -1241,6 +1242,7 @@ describe('ToolRouter', () => {
         }),
         close: vi.fn(),
         getType: vi.fn().mockReturnValue('stdio'),
+        isConnected: vi.fn().mockReturnValue(true),
       };
 
       const mockConnection = {
@@ -1321,6 +1323,7 @@ describe('ToolRouter', () => {
         receive: vi.fn(),
         close: vi.fn(),
         getType: vi.fn().mockReturnValue('stdio'),
+        isConnected: vi.fn().mockReturnValue(true),
       };
 
       const mockConnection = {
@@ -1408,6 +1411,7 @@ describe('ToolRouter', () => {
         }),
         close: vi.fn(),
         getType: vi.fn().mockReturnValue('stdio'),
+        isConnected: vi.fn().mockReturnValue(true),
       };
 
       const mockConnection = {
@@ -1484,6 +1488,7 @@ describe('ToolRouter', () => {
         receive: vi.fn(),
         close: vi.fn(),
         getType: vi.fn().mockReturnValue('stdio'),
+        isConnected: vi.fn().mockReturnValue(true),
       };
 
       const mockConnection = {

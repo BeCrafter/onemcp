@@ -28,4 +28,9 @@ export interface Transport {
    * Get the transport type
    */
   getType(): TransportType;
+
+  /**
+   * Check if transport is in connected state
+   */
+  isConnected(): boolean;
 }

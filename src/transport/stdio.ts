@@ -127,16 +127,24 @@ export class StdioTransport extends BaseTransport {
   }
 
   /**
-   * Handle stdout data and parse JSON-RPC messages
+   * Handle stdout data and parse JSON-RPC messages.
+   *
+   * Supports two framing formats:
+   *   1. NDJSON: newline-delimited JSON (one complete JSON object per line)
+   *   2. Content-Length: length-prefixed messages per MCP stdio transport spec
+   *      Header: Content-Length: N\r\n\r\n followed by N bytes of JSON body
    */
   private handleStdoutData(chunk: string): void {
     this.messageBuffer += chunk;
 
-    // Parse complete JSON messages from buffer
-    // Messages are separated by newlines
-    const lines = this.messageBuffer.split('\n');
+    // Try Content-Length prefix framing first (standard MCP stdio format)
+    const clParsed = this.tryParseContentLengthFrames();
+    if (clParsed > 0) {
+      return; // parsed at least one message via Content-Length framing
+    }
 
-    // Keep the last incomplete line in the buffer
+    // Fall back to NDJSON: split on newlines
+    const lines = this.messageBuffer.split('\n');
     this.messageBuffer = lines.pop() || '';
 
     for (const line of lines) {
@@ -147,10 +155,54 @@ export class StdioTransport extends BaseTransport {
           this.enqueueMessage(message);
         } catch (error) {
           console.error(`Failed to parse JSON-RPC message: ${trimmed}`, error);
-          // Continue processing other messages
         }
       }
     }
+  }
+
+  /**
+   * Attempt to parse Content-Length prefixed frames from the message buffer.
+   * Returns the number of messages successfully parsed.
+   *
+   * Format: Content-Length: <N>\r\n\r\n<JSON body of N bytes>
+   */
+  private tryParseContentLengthFrames(): number {
+    const HEADER_RE = /Content-Length:\s*(\d+)\r\n\r\n/;
+    let parsed = 0;
+
+    while (true) {
+      const match = HEADER_RE.exec(this.messageBuffer);
+      if (!match) break;
+
+      const contentLength = parseInt(match[1]!, 10);
+      if (isNaN(contentLength) || contentLength <= 0) {
+        // Invalid header — strip it and continue
+        this.messageBuffer = this.messageBuffer.slice(match.index + match[0].length);
+        continue;
+      }
+
+      const headerEnd = match.index + match[0].length;
+      const bodyStart = headerEnd;
+
+      if (this.messageBuffer.length - bodyStart < contentLength) {
+        // Not enough data yet — wait for more
+        break;
+      }
+
+      const body = this.messageBuffer.slice(bodyStart, bodyStart + contentLength);
+      this.messageBuffer = this.messageBuffer.slice(bodyStart + contentLength);
+
+      try {
+        const message = JSON.parse(body) as JsonRpcMessage;
+        this.enqueueMessage(message);
+        parsed++;
+      } catch (error) {
+        console.error('Failed to parse Content-Length framed JSON-RPC message:', error);
+        // Continue trying to parse subsequent frames
+      }
+    }
+
+    return parsed;
   }
 
   /**

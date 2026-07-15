@@ -28,6 +28,7 @@ vi.mock('../../../src/transport/stdio.js', () => {
       });
       this.close = vi.fn().mockResolvedValue(undefined);
       this.getType = vi.fn().mockReturnValue('stdio');
+      this.isConnected = vi.fn().mockReturnValue(true);
       this.process = { killed: false, exitCode: null }; // Add process property for health checks
       return this;
     }),
@@ -54,6 +55,7 @@ vi.mock('../../../src/transport/http.js', () => {
       });
       this.close = vi.fn().mockResolvedValue(undefined);
       this.getType = vi.fn().mockReturnValue('http');
+      this.isConnected = vi.fn().mockReturnValue(true);
       return this;
     }),
   };
@@ -304,6 +306,7 @@ describe('ConnectionPool', () => {
         receive: vi.fn(),
         close: vi.fn().mockResolvedValue(undefined),
         getType: vi.fn().mockReturnValue('stdio'),
+        isConnected: vi.fn().mockReturnValue(true),
       };
 
       const unknownConnection = {
@@ -497,6 +500,7 @@ describe('ConnectionPool', () => {
               receive: vi.fn(),
               close: vi.fn().mockResolvedValue(undefined),
               getType: vi.fn().mockReturnValue('stdio'),
+        isConnected: vi.fn().mockReturnValue(true),
             });
           }, 10000);
         });
@@ -599,6 +603,7 @@ describe('ConnectionPool', () => {
         });
         this.close = vi.fn().mockResolvedValue(undefined);
         this.getType = vi.fn().mockReturnValue('stdio');
+        this.isConnected = vi.fn().mockReturnValue(true);
         this.process = { killed: false, exitCode: null };
         return this;
       });
@@ -671,6 +676,7 @@ describe('ConnectionPool', () => {
         receive: vi.fn(),
         close: vi.fn().mockResolvedValue(undefined),
         getType: vi.fn().mockReturnValue('stdio'),
+        isConnected: vi.fn().mockReturnValue(true),
       };
 
       const unknownConnection = {

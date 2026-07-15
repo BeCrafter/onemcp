@@ -62,12 +62,15 @@ export class HttpTransport extends BaseTransport {
 
     if (config.mode === 'sse') {
       // connectionReady always resolves (never rejects) to avoid unhandled rejections.
-      // Connection errors are emitted via the 'error' event and checked in doSend via state.
+      // Connection errors are emitted via the 'error' event and checked via isConnected().
       const inner = new Promise<void>((resolve, reject) => {
         this.connectionReadyResolve = resolve;
         this.connectionReadyReject = reject;
       });
-      this.connectionReady = inner.catch(() => {});
+      this.connectionReady = inner.catch(() => {
+        // rejections are caught here to prevent unhandled rejections;
+        // callers use isConnected() to detect connection failures.
+      });
       this.initializeSSE();
     } else {
       // For HTTP mode, mark as connected immediately
@@ -328,7 +331,6 @@ export class HttpTransport extends BaseTransport {
                   const jsonData = line.substring(5).trim(); // Remove "data:" prefix
                   const responseMessage = JSON.parse(jsonData) as JsonRpcMessage;
                   this.enqueueMessage(responseMessage);
-                  break; // Only process first data line
                 }
               }
             } else {
