@@ -1583,8 +1583,11 @@ describe('ToolRouter', () => {
       toolRouter.registerConnectionPool('service1', mockPool1);
       toolRouter.registerConnectionPool('service2', mockPool2);
 
-      // Call verifyConnections - should not throw
-      await expect(toolRouter.verifyConnections()).resolves.not.toThrow();
+      // Call verifyConnections - should return success results
+      const result = await toolRouter.verifyConnections();
+
+      expect(result.succeeded).toEqual(['service1', 'service2']);
+      expect(result.failed).toHaveLength(0);
 
       // Verify each pool was acquired and released
       expect(mockPool1.acquire).toHaveBeenCalled();
@@ -1632,8 +1635,11 @@ describe('ToolRouter', () => {
 
       toolRouter.registerConnectionPool('enabled-service', mockPool);
 
-      // Call verifyConnections - should not throw
-      await expect(toolRouter.verifyConnections()).resolves.not.toThrow();
+      // Call verifyConnections - should return success results
+      const result = await toolRouter.verifyConnections();
+
+      expect(result.succeeded).toEqual(['enabled-service']);
+      expect(result.failed).toHaveLength(0);
 
       // Verify only enabled service pool was used
       expect(mockPool.acquire).toHaveBeenCalled();
@@ -1657,10 +1663,13 @@ describe('ToolRouter', () => {
 
       await serviceRegistry.register(service);
 
-      // Call verifyConnections - should throw
-      await expect(toolRouter.verifyConnections()).rejects.toThrow(
-        'No connection pool registered for service: service-no-pool'
-      );
+      // Call verifyConnections - should return failure results
+      const result = await toolRouter.verifyConnections();
+
+      expect(result.succeeded).toHaveLength(0);
+      expect(result.failed).toHaveLength(1);
+      expect(result.failed[0]?.service).toBe('service-no-pool');
+      expect(result.failed[0]?.error).toContain('No connection pool registered for service');
     });
 
     it('should throw error when connection acquisition fails', async () => {
@@ -1688,10 +1697,13 @@ describe('ToolRouter', () => {
 
       toolRouter.registerConnectionPool('service-fail', mockPool);
 
-      // Call verifyConnections - should throw
-      await expect(toolRouter.verifyConnections()).rejects.toThrow(
-        'Failed to verify connections for 1 service(s)'
-      );
+      // Call verifyConnections - should return failure results
+      const result = await toolRouter.verifyConnections();
+
+      expect(result.succeeded).toHaveLength(0);
+      expect(result.failed).toHaveLength(1);
+      expect(result.failed[0]?.service).toBe('service-fail');
+      expect(result.failed[0]?.error).toContain('Connection failed');
     });
 
     it('should filter services by tag filter', async () => {
@@ -1740,9 +1752,10 @@ describe('ToolRouter', () => {
       toolRouter.registerConnectionPool('service2', mockPool2);
 
       // Call verifyConnections with tag filter - should only verify service1
-      await expect(
-        toolRouter.verifyConnections({ tags: ['tag1'], logic: 'AND' })
-      ).resolves.not.toThrow();
+      const result = await toolRouter.verifyConnections({ tags: ['tag1'], logic: 'AND' });
+
+      expect(result.succeeded).toEqual(['service1']);
+      expect(result.failed).toHaveLength(0);
 
       // Verify only service1 pool was used
       expect(mockPool1.acquire).toHaveBeenCalled();
@@ -1816,10 +1829,12 @@ describe('ToolRouter', () => {
       toolRouter.registerConnectionPool('service2', mockPool2);
       toolRouter.registerConnectionPool('service3', mockPool3);
 
-      // Call verifyConnections - should throw with both failures
-      await expect(toolRouter.verifyConnections()).rejects.toThrow(
-        'Failed to verify connections for 2 service(s)'
-      );
+      // Call verifyConnections - should return results with failures
+      const result = await toolRouter.verifyConnections();
+
+      expect(result.succeeded).toEqual(['service3']);
+      expect(result.failed).toHaveLength(2);
+      expect(result.failed.map((f) => f.service).sort()).toEqual(['service1', 'service2']);
     });
   });
 

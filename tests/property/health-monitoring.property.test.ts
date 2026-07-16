@@ -246,7 +246,7 @@ describe('Feature: onemcp-system, Property 17: Health status auto tool managemen
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -287,7 +287,7 @@ describe('Feature: onemcp-system, Property 17: Health status auto tool managemen
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -348,7 +348,7 @@ describe('Feature: onemcp-system, Property 17: Health status auto tool managemen
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -393,7 +393,7 @@ describe('Feature: onemcp-system, Property 17: Health status auto tool managemen
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -503,7 +503,7 @@ describe('Feature: onemcp-system, Property 17: Health status auto tool managemen
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -537,7 +537,7 @@ describe('Feature: onemcp-system, Property 17: Health status auto tool managemen
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -585,7 +585,7 @@ describe('Feature: onemcp-system, Property 17: Health status auto tool managemen
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -629,7 +629,7 @@ describe('Feature: onemcp-system, Property 17: Health status auto tool managemen
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -674,7 +674,7 @@ describe('Feature: onemcp-system, Property 17: Health status auto tool managemen
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });

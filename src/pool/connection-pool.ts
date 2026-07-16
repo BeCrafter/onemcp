@@ -21,6 +21,7 @@ import { StdioTransport } from '../transport/stdio.js';
 import { HttpTransport, type HttpTransportConfig } from '../transport/http.js';
 import { getPackageVersion } from '../utils/package-version.js';
 import { EventEmitter } from 'events';
+import * as log from '../utils/logger.js';
 
 /**
  * Connection pool error class
@@ -221,7 +222,7 @@ export class ConnectionPool extends EventEmitter {
   public release(connection: Connection): void {
     if (this.closed) {
       // If pool is closed, close the connection
-      void this.closeConnection(connection);
+      void this.closeConnection(connection).catch(() => {});
       return;
     }
 
@@ -419,15 +420,24 @@ export class ConnectionPool extends EventEmitter {
       const transport = await this.createTransportWithTimeout();
       const connection = createConnection(id, transport);
 
+      // Listen for transport errors to prevent unhandled error events
+      transport.on('error', (error: unknown) => {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log.info(`[${this.service.name}] Transport error: ${errorMessage}`);
+        this.emit('error', error);
+      });
+
       // Initialize the MCP connection
       await this.initializeMCPConnection(connection);
 
       this.emit('created', id);
       return connection;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log.info(`[${this.service.name}] Failed to create connection: ${errorMessage}`);
       this.emit('error', error);
       throw new ConnectionPoolError(
-        `Failed to create connection: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to create connection: ${errorMessage}`,
         'CONNECTION_FAILED',
         error instanceof Error ? error : undefined
       );
@@ -647,7 +657,7 @@ export class ConnectionPool extends EventEmitter {
     // Then, if there are still queued requests and we're under the limit,
     // create new connections asynchronously
     if (this.queue.length > 0 && this.connections.size < this.config.maxConnections) {
-      void this.createConnectionsForQueue();
+      void this.createConnectionsForQueue().catch(() => {});
     }
   }
 
@@ -755,7 +765,7 @@ export class ConnectionPool extends EventEmitter {
 
     for (const connection of connectionsToClose) {
       this.emit('idleTimeout', connection.id);
-      void this.closeConnection(connection);
+      void this.closeConnection(connection).catch(() => {});
     }
   }
 }

@@ -24,6 +24,7 @@ import { ErrorCode } from '../types/jsonrpc.js';
 import { enhanceDescription } from '../protocol/description-enhancer.js';
 import Ajv from 'ajv';
 import { EventEmitter } from 'events';
+import * as log from '../utils/logger.js';
 
 /** Default timeout for a single service's tools/list during discovery (ms) */
 const DEFAULT_DISCOVERY_TIMEOUT_MS = 30_000;
@@ -109,10 +110,11 @@ export class ToolRouter extends EventEmitter {
    * the lazy loading benefits of smart discovery.
    *
    * @param tagFilter - Optional tag filter to limit which services to verify
-   * @returns Promise resolving when all connections are verified
-   * @throws Error if any service connection fails
+   * @returns Promise resolving with verification results (succeeded and failed services)
    */
-  public async verifyConnections(tagFilter?: TagFilter): Promise<void> {
+  public async verifyConnections(
+    tagFilter?: TagFilter
+  ): Promise<{ succeeded: string[]; failed: Array<{ service: string; error: string }> }> {
     let services: ServiceDefinition[];
     if (tagFilter) {
       const matchAll = tagFilter.logic === 'AND';
@@ -123,56 +125,58 @@ export class ToolRouter extends EventEmitter {
 
     const enabledServices = services.filter((service) => service.enabled);
 
-    const results = await this.runWithConcurrencyLimit(
-      enabledServices,
-      MAX_CONCURRENT_DISCOVERY,
-      async (service) => {
-        const pool = this.connectionPools.get(service.name);
-        if (!pool) {
-          throw new Error(`No connection pool registered for service: ${service.name}`);
-        }
+    const succeeded: string[] = [];
+    const failed: Array<{ service: string; error: string }> = [];
 
-        try {
-          // Acquire a connection to establish and verify the connection
-          const connection = await pool.acquire();
-          // Immediately release the connection back to the pool
-          pool.release(connection);
-          return { service: service.name, success: true };
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          return {
-            service: service.name,
-            success: false,
-            error: errorMessage,
-          };
-        }
+    const verifyService = async (service: ServiceDefinition): Promise<void> => {
+      const pool = this.connectionPools.get(service.name);
+      if (!pool) {
+        failed.push({
+          service: service.name,
+          error: 'No connection pool registered for service',
+        });
+        return;
       }
-    );
 
-    // Check for failures and throw if any service failed to connect
-    const failures: Array<{ service: string; error: string }> = [];
-
-    for (const result of results) {
-      if (result.status === 'rejected') {
-        const errorMessage =
-          result.reason instanceof Error ? result.reason.message : String(result.reason);
-        failures.push({ service: 'unknown', error: errorMessage });
-      } else if (result.status === 'fulfilled' && !result.value.success) {
-        failures.push({
-          service: result.value.service,
-          error: result.value.error ?? 'Unknown error',
+      try {
+        // Acquire a connection to establish and verify the connection
+        const connection = await pool.acquire();
+        // Immediately release the connection back to the pool
+        pool.release(connection);
+        succeeded.push(service.name);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        failed.push({
+          service: service.name,
+          error: errorMessage,
         });
       }
-    }
+    };
 
-    if (failures.length > 0) {
-      const failureDetails = failures
-        .map((failure) => `${failure.service}: ${failure.error}`)
-        .join('\n  ');
-      throw new Error(
-        `Failed to verify connections for ${failures.length} service(s):\n  ${failureDetails}`
-      );
-    }
+    // Verify all services with concurrency limit
+    const runOne = async (
+      index: number,
+      items: ServiceDefinition[],
+      limit: number
+    ): Promise<void> => {
+      const i = index;
+      if (i >= items.length) {
+        return;
+      }
+      const item = items[i];
+      if (item === undefined) {
+        return;
+      }
+      await verifyService(item);
+      await runOne(index + limit, items, limit);
+    };
+
+    const concurrency = Math.min(MAX_CONCURRENT_DISCOVERY, enabledServices.length);
+    await Promise.all(
+      Array.from({ length: concurrency }, (_, i) => runOne(i, enabledServices, concurrency))
+    );
+
+    return { succeeded, failed };
   }
 
   /**
@@ -316,9 +320,8 @@ export class ToolRouter extends EventEmitter {
         }
       } else {
         const reason: unknown = result.reason;
-        console.error(
-          `Failed to discover tools from service "${service.name}":`,
-          reason instanceof Error ? reason.message : String(reason)
+        log.error(
+          `Failed to discover tools from service "${service.name}": ${reason instanceof Error ? reason.message : String(reason)}`
         );
         this.emit('toolDiscoveryError', service.name, reason);
       }
@@ -538,7 +541,7 @@ export class ToolRouter extends EventEmitter {
   ): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> {
     const responseIterator = connection.transport.receive();
 
-    while (true) {
+    for (;;) {
       const nextResult = await responseIterator.next();
 
       if (nextResult.done || !nextResult.value) {

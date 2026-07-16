@@ -51,6 +51,8 @@ describe('StdioTransport', () => {
   beforeEach(() => {
     mockProcess = createMockProcess();
     vi.mocked(spawn).mockReturnValue(mockProcess);
+    // Suppress expected console.error from JSON parse failures in tests
+    vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(async () => {
@@ -443,17 +445,17 @@ describe('StdioTransport', () => {
     });
 
     it('should log stderr output', async () => {
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const stderrWriteSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
       mockProcess.stderr.emit('data', 'Error message from process\n');
 
       await new Promise((resolve) => setImmediate(resolve));
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect(stderrWriteSpy).toHaveBeenCalledWith(
         expect.stringContaining('Error message from process')
       );
 
-      consoleErrorSpy.mockRestore();
+      stderrWriteSpy.mockRestore();
     });
   });
 

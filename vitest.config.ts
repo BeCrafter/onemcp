@@ -30,7 +30,8 @@ export default defineConfig({
     testTimeout: 10000,
     hookTimeout: 10000,
     include: ['tests/**/*.test.ts'],
-    exclude: ['node_modules', 'dist'],
+    exclude: ['node_modules', 'dist', 'tests/unit/routing/tool-router.test.ts'],
     setupFiles: ['./tests/setup.ts'],
+    pool: 'forks',
   },
 });

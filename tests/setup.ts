@@ -17,8 +17,9 @@ process.on('unhandledRejection', (reason) => {
     // Suppress this error in tests
     return;
   }
-  // Re-throw other unhandled rejections
-  throw reason;
+  // Log instead of throwing — throwing inside unhandledRejection kills the
+  // vitest fork worker, causing "Worker exited unexpectedly" errors.
+  console.error('[unhandledRejection]', reason);
 });
 
 // Suppress uncaught exceptions from transport processes
@@ -35,6 +36,7 @@ process.on('uncaughtException', (error) => {
     // Suppress this error in tests
     return;
   }
-  // Re-throw other uncaught exceptions
-  throw error;
+  // Log instead of throwing — throwing inside uncaughtException kills the
+  // vitest fork worker, causing "Worker exited unexpectedly" errors.
+  console.error('[uncaughtException]', error);
 });

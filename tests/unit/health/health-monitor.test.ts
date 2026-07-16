@@ -514,10 +514,11 @@ describe('HealthMonitor', () => {
         acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
       });
 
-      await healthMonitor.registerConnectionPool('test-service', pool);
-
+      // Set up the spy before registering the pool to catch the initial event
       const serviceUnhealthySpy = vi.fn();
       healthMonitor.on('serviceUnhealthy', serviceUnhealthySpy);
+
+      await healthMonitor.registerConnectionPool('test-service', pool);
 
       // Start heartbeat with threshold of 2 (registration already counted as 1 failure)
       healthMonitor.startHeartbeat(50, 2);

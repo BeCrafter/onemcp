@@ -2,7 +2,7 @@
  * Unit tests for FileConfigProvider
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -714,6 +714,17 @@ describe('FileConfigProvider', () => {
   });
 
   describe('watch()', () => {
+    // Suppress console.error from expected config validation failures in tests
+    let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      consoleErrorSpy.mockRestore();
+    });
+
     it('should return unwatch function', () => {
       // Act
       const unwatch = provider.watch(() => {});

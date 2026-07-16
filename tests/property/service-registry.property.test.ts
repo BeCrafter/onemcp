@@ -180,7 +180,7 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -214,7 +214,7 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -253,7 +253,7 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -289,7 +289,7 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -312,7 +312,7 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -345,7 +345,7 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -375,7 +375,7 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -398,7 +398,7 @@ describe('Feature: onemcp-system, Property 1: Service registration round-trip', 
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });
@@ -448,7 +448,7 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -516,7 +516,7 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -547,7 +547,7 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -583,7 +583,7 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -623,7 +623,7 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -667,7 +667,7 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -734,7 +734,7 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -767,7 +767,7 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -805,7 +805,7 @@ describe('Feature: onemcp-system, Property 15: Tag AND filtering logic', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });

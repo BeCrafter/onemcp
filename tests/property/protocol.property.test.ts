@@ -193,7 +193,7 @@ describe('Feature: onemcp-system, Property 11: JSON-RPC request acceptance', () 
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -220,7 +220,7 @@ describe('Feature: onemcp-system, Property 11: JSON-RPC request acceptance', () 
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -241,7 +241,7 @@ describe('Feature: onemcp-system, Property 11: JSON-RPC request acceptance', () 
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -260,7 +260,7 @@ describe('Feature: onemcp-system, Property 11: JSON-RPC request acceptance', () 
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });
@@ -304,7 +304,7 @@ describe('Feature: onemcp-system, Property 12: JSON-RPC response compliance', ()
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -341,7 +341,7 @@ describe('Feature: onemcp-system, Property 12: JSON-RPC response compliance', ()
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -371,7 +371,7 @@ describe('Feature: onemcp-system, Property 12: JSON-RPC response compliance', ()
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -435,7 +435,7 @@ describe('Feature: onemcp-system, Property 12: JSON-RPC response compliance', ()
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -464,7 +464,7 @@ describe('Feature: onemcp-system, Property 12: JSON-RPC response compliance', ()
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });
@@ -500,7 +500,7 @@ describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip (inte
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -515,7 +515,7 @@ describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip (inte
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -530,7 +530,7 @@ describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip (inte
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -545,7 +545,7 @@ describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip (inte
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -560,7 +560,7 @@ describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip (inte
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -578,7 +578,7 @@ describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip (inte
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });

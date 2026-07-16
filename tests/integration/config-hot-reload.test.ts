@@ -9,7 +9,7 @@
  * functionality works correctly when file system events are properly detected.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -71,6 +71,9 @@ describe('Configuration Hot-Reload Integration', () => {
   };
 
   beforeEach(async () => {
+    // Suppress expected console.error from config validation failures in tests
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
     // Create temporary test directory
     testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'onemcp-test-'));
     configPath = path.join(testDir, 'config.json');
@@ -90,6 +93,7 @@ describe('Configuration Hot-Reload Integration', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     // Clean up test directory
     try {
       await fs.rm(testDir, { recursive: true, force: true });

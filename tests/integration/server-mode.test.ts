@@ -9,7 +9,7 @@
  * - Concurrent request handling
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -27,6 +27,9 @@ describe('Server Mode Integration Tests', () => {
   const testPort = 13000; // Use a high port to avoid conflicts
 
   beforeEach(async () => {
+    // Suppress console.error from server lifecycle logging during tests
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
     // Create a temporary directory for test files
     tempConfigDir = path.join(
       os.tmpdir(),

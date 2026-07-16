@@ -7,6 +7,7 @@ import fetch from 'node-fetch';
 import { BaseTransport, TransportError, TransportState } from './base.js';
 import type { JsonRpcMessage } from '../types/jsonrpc.js';
 import type { TransportType } from '../types/service.js';
+import * as log from '../utils/logger.js';
 
 /**
  * HTTP transport mode
@@ -125,7 +126,9 @@ export class HttpTransport extends BaseTransport {
               this.connectionReadyReject = null;
             }
           } catch (error) {
-            console.error('Failed to parse SSE endpoint event:', error);
+            log.warn(
+              `Failed to parse SSE endpoint event: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         });
       }
@@ -136,7 +139,9 @@ export class HttpTransport extends BaseTransport {
           const message = JSON.parse(event.data as string) as JsonRpcMessage;
           this.enqueueMessage(message);
         } catch (error) {
-          console.error('Failed to parse SSE message:', error);
+          log.warn(
+            `Failed to parse SSE message: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
       };
 
@@ -201,9 +206,13 @@ export class HttpTransport extends BaseTransport {
       this.reconnectAttempts++;
       const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // Exponential backoff
 
-      console.warn(
-        `SSE connection error, attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`
-      );
+      // Only log in debug mode to reduce noise - health check will handle reporting
+      if (process.env['ONEMCP_DEBUG']) {
+        // eslint-disable-next-line no-console
+        console.debug(
+          `SSE connection error, attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`
+        );
+      }
 
       this.reconnectTimer = setTimeout(() => {
         if (this.eventSource) {
@@ -212,10 +221,8 @@ export class HttpTransport extends BaseTransport {
         this.initializeSSE();
       }, delay);
     } else {
-      // Max reconnection attempts reached - log warning but don't crash
-      console.error(`SSE connection failed after ${this.maxReconnectAttempts} attempts`);
-
-      // Mark transport as error state (this will emit error event, but we have a listener)
+      // Max reconnection attempts reached - mark transport as error state
+      // Health check will handle logging and recovery
       const transportError = new TransportError(
         `SSE connection failed after ${this.maxReconnectAttempts} attempts`,
         'SSE_CONNECTION_FAILED'
@@ -339,7 +346,9 @@ export class HttpTransport extends BaseTransport {
               this.enqueueMessage(responseMessage);
             }
           } catch (error) {
-            console.error('Failed to parse HTTP response:', error);
+            log.warn(
+              `Failed to parse HTTP response: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       }

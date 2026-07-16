@@ -23,6 +23,7 @@ import { MetricsService } from './metrics/service.js';
 import type { ConfigProvider } from './types/config.js';
 import type { RequestContext } from './types/context.js';
 import { collectServiceTriggerHints } from './protocol/smart-discovery-description.js';
+import * as log from './utils/logger.js';
 
 /**
  * Server Mode Runner class
@@ -219,7 +220,7 @@ export class ServerModeRunner {
             .filter((t) => t.length > 0);
           if (tags.length > 0) {
             tagFilter = { tags, logic: 'OR' };
-            console.error(`Tag filter from header: ${tags.join(', ')} (OR logic)`);
+            log.info(`Tag filter from header: ${tags.join(', ')} (OR logic)`);
           }
         }
 
@@ -237,7 +238,7 @@ export class ServerModeRunner {
             sessionSmartDiscovery = true;
           }
           if (sessionSmartDiscovery !== undefined) {
-            console.error(
+            log.info(
               `Smart discovery from header: ${sessionSmartDiscovery ? 'enabled' : 'disabled'}`
             );
           }
@@ -490,12 +491,12 @@ export class ServerModeRunner {
    * Initializes the system, starts health monitoring, and starts the HTTP server.
    */
   async start(): Promise<void> {
-    console.error('Starting MCP Router in Server mode...');
+    log.info('Starting MCP Router in Server mode...');
 
     try {
       // Initialize service registry
       await this.serviceRegistry.initialize();
-      console.error(`Loaded ${Object.keys(this.config.mcpServers).length} service(s)`);
+      log.info(`Loaded ${Object.keys(this.config.mcpServers).length} service(s)`);
 
       // Create connection pools for all enabled services
       this.initializeConnectionPools();
@@ -525,21 +526,21 @@ export class ServerModeRunner {
           this.config.healthCheck.interval,
           this.config.healthCheck.failureThreshold ?? 3
         );
-        console.error('Health monitoring started');
+        log.info('Health monitoring started');
       }
 
       // Start session cleanup
       void this.sessionManager.startAutoCleanup(60000, 300000); // Cleanup every minute, 5 min timeout
 
       this.unwatchConfig = this.configProvider.watch((newConfig) => {
-        console.error('Configuration change detected, reloading...');
+        log.info('Configuration change detected, reloading...');
         void this.reloadConfig(newConfig).catch((error) => {
-          console.error(
+          log.error(
             `Failed to reload configuration: ${error instanceof Error ? error.message : String(error)}`
           );
         });
       });
-      console.error('Config file watcher started');
+      log.info('Config file watcher started');
 
       // Start HTTP server
       const port = this.config.port || 3000;
@@ -549,7 +550,7 @@ export class ServerModeRunner {
 
       // Broadcast tools/list_changed notification to all connected SSE clients
       this.toolRouter.on('cacheInvalidated', () => {
-        console.error('Tool list changed - notifying connected clients via SSE');
+        log.debug('Tool list changed - notifying connected clients via SSE');
         this.broadcastSseEvent('message', {
           jsonrpc: '2.0',
           method: 'notifications/tools/list_changed',
@@ -558,12 +559,12 @@ export class ServerModeRunner {
       });
 
       this.running = true;
-      console.error(`MCP Router is ready and listening on http://${host}:${port}`);
-      console.error(`Health check: http://${host}:${port}/health`);
-      console.error(`Diagnostics: http://${host}:${port}/diagnostics`);
-      console.error(`Metrics: http://${host}:${port}/metrics`);
+      log.info(`MCP Router is ready and listening on http://${host}:${port}`);
+      log.info(`Health check: http://${host}:${port}/health`);
+      log.info(`Diagnostics: http://${host}:${port}/diagnostics`);
+      log.info(`Metrics: http://${host}:${port}/metrics`);
     } catch (error) {
-      console.error(
+      log.error(
         `Failed to start Server mode: ${error instanceof Error ? error.message : String(error)}`
       );
       throw error;
@@ -585,13 +586,18 @@ export class ServerModeRunner {
           service.connectionPool || this.config.connectionPool
         );
 
+        // Listen for pool errors to prevent unhandled error events
+        pool.on('error', () => {
+          // Pool errors are already logged by ConnectionPool, no need to log again
+        });
+
         // Register the pool with the tool router
         this.toolRouter.registerConnectionPool(service.name, pool);
         this.connectionPools.set(service.name, pool);
 
-        console.error(`Initialized connection pool for service: ${service.name}`);
+        log.info(`Initialized connection pool for service: ${service.name}`);
       } catch (error) {
-        console.error(
+        log.warn(
           `Failed to initialize connection pool for service ${service.name}: ${error instanceof Error ? error.message : String(error)}`
         );
       }
@@ -615,7 +621,7 @@ export class ServerModeRunner {
           await pool.closeAll();
           this.connectionPools.delete(serviceName);
           this.toolRouter.unregisterConnectionPool(serviceName);
-          console.error(`Removed connection pool for deleted service: ${serviceName}`);
+          log.info(`Removed connection pool for deleted service: ${serviceName}`);
         }
       }
     }
@@ -632,9 +638,9 @@ export class ServerModeRunner {
             );
             this.toolRouter.registerConnectionPool(newService.name, pool);
             this.connectionPools.set(newService.name, pool);
-            console.error(`Added connection pool for new service: ${newService.name}`);
+            log.info(`Added connection pool for new service: ${newService.name}`);
           } catch (error) {
-            console.error(
+            log.warn(
               `Failed to create connection pool for new service ${newService.name}: ${error instanceof Error ? error.message : String(error)}`
             );
           }
@@ -660,9 +666,9 @@ export class ServerModeRunner {
               );
               this.toolRouter.registerConnectionPool(newService.name, pool);
               this.connectionPools.set(newService.name, pool);
-              console.error(`Updated connection pool for service: ${newService.name}`);
+              log.info(`Updated connection pool for service: ${newService.name}`);
             } catch (error) {
-              console.error(
+              log.warn(
                 `Failed to update connection pool for service ${newService.name}: ${error instanceof Error ? error.message : String(error)}`
               );
             }
@@ -673,7 +679,11 @@ export class ServerModeRunner {
 
     await this.serviceRegistry.initialize();
     this.toolRouter.invalidateCache();
-    console.error(`Reloaded ${Object.keys(newServices).length} service(s)`);
+
+    // Clear health statuses for all services to allow rechecking after config change
+    this.healthMonitor.clearAllHealthStatuses();
+
+    log.info(`Reloaded ${Object.keys(newServices).length} service(s)`);
   }
 
   /**
@@ -692,13 +702,13 @@ export class ServerModeRunner {
       return;
     }
 
-    console.error('Shutting down MCP Router...');
+    log.info('Shutting down MCP Router...');
     this.running = false;
 
     try {
       // Stop accepting new connections
       await this.fastify.close();
-      console.error('HTTP server closed');
+      log.info('HTTP server closed');
 
       // Stop session cleanup
       this.sessionManager.stopAutoCleanup();
@@ -706,7 +716,7 @@ export class ServerModeRunner {
       // Stop health monitoring
       if (this.config.healthCheck.enabled) {
         this.healthMonitor.stopHeartbeat();
-        console.error('Health monitoring stopped');
+        log.info('Health monitoring stopped');
       }
 
       // Close all SSE connections
@@ -721,32 +731,30 @@ export class ServerModeRunner {
 
       // Close all sessions
       await this.sessionManager.closeAllSessions();
-      console.error('All sessions closed');
+      log.info('All sessions closed');
 
       if (this.unwatchConfig) {
         this.unwatchConfig();
         this.unwatchConfig = null;
-        console.error('Config file watcher stopped');
+        log.info('Config file watcher stopped');
       }
 
       // Close all connection pools
       for (const [serviceName, pool] of this.connectionPools.entries()) {
         try {
           await pool.closeAll();
-          console.error(`Closed connection pool for service: ${serviceName}`);
+          log.info(`Closed connection pool for service: ${serviceName}`);
         } catch (error) {
-          console.error(
+          log.warn(
             `Error closing connection pool for service ${serviceName}: ${error instanceof Error ? error.message : String(error)}`
           );
         }
       }
 
-      console.error('MCP Router shutdown complete');
+      log.info('MCP Router shutdown complete');
       this.options.onShutdownComplete?.();
     } catch (error) {
-      console.error(
-        `Error during shutdown: ${error instanceof Error ? error.message : String(error)}`
-      );
+      log.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
   }

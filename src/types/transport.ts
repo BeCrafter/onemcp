@@ -2,13 +2,14 @@
  * Transport layer type definitions
  */
 
+import type { EventEmitter } from 'events';
 import type { JsonRpcMessage } from './jsonrpc.js';
 import type { TransportType } from './service.js';
 
 /**
  * Transport interface for communication with MCP servers
  */
-export interface Transport {
+export interface Transport extends EventEmitter {
   /**
    * Send a message to the server/client
    */

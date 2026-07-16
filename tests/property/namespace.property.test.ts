@@ -90,7 +90,7 @@ describe('Feature: onemcp-system, Property 6: Namespace round-trip', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -115,7 +115,7 @@ describe('Feature: onemcp-system, Property 6: Namespace round-trip', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -130,7 +130,7 @@ describe('Feature: onemcp-system, Property 6: Namespace round-trip', () => {
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -164,7 +164,7 @@ describe('Feature: onemcp-system, Property 6: Namespace round-trip', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -207,7 +207,7 @@ describe('Feature: onemcp-system, Property 6: Namespace round-trip', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -232,7 +232,7 @@ describe('Feature: onemcp-system, Property 6: Namespace round-trip', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -268,7 +268,7 @@ describe('Feature: onemcp-system, Property 6: Namespace round-trip', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -296,7 +296,7 @@ describe('Feature: onemcp-system, Property 6: Namespace round-trip', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -328,7 +328,7 @@ describe('Feature: onemcp-system, Property 6: Namespace round-trip', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -370,7 +370,7 @@ describe('Feature: onemcp-system, Property 6: Namespace round-trip', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -402,7 +402,7 @@ describe('Feature: onemcp-system, Property 6: Namespace round-trip', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });

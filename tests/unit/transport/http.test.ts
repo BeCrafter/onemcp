@@ -16,6 +16,9 @@ vi.mock('node-fetch');
 describe('HttpTransport', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Suppress expected console.warn/error from SSE reconnection tests
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(async () => {

@@ -6,6 +6,7 @@ import { ChildProcess, spawn } from 'child_process';
 import { BaseTransport, TransportError } from './base.js';
 import type { JsonRpcMessage } from '../types/jsonrpc.js';
 import type { TransportType } from '../types/service.js';
+import * as log from '../utils/logger.js';
 
 const isWindows = process.platform === 'win32';
 
@@ -95,8 +96,7 @@ export class StdioTransport extends BaseTransport {
       if (this.process.stderr) {
         this.process.stderr.setEncoding('utf8');
         this.process.stderr.on('data', (chunk: string) => {
-          // Log stderr output (could be enhanced with proper logging)
-          console.error(`[${this.config.command}] ${chunk}`);
+          log.info(`[${this.config.command}] ${chunk}`);
         });
       }
 
@@ -154,7 +154,9 @@ export class StdioTransport extends BaseTransport {
           const message = JSON.parse(trimmed) as JsonRpcMessage;
           this.enqueueMessage(message);
         } catch (error) {
-          console.error(`Failed to parse JSON-RPC message: ${trimmed}`, error);
+          log.warn(
+            `Failed to parse JSON-RPC message: ${trimmed}: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
       }
     }
@@ -170,11 +172,16 @@ export class StdioTransport extends BaseTransport {
     const HEADER_RE = /Content-Length:\s*(\d+)\r\n\r\n/;
     let parsed = 0;
 
-    while (true) {
+    for (;;) {
       const match = HEADER_RE.exec(this.messageBuffer);
       if (!match) break;
 
-      const contentLength = parseInt(match[1]!, 10);
+      const rawLength = match[1];
+      if (rawLength === null || rawLength === undefined) {
+        this.messageBuffer = this.messageBuffer.slice(match.index + match[0].length);
+        continue;
+      }
+      const contentLength = parseInt(rawLength, 10);
       if (isNaN(contentLength) || contentLength <= 0) {
         // Invalid header — strip it and continue
         this.messageBuffer = this.messageBuffer.slice(match.index + match[0].length);
@@ -197,7 +204,9 @@ export class StdioTransport extends BaseTransport {
         this.enqueueMessage(message);
         parsed++;
       } catch (error) {
-        console.error('Failed to parse Content-Length framed JSON-RPC message:', error);
+        log.warn(
+          `Failed to parse Content-Length framed JSON-RPC message: ${error instanceof Error ? error.message : String(error)}`
+        );
         // Continue trying to parse subsequent frames
       }
     }

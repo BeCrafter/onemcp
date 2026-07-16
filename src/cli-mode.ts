@@ -24,6 +24,7 @@ import type { TagFilter } from './types/tool.js';
 import { randomUUID } from 'node:crypto';
 import { silenceStderrForShutdown } from './utils/silence-stderr-shutdown.js';
 import { collectServiceTriggerHints } from './protocol/smart-discovery-description.js';
+import * as log from './utils/logger.js';
 
 /**
  * CLI Mode Runner class
@@ -103,12 +104,12 @@ export class CliModeRunner {
    * requests from stdin.
    */
   async start(): Promise<void> {
-    console.error('Starting MCP Router in CLI mode...');
+    log.info('Starting MCP Router in CLI mode...');
 
     try {
       // Initialize service registry
       await this.serviceRegistry.initialize();
-      console.error(`Loaded ${Object.keys(this.config.mcpServers).length} service(s)`);
+      log.info(`Loaded ${Object.keys(this.config.mcpServers).length} service(s)`);
 
       // Create connection pools for all enabled services
       await this.initializeConnectionPools();
@@ -117,24 +118,33 @@ export class CliModeRunner {
       if (this.toolDiscoveryConfig?.smartDiscovery) {
         if (this.toolDiscoveryConfig.eagerVerify) {
           // Blocking: verify connections then warm tool cache before accepting requests
-          console.error('Verifying connections for all enabled services (eager)...');
-          try {
-            await this.toolRouter.verifyConnections(this.tagFilter);
-            console.error('All connections verified');
-          } catch (error) {
-            console.error(
-              `Connection verification failed: ${error instanceof Error ? error.message : String(error)}`
-            );
-            throw error;
+          log.info('Verifying connections for all enabled services (eager)...');
+          const verifyResult = await this.toolRouter.verifyConnections(this.tagFilter);
+
+          if (verifyResult.failed.length > 0) {
+            log.warn(`${verifyResult.failed.length} service(s) failed verification:`);
+            for (const f of verifyResult.failed) {
+              log.warn(`  - ${f.service}: ${f.error}`);
+            }
           }
-          console.error('Pre-warming tool cache...');
+
+          if (verifyResult.succeeded.length === 0 && verifyResult.failed.length > 0) {
+            throw new Error(
+              `All ${verifyResult.failed.length} service(s) failed verification. At least one service must be reachable.`
+            );
+          }
+
+          log.info(
+            `Connections verified: ${verifyResult.succeeded.length} succeeded, ${verifyResult.failed.length} failed`
+          );
+          log.info('Pre-warming tool cache...');
           await this.toolRouter.discoverTools(this.tagFilter);
-          console.error('Tool cache warmed');
+          log.info('Tool cache warmed');
         } else {
           // Non-blocking: warm cache in background; first search_tools may wait briefly
-          console.error('Pre-warming tool cache in background...');
+          log.info('Pre-warming tool cache in background...');
           void this.toolRouter.discoverTools(this.tagFilter).catch((error: unknown) => {
-            console.error(
+            log.error(
               `Background cache warm-up failed: ${error instanceof Error ? error.message : String(error)}`
             );
           });
@@ -149,7 +159,7 @@ export class CliModeRunner {
           this.config.healthCheck.interval,
           this.config.healthCheck.failureThreshold ?? 3
         );
-        console.error('Health monitoring started');
+        log.info('Health monitoring started');
       }
 
       // Set up stdin/stdout communication
@@ -160,13 +170,14 @@ export class CliModeRunner {
         void this.sendNotification({
           jsonrpc: '2.0',
           method: 'notifications/tools/list_changed',
+          params: {},
         });
       });
 
       this.running = true;
-      console.error('MCP Router is ready and listening on stdin/stdout');
+      log.info('MCP Router is ready and listening on stdin/stdout');
     } catch (error) {
-      console.error(
+      log.error(
         `Failed to start CLI mode: ${error instanceof Error ? error.message : String(error)}`
       );
       throw error;
@@ -191,13 +202,18 @@ export class CliModeRunner {
           service.connectionPool || this.config.connectionPool
         );
 
+        // Listen for pool errors to prevent unhandled error events
+        pool.on('error', () => {
+          // Pool errors are already logged by ConnectionPool, no need to log again
+        });
+
         // Register the pool with the tool router
         this.toolRouter.registerConnectionPool(service.name, pool);
         this.connectionPools.set(service.name, pool);
 
-        console.error(`Initialized connection pool for service: ${service.name}`);
+        log.info(`Initialized connection pool for service: ${service.name}`);
       } catch (error) {
-        console.error(
+        log.error(
           `Failed to initialize connection pool for service ${service.name}: ${error instanceof Error ? error.message : String(error)}`
         );
       }
@@ -316,7 +332,7 @@ export class CliModeRunner {
       // In CLI mode, we receive notifications like 'notifications/initialized'
       // Log these for debugging purposes
       const notification = message as JsonRpcNotification;
-      console.error(`Received notification: ${notification.method}`);
+      log.info(`Received notification: ${notification.method}`);
     }
   }
 
@@ -335,7 +351,7 @@ export class CliModeRunner {
       const serialized = this.serializer.serialize(out);
       stdout.write(serialized + '\n');
     } catch (error) {
-      console.error(
+      log.error(
         `Failed to send response: ${error instanceof Error ? error.message : String(error)}`
       );
     }
@@ -351,7 +367,7 @@ export class CliModeRunner {
       const serialized = this.serializer.serialize(notification);
       stdout.write(serialized + '\n');
     } catch (error) {
-      console.error(
+      log.error(
         `Failed to send notification: ${error instanceof Error ? error.message : String(error)}`
       );
     }
@@ -383,16 +399,16 @@ export class CliModeRunner {
       // Stop health monitoring
       if (this.config.healthCheck.enabled) {
         this.healthMonitor.stopHeartbeat();
-        console.error('Health monitoring stopped');
+        log.info('Health monitoring stopped');
       }
 
       // Close all connection pools
       for (const [serviceName, pool] of this.connectionPools.entries()) {
         try {
           await pool.closeAll();
-          console.error(`Closed connection pool for service: ${serviceName}`);
+          log.info(`Closed connection pool for service: ${serviceName}`);
         } catch (error) {
-          console.error(
+          log.warn(
             `Error closing connection pool for service ${serviceName}: ${error instanceof Error ? error.message : String(error)}`
           );
         }
@@ -404,11 +420,9 @@ export class CliModeRunner {
         this.readline = null;
       }
 
-      console.error('MCP Router shutdown complete');
+      log.info('MCP Router shutdown complete');
     } catch (error) {
-      console.error(
-        `Error during shutdown: ${error instanceof Error ? error.message : String(error)}`
-      );
+      log.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
   }
