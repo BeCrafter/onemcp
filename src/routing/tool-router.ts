@@ -128,53 +128,45 @@ export class ToolRouter extends EventEmitter {
     const succeeded: string[] = [];
     const failed: Array<{ service: string; error: string }> = [];
 
-    const verifyService = async (service: ServiceDefinition): Promise<void> => {
-      const pool = this.connectionPools.get(service.name);
-      if (!pool) {
-        failed.push({
-          service: service.name,
-          error: 'No connection pool registered for service',
-        });
-        return;
-      }
+    const results = await this.runWithConcurrencyLimit(
+      enabledServices,
+      MAX_CONCURRENT_DISCOVERY,
+      async (service) => {
+        const pool = this.connectionPools.get(service.name);
+        if (!pool) {
+          return {
+            service: service.name,
+            success: false,
+            error: 'No connection pool registered for service',
+          };
+        }
 
-      try {
-        // Acquire a connection to establish and verify the connection
-        const connection = await pool.acquire();
-        // Immediately release the connection back to the pool
-        pool.release(connection);
-        succeeded.push(service.name);
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        failed.push({
-          service: service.name,
-          error: errorMessage,
-        });
+        try {
+          const connection = await pool.acquire();
+          pool.release(connection);
+          return { service: service.name, success: true };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { service: service.name, success: false, error: errorMessage };
+        }
       }
-    };
-
-    // Verify all services with concurrency limit
-    const runOne = async (
-      index: number,
-      items: ServiceDefinition[],
-      limit: number
-    ): Promise<void> => {
-      const i = index;
-      if (i >= items.length) {
-        return;
-      }
-      const item = items[i];
-      if (item === undefined) {
-        return;
-      }
-      await verifyService(item);
-      await runOne(index + limit, items, limit);
-    };
-
-    const concurrency = Math.min(MAX_CONCURRENT_DISCOVERY, enabledServices.length);
-    await Promise.all(
-      Array.from({ length: concurrency }, (_, i) => runOne(i, enabledServices, concurrency))
     );
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        failed.push({
+          service: 'unknown',
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
+      } else if (result.value.success) {
+        succeeded.push(result.value.service);
+      } else {
+        failed.push({
+          service: result.value.service,
+          error: result.value.error ?? 'Unknown error',
+        });
+      }
+    }
 
     return { succeeded, failed };
   }
@@ -421,6 +413,9 @@ export class ToolRouter extends EventEmitter {
 
     // Get the service
     const service = this.serviceRegistry.get(actualServiceName);
+    if (!service) {
+      throw new Error(`Service not found: ${actualServiceName}`);
+    }
 
     // Initialize toolStates if not present
     if (!service.toolStates) {
@@ -550,7 +545,7 @@ export class ToolRouter extends EventEmitter {
         );
       }
 
-      const message = nextResult.value as Record<string, unknown>;
+      const message = nextResult.value as unknown as Record<string, unknown>;
 
       // Skip notifications — they have a method but no id
       if (!('id' in message) || message['id'] === undefined || message['id'] === null) {

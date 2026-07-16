@@ -3,11 +3,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { resolve } from 'path';
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
-import type {
-  JsonRpcRequest,
-  JsonRpcSuccessResponse,
-  JsonRpcErrorResponse,
-} from '../../src/types/jsonrpc.js';
+import type { JsonRpcSuccessResponse, JsonRpcErrorResponse } from '../../src/types/jsonrpc.js';
 
 describe('CLI Mode Integration Tests', () => {
   let testConfigDir: string;
@@ -95,7 +91,7 @@ describe('CLI Mode Integration Tests', () => {
         // Try to extract a complete JSON line
         const lines = buf.split('\n');
         for (let i = 0; i < lines.length - 1; i++) {
-          const line = lines[i].trim();
+          const line = lines[i]!.trim();
           if (!line) continue;
           try {
             const parsed = JSON.parse(line) as JsonRpcSuccessResponse | JsonRpcErrorResponse;
@@ -108,7 +104,7 @@ describe('CLI Mode Integration Tests', () => {
           }
         }
         // Keep only the incomplete last segment
-        buf = lines[lines.length - 1];
+        buf = lines[lines.length - 1] ?? '';
       };
 
       proc.stdout!.on('data', onData);

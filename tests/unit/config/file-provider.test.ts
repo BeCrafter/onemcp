@@ -714,11 +714,11 @@ describe('FileConfigProvider', () => {
   });
 
   describe('watch()', () => {
-    // Suppress console.error from expected config validation failures in tests
     let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
-      consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {}) as any;
     });
 
     afterEach(() => {

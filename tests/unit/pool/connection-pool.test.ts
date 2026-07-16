@@ -309,6 +309,21 @@ describe('ConnectionPool', () => {
         close: vi.fn().mockResolvedValue(undefined),
         getType: vi.fn().mockReturnValue('stdio'),
         isConnected: vi.fn().mockReturnValue(true),
+        on: vi.fn(),
+        off: vi.fn(),
+        once: vi.fn(),
+        emit: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        removeAllListeners: vi.fn(),
+        setMaxListeners: vi.fn(),
+        getMaxListeners: vi.fn(),
+        listeners: vi.fn(),
+        rawListeners: vi.fn(),
+        listenerCount: vi.fn(),
+        prependListener: vi.fn(),
+        prependOnceListener: vi.fn(),
+        eventNames: vi.fn(),
       };
 
       const unknownConnection = {
@@ -716,6 +731,21 @@ describe('ConnectionPool', () => {
         close: vi.fn().mockResolvedValue(undefined),
         getType: vi.fn().mockReturnValue('stdio'),
         isConnected: vi.fn().mockReturnValue(true),
+        on: vi.fn(),
+        off: vi.fn(),
+        once: vi.fn(),
+        emit: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        removeAllListeners: vi.fn(),
+        setMaxListeners: vi.fn(),
+        getMaxListeners: vi.fn(),
+        listeners: vi.fn(),
+        rawListeners: vi.fn(),
+        listenerCount: vi.fn(),
+        prependListener: vi.fn(),
+        prependOnceListener: vi.fn(),
+        eventNames: vi.fn(),
       };
 
       const unknownConnection = {
