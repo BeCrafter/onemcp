@@ -157,7 +157,7 @@ describe('Server Mode Integration Tests', () => {
   });
 
   describe('Health Check Endpoint', () => {
-    it('should return health status', async () => {
+    it('should return health status with summary counts', async () => {
       await runner.start();
 
       const response = await fetch(`http://localhost:${testPort}/health`);
@@ -168,8 +168,17 @@ describe('Server Mode Integration Tests', () => {
       expect(data).toHaveProperty('timestamp');
       expect(data).toHaveProperty('services');
       expect(data).toHaveProperty('sessions');
+      expect(data).toHaveProperty('summary');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Checking JSON response structure in test
       expect(Array.isArray((data as any).services)).toBe(true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Checking JSON response structure in test
+      const summary = (data as any).summary;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Accessing JSON response property in test
+      expect(typeof summary.total).toBe('number');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Accessing JSON response property in test
+      expect(typeof summary.healthy).toBe('number');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Accessing JSON response property in test
+      expect(typeof summary.disabled).toBe('number');
     });
 
     it('should return healthy status when all services are healthy', async () => {

@@ -34,6 +34,8 @@ export class HealthMonitor extends EventEmitter {
   private failureThreshold: number = 3; // Default threshold
   /** Maximum interval for unhealthy service checks (5 minutes) */
   private readonly maxUnhealthyIntervalMs: number = 300000;
+  /** Initialization failures for services that failed during pool creation */
+  private initFailures: Map<string, { message: string; timestamp: Date }> = new Map();
 
   constructor(_serviceRegistry: ServiceRegistry) {
     super();
@@ -216,6 +218,30 @@ export class HealthMonitor extends EventEmitter {
    */
   public clearAllHealthStatuses(): void {
     this.healthStatuses.clear();
+    this.initFailures.clear();
+  }
+
+  /**
+   * Record that a service failed to initialize its connection pool
+   *
+   * These failures are exposed via /health to show services that are configured
+   * but could not be started, rather than silently omitting them.
+   *
+   * @param serviceName - Name of the service
+   * @param message - Error message describing the failure
+   */
+  public recordInitFailure(serviceName: string, message: string): void {
+    this.initFailures.set(serviceName, { message, timestamp: new Date() });
+  }
+
+  /**
+   * Get initialization failure info for a service
+   *
+   * @param serviceName - Name of the service
+   * @returns Failure info or undefined if no init failure
+   */
+  public getInitFailure(serviceName: string): { message: string; timestamp: Date } | undefined {
+    return this.initFailures.get(serviceName);
   }
 
   /**

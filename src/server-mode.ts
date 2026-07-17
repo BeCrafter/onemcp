@@ -97,6 +97,11 @@ export class ServerModeRunner {
       return this.handleMcpRequest(request, reply);
     });
 
+    // DELETE endpoint for session termination (MCP Streamable HTTP spec)
+    this.fastify.delete('/mcp', async (request: FastifyRequest, reply: FastifyReply) => {
+      return this.handleSessionTermination(request, reply);
+    });
+
     // SSE endpoint for server-to-client notifications (MCP Streamable HTTP spec)
     this.fastify.get('/mcp', async (request: FastifyRequest, reply: FastifyReply) => {
       return this.handleSseConnection(request, reply);
@@ -289,6 +294,7 @@ export class ServerModeRunner {
           sessionId: session.id,
           agentId: session.agentId,
           timestamp: new Date(),
+          sessionInitialized: session.context.initialized === true,
         };
         if (sessionTagFilter) {
           context.tagFilter = sessionTagFilter;
@@ -303,6 +309,13 @@ export class ServerModeRunner {
         try {
           // Handle the request
           const response = await this.protocolHandler.handleRequest(jsonRpcRequest, context);
+
+          // Mark session as initialized after successful initialize handshake
+          if (jsonRpcRequest.method === 'initialize' && 'result' in response) {
+            session.context.initialized = true;
+            // Echo session ID back so client includes it in subsequent requests (MCP Streamable HTTP spec)
+            void reply.header('mcp-session-id', session.id);
+          }
 
           // Send response
           void reply.code(200).send(response);
@@ -358,28 +371,106 @@ export class ServerModeRunner {
   }
 
   /**
+   * Handle session termination (DELETE /mcp)
+   *
+   * Per MCP Streamable HTTP spec, clients send DELETE with Mcp-Session-Id header
+   * to explicitly terminate a session. Cleans up SSE connection and session state.
+   */
+  private async handleSessionTermination(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ): Promise<void> {
+    const sessionId = request.headers['mcp-session-id'];
+    if (typeof sessionId === 'string') {
+      // Close SSE connection if exists
+      const sseRes = this.sseConnections.get(sessionId);
+      if (sseRes) {
+        this.sseConnections.delete(sessionId);
+        try {
+          sseRes.end();
+        } catch {
+          /* already closed */
+        }
+      }
+      // Close session
+      await this.sessionManager.closeSession(sessionId);
+      log.info(`Session terminated: ${sessionId}`);
+    }
+    void reply.code(200).send();
+  }
+
+  /**
    * Handle health check requests
+   *
+   * Returns the status of all configured services by merging data from:
+   * 1. ServiceRegistry — all configured services (including disabled ones)
+   * 2. HealthMonitor — health status of registered services
+   * 3. connectionPools — services that successfully created a connection pool
    */
   private handleHealthCheck(_request: FastifyRequest, reply: FastifyReply): void {
     try {
+      const services = this.serviceRegistry.list();
       const healthStatuses = this.healthMonitor.getAllHealthStatus();
-      const allHealthy = healthStatuses.every((status) => status.healthy);
+      const healthMap = new Map(healthStatuses.map((s) => [s.serviceName, s]));
 
-      const response = {
-        status: allHealthy ? 'healthy' : 'degraded',
+      const serviceDetails = services.map((service) => {
+        const health = healthMap.get(service.name);
+        const hasPool = this.connectionPools.has(service.name);
+
+        if (!service.enabled) {
+          return { name: service.name, status: 'disabled' as const, healthy: null };
+        }
+        if (!hasPool) {
+          const initFailure = this.healthMonitor.getInitFailure(service.name);
+          return {
+            name: service.name,
+            status: 'broken' as const,
+            healthy: false,
+            error: {
+              message: initFailure?.message ?? 'Failed to initialize connection pool',
+              code: 'INIT_FAILED',
+            },
+          };
+        }
+        if (!health) {
+          return {
+            name: service.name,
+            status: 'initializing' as const,
+            healthy: null,
+            lastCheck: null,
+          };
+        }
+        return {
+          name: service.name,
+          status: health.healthy ? ('healthy' as const) : ('degraded' as const),
+          healthy: health.healthy,
+          lastCheck: health.lastCheck.toISOString(),
+          consecutiveFailures: health.consecutiveFailures,
+          error: health.error ?? null,
+        };
+      });
+
+      const hasDegraded = serviceDetails.some(
+        (s) => s.status === 'broken' || s.status === 'degraded'
+      );
+      const overallStatus = hasDegraded ? 'degraded' : 'healthy';
+
+      void reply.code(overallStatus === 'healthy' ? 200 : 503).send({
+        status: overallStatus,
         timestamp: new Date().toISOString(),
-        services: healthStatuses.map((status) => ({
-          name: status.serviceName,
-          healthy: status.healthy,
-          lastCheck: status.lastCheck.toISOString(),
-          error: status.error,
-        })),
+        services: serviceDetails,
+        summary: {
+          total: services.length,
+          healthy: serviceDetails.filter((s) => s.status === 'healthy').length,
+          degraded: serviceDetails.filter((s) => s.status === 'degraded').length,
+          broken: serviceDetails.filter((s) => s.status === 'broken').length,
+          initializing: serviceDetails.filter((s) => s.status === 'initializing').length,
+          disabled: serviceDetails.filter((s) => s.status === 'disabled').length,
+        },
         sessions: {
           active: this.sessionManager.getActiveSessionCount(),
         },
-      };
-
-      void reply.code(allHealthy ? 200 : 503).send(response);
+      });
     } catch (error) {
       void reply.code(500).send({
         status: 'error',
@@ -466,6 +557,12 @@ export class ServerModeRunner {
    * Get session ID from request headers or create new one
    */
   private getSessionId(request: FastifyRequest): string {
+    // MCP Streamable HTTP spec: mcp-session-id (standard)
+    const mcpSession = request.headers['mcp-session-id'];
+    if (typeof mcpSession === 'string') {
+      return mcpSession;
+    }
+    // Legacy: x-session-id (onemcp custom)
     const sessionHeader = request.headers['x-session-id'];
     if (typeof sessionHeader === 'string') {
       return sessionHeader;
@@ -595,11 +692,16 @@ export class ServerModeRunner {
         this.toolRouter.registerConnectionPool(service.name, pool);
         this.connectionPools.set(service.name, pool);
 
+        // Register with health monitor (initial health check runs in background)
+        void this.healthMonitor.registerConnectionPool(service.name, pool).catch(() => {});
+
         log.info(`Initialized connection pool for service: ${service.name}`);
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         log.warn(
-          `Failed to initialize connection pool for service ${service.name}: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to initialize connection pool for service ${service.name}: ${errorMessage}`
         );
+        this.healthMonitor.recordInitFailure(service.name, errorMessage);
       }
     }
   }

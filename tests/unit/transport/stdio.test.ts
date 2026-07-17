@@ -155,10 +155,9 @@ describe('StdioTransport', () => {
 
       await transport.send(message);
 
-      expect(mockProcess.stdin.write).toHaveBeenCalledWith(
-        JSON.stringify(message) + '\n',
-        expect.any(Function)
-      );
+      const body = JSON.stringify(message);
+      const expectedFrame = `Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n${body}`;
+      expect(mockProcess.stdin.write).toHaveBeenCalledWith(expectedFrame, expect.any(Function));
     });
 
     it('should handle multiple messages', async () => {

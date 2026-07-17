@@ -72,7 +72,9 @@ describe('CLI Mode Integration Tests', () => {
   }
 
   function writeStdin(proc: ChildProcess, obj: unknown): void {
-    proc.stdin!.write(JSON.stringify(obj) + '\n');
+    const body = JSON.stringify(obj);
+    const bodyBytes = Buffer.byteLength(body, 'utf8');
+    proc.stdin!.write(`Content-Length: ${bodyBytes}\r\n\r\n${body}`);
   }
 
   function readResponse(
@@ -81,6 +83,7 @@ describe('CLI Mode Integration Tests', () => {
   ): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> {
     return new Promise((resolve, reject) => {
       let buf = '';
+      const HEADER_RE = /Content-Length:\s*(\d+)\r?\n\r?\n/;
       const timer = setTimeout(() => {
         proc.stdout!.removeListener('data', onData);
         reject(new Error('Response timeout'));
@@ -88,23 +91,33 @@ describe('CLI Mode Integration Tests', () => {
 
       const onData = (chunk: Buffer) => {
         buf += chunk.toString();
-        // Try to extract a complete JSON line
-        const lines = buf.split('\n');
-        for (let i = 0; i < lines.length - 1; i++) {
-          const line = lines[i]!.trim();
-          if (!line) continue;
+
+        for (;;) {
+          const match = HEADER_RE.exec(buf);
+          if (!match) break;
+
+          const contentLength = parseInt(match[1]!, 10);
+          if (isNaN(contentLength) || contentLength <= 0) {
+            buf = buf.slice(match.index + match[0].length);
+            continue;
+          }
+
+          const headerEnd = match.index + match[0].length;
+          if (buf.length - headerEnd < contentLength) break; // not enough data yet
+
+          const body = buf.slice(headerEnd, headerEnd + contentLength);
+          buf = buf.slice(headerEnd + contentLength);
+
           try {
-            const parsed = JSON.parse(line) as JsonRpcSuccessResponse | JsonRpcErrorResponse;
+            const parsed = JSON.parse(body) as JsonRpcSuccessResponse | JsonRpcErrorResponse;
             clearTimeout(timer);
             proc.stdout!.removeListener('data', onData);
             resolve(parsed);
             return;
           } catch {
-            // skip unparseable lines
+            // skip unparseable frames
           }
         }
-        // Keep only the incomplete last segment
-        buf = lines[lines.length - 1] ?? '';
       };
 
       proc.stdout!.on('data', onData);
@@ -225,9 +238,9 @@ describe('CLI Mode Integration Tests', () => {
     cliProcess = startCli();
     await waitForReady(cliProcess);
 
-    cliProcess.stdin!.write(
-      JSON.stringify({ jsonrpc: '2.0', id: null, method: 'unknown/method', params: {} }) + '\n'
-    );
+    const body = JSON.stringify({ jsonrpc: '2.0', id: null, method: 'unknown/method', params: {} });
+    const bodyBytes = Buffer.byteLength(body, 'utf8');
+    cliProcess.stdin!.write(`Content-Length: ${bodyBytes}\r\n\r\n${body}`);
     const response = await readResponse(cliProcess);
 
     expect(response.jsonrpc).toBe('2.0');

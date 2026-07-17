@@ -2,14 +2,13 @@
  * Transport layer type definitions
  */
 
-import type { EventEmitter } from 'events';
 import type { JsonRpcMessage } from './jsonrpc.js';
 import type { TransportType } from './service.js';
 
 /**
  * Transport interface for communication with MCP servers
  */
-export interface Transport extends EventEmitter {
+export interface Transport {
   /**
    * Send a message to the server/client
    */
@@ -34,4 +33,16 @@ export interface Transport extends EventEmitter {
    * Check if transport is in connected state
    */
   isConnected(): boolean;
+
+  /**
+   * Register an event listener
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  on(event: string, listener: (...args: any[]) => void): this;
+
+  /**
+   * Remove an event listener
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  off(event: string, listener: (...args: any[]) => void): this;
 }

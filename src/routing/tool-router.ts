@@ -27,7 +27,7 @@ import { EventEmitter } from 'events';
 import * as log from '../utils/logger.js';
 
 /** Default timeout for a single service's tools/list during discovery (ms) */
-const DEFAULT_DISCOVERY_TIMEOUT_MS = 30_000;
+const DEFAULT_DISCOVERY_TIMEOUT_MS = 10_000;
 
 /** Cache TTL: use cached tool list only if younger than this (ms). Set to 0 to use cache until invalidated. */
 const CACHE_TTL_MS: number = 60_000;
@@ -285,7 +285,18 @@ export class ToolRouter extends EventEmitter {
         if (!pool) {
           return { service: service.name, tools: [] as Tool[] };
         }
-        const serviceTools = await this.queryServiceTools(service, pool);
+        // Wrap each service query with a timeout so one slow service cannot block all others.
+        const serviceTools = await Promise.race([
+          this.queryServiceTools(service, pool),
+          new Promise<Tool[]>((resolve) => {
+            setTimeout(() => {
+              process.stderr.write(
+                `[WARN] Tool discovery timeout for service "${service.name}" after ${DEFAULT_DISCOVERY_TIMEOUT_MS}ms\n`
+              );
+              resolve([]);
+            }, DEFAULT_DISCOVERY_TIMEOUT_MS);
+          }),
+        ]);
         const enabledTools = serviceTools.filter((tool) => tool.enabled);
         return { service: service.name, tools: enabledTools };
       }
@@ -375,6 +386,19 @@ export class ToolRouter extends EventEmitter {
     this.inFlightDiscovery.clear();
     this.validatorCache.clear();
     this.emit('cacheInvalidated');
+  }
+  /**
+   * Return whatever tools are currently in the per-service cache.
+   *
+   * Used as a fallback when discoverTools() times out so the MCP client
+   * still receives a valid (possibly stale or empty) tool list.
+   */
+  public getCachedTools(_tagFilter?: TagFilter): Tool[] {
+    const allTools: Tool[] = [];
+    for (const entry of this.serviceToolCache.values()) {
+      allTools.push(...entry.tools);
+    }
+    return allTools;
   }
 
   /**
@@ -493,7 +517,10 @@ export class ToolRouter extends EventEmitter {
     if (!(error instanceof Error)) {
       return false;
     }
-    if (error.name !== 'TransportError' || !('code' in error)) {
+    if (
+      (error.name !== 'TransportError' && error.name !== 'ConnectionPoolError') ||
+      !('code' in error)
+    ) {
       return false;
     }
     const code = (error as { code?: string }).code;
@@ -532,54 +559,38 @@ export class ToolRouter extends EventEmitter {
    */
   private async receiveMatchingResponse(
     connection: Connection,
-    expectedId: string | number
+    expectedId: string | number,
+    timeoutMs: number = 30_000
   ): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> {
     const responseIterator = connection.transport.receive();
+    const timeoutId = setTimeout(() => {
+      void responseIterator.return?.(undefined as unknown as JsonRpcSuccessResponse);
+    }, timeoutMs);
 
-    for (;;) {
-      const nextResult = await responseIterator.next();
-
-      if (nextResult.done || !nextResult.value) {
-        throw new Error(
-          `No matching response received for request id "${String(expectedId)}": transport stream ended`
-        );
-      }
-
-      const message = nextResult.value as unknown as Record<string, unknown>;
-
-      // Skip notifications — they have a method but no id
-      if (!('id' in message) || message['id'] === undefined || message['id'] === null) {
-        continue;
-      }
-
-      // Check if this response matches our request ID
-      if (String(message['id']) === String(expectedId)) {
-        return message as unknown as JsonRpcSuccessResponse | JsonRpcErrorResponse;
-      }
-    }
-  }
-
-  /**
-   * Run a promise with a timeout; reject with an Error if it exceeds the limit.
-   */
-  private async withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => {
-        reject(new Error(`${label} timed out after ${ms}ms`));
-      }, ms);
-    });
     try {
-      const result = await Promise.race([promise, timeoutPromise]);
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
+      for (;;) {
+        const nextResult = await responseIterator.next();
+
+        if (nextResult.done || !nextResult.value) {
+          throw new Error(
+            `No matching response received for request id "${String(expectedId)}": transport stream ended`
+          );
+        }
+
+        const message = nextResult.value as unknown as Record<string, unknown>;
+
+        // Skip notifications — they have a method but no id
+        if (!('id' in message) || message['id'] === undefined || message['id'] === null) {
+          continue;
+        }
+
+        // Check if this response matches our request ID
+        if (String(message['id']) === String(expectedId)) {
+          return message as unknown as JsonRpcSuccessResponse | JsonRpcErrorResponse;
+        }
       }
-      return result;
-    } catch (e) {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
-      throw e;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -590,12 +601,8 @@ export class ToolRouter extends EventEmitter {
     const connection = await pool.acquire();
     let connectionHandled = false;
     try {
-      const timeoutMs = service.connectionPool?.connectionTimeout ?? DEFAULT_DISCOVERY_TIMEOUT_MS;
-      const rawTools: unknown[] = await this.withTimeout(
-        this.queryToolsViaMCP(connection),
-        timeoutMs,
-        `tools/list for ${service.name}`
-      );
+      const timeoutMs = DEFAULT_DISCOVERY_TIMEOUT_MS;
+      const rawTools: unknown[] = await this.queryToolsViaMCP(connection, timeoutMs);
 
       const tools: Tool[] = rawTools.map((rawTool: unknown) => {
         const toolObj = rawTool as {
@@ -657,7 +664,7 @@ export class ToolRouter extends EventEmitter {
    * @returns Promise resolving to raw tool definitions
    * @private
    */
-  private async queryToolsViaMCP(connection: Connection): Promise<unknown[]> {
+  private async queryToolsViaMCP(connection: Connection, timeoutMs?: number): Promise<unknown[]> {
     // Create the JSON-RPC request for tools/list
     const requestId = `tools-list-${Date.now()}`;
     const request: JsonRpcRequest = {
@@ -671,7 +678,7 @@ export class ToolRouter extends EventEmitter {
     await connection.transport.send(request);
 
     // Wait for the matching response (skip notifications that lack an id)
-    const response = await this.receiveMatchingResponse(connection, requestId);
+    const response = await this.receiveMatchingResponse(connection, requestId, timeoutMs);
 
     // Check if it's an error response
     if ('error' in response && response) {
@@ -1033,7 +1040,8 @@ export class ToolRouter extends EventEmitter {
     await connection.transport.send(request);
 
     // Wait for the matching response — skip notifications by matching request ID
-    const response = await this.receiveMatchingResponse(connection, context.requestId);
+    // Use a generous default timeout; caller can override if needed
+    const response = await this.receiveMatchingResponse(connection, context.requestId, 60_000);
 
     if (!response) {
       throw new Error('No response received from service');

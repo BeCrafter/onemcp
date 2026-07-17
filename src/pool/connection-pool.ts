@@ -417,18 +417,10 @@ export class ConnectionPool extends EventEmitter {
     const id = `${this.service.name}-${this.nextConnectionId++}`;
 
     try {
-      const transport = await this.createTransportWithTimeout();
-      const connection = createConnection(id, transport);
-
-      // Listen for transport errors to prevent unhandled error events
-      transport.on('error', (error: unknown) => {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        log.info(`[${this.service.name}] Transport error: ${errorMessage}`);
-        this.emit('error', error);
-      });
-
-      // Initialize the MCP connection
-      await this.initializeMCPConnection(connection);
+      // Wrap the ENTIRE connection lifecycle (transport + MCP init) in a timeout.
+      // Previously only createTransport() was timed; initializeMCPConnection() could hang forever
+      // if the backend accepted TCP but never replied to the MCP initialize request.
+      const connection = await this.createConnectionWithTimeout(id);
 
       this.emit('created', id);
       return connection;
@@ -442,6 +434,38 @@ export class ConnectionPool extends EventEmitter {
         error instanceof Error ? error : undefined
       );
     }
+  }
+
+  /**
+   * Create a full connection (transport + MCP handshake) within a single timeout.
+   *
+   * This wraps both transport creation AND the MCP initialize handshake so that
+   * a backend that accepts TCP but never replies to `initialize` cannot hang forever.
+   */
+  private async createConnectionWithTimeout(id: string): Promise<Connection> {
+    return Promise.race([
+      (async () => {
+        const transport = await this.createTransport();
+        const connection = createConnection(id, transport);
+
+        // Attach error handler IMMEDIATELY after transport creation, before MCP init.
+        // If the backend process exits during initialize, the error event must be handled
+        // or Node.js will crash with an unhandled 'error' event.
+        transport.on('error', (error: unknown) => {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          log.info(`[${this.service.name}] Transport error: ${errorMessage}`);
+          this.emit('error', error);
+        });
+
+        await this.initializeMCPConnection(connection);
+        return connection;
+      })(),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`Connection timeout after ${this.config.connectionTimeout}ms`));
+        }, this.config.connectionTimeout);
+      }),
+    ]);
   }
 
   /**
@@ -569,23 +593,39 @@ export class ConnectionPool extends EventEmitter {
     // Send initialize request
     await connection.transport.send(initRequest);
 
-    // Wait for response
+    // Wait for response with timeout to prevent hanging on unresponsive backends
     const responseIterator = connection.transport.receive();
-    const nextResult = await responseIterator.next();
-    const response = nextResult.value as { error?: { message: string } } | null;
+    try {
+      const nextResult = await Promise.race([
+        responseIterator.next(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(
+              new Error(`Initialize response timeout after ${this.config.connectionTimeout}ms`)
+            );
+          }, this.config.connectionTimeout);
+        }),
+      ]);
+      const response = nextResult.value as { error?: { message: string } } | null;
 
-    if (!response) {
-      throw new Error('No response received for initialize request');
-    }
+      if (!response) {
+        throw new Error('No response received for initialize request');
+      }
 
-    // Check for error response
-    if ('error' in response && response.error) {
-      throw new Error(`Initialize failed: ${response.error.message}`);
-    }
+      // Check for error response
+      if ('error' in response && response.error) {
+        throw new Error(`Initialize failed: ${response.error.message}`);
+      }
 
-    // Verify it's a success response
-    if (!('result' in response)) {
-      throw new Error('Invalid initialize response format');
+      // Verify it's a success response
+      if (!('result' in response)) {
+        throw new Error('Invalid initialize response format');
+      }
+    } finally {
+      // Clean up async generator to prevent orphaned Promises in resolveQueue
+      await responseIterator.return?.(
+        undefined as unknown as import('../types/jsonrpc.js').JsonRpcMessage
+      );
     }
 
     // Send initialized notification per MCP protocol spec
@@ -657,7 +697,19 @@ export class ConnectionPool extends EventEmitter {
     // Then, if there are still queued requests and we're under the limit,
     // create new connections asynchronously
     if (this.queue.length > 0 && this.connections.size < this.config.maxConnections) {
-      void this.createConnectionsForQueue().catch(() => {});
+      void this.createConnectionsForQueue().catch((error) => {
+        // Propagate errors to all remaining queued requests so they don't hang
+        const message = error instanceof Error ? error.message : String(error);
+        while (this.queue.length > 0) {
+          const queued = this.queue.shift();
+          queued?.reject(
+            new ConnectionPoolError(
+              `Failed to create connection: ${message}`,
+              'CONNECTION_CREATION_FAILED'
+            )
+          );
+        }
+      });
     }
   }
 

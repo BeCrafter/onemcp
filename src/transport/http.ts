@@ -244,6 +244,9 @@ export class HttpTransport extends BaseTransport {
           reject(connectionLostError);
         }
       }
+
+      // Drain messageQueue — stale messages from dead connection
+      this.messageQueue.length = 0;
     }
   }
 
@@ -426,5 +429,16 @@ export class HttpTransport extends BaseTransport {
         resolve({ value: undefined, done: true });
       }
     }
+
+    // Reject all waiting receivers
+    while (this.rejectQueue.length > 0) {
+      const reject = this.rejectQueue.shift();
+      if (reject) {
+        reject(new TransportError('Transport closed', 'TRANSPORT_CLOSED'));
+      }
+    }
+
+    // Drain messageQueue
+    this.messageQueue.length = 0;
   }
 }

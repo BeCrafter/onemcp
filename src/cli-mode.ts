@@ -6,7 +6,6 @@
  */
 
 import { stdin, stdout } from 'node:process';
-import { createInterface } from 'node:readline';
 import type { SystemConfig, ToolDiscoveryConfig } from './types/config.js';
 import type { JsonRpcMessage, JsonRpcNotification } from './types/jsonrpc.js';
 import { JsonRpcParser } from './protocol/parser.js';
@@ -46,9 +45,11 @@ export class CliModeRunner {
   private toolRouter: ToolRouter;
   private connectionPools: Map<string, ConnectionPool> = new Map();
   private running = false;
-  private readline: ReturnType<typeof createInterface> | null = null;
   private readonly tagFilter?: TagFilter;
   private readonly toolDiscoveryConfig?: ToolDiscoveryConfig;
+  private cliInitialized = false;
+  /** Whether the connected client uses Content-Length framing (true) or NDJSON (false). Defaults true for spec compliance, auto-detects from first message. */
+  private useContentLength = true;
 
   constructor(
     private config: SystemConfig,
@@ -112,7 +113,7 @@ export class CliModeRunner {
       log.info(`Loaded ${Object.keys(this.config.mcpServers).length} service(s)`);
 
       // Create connection pools for all enabled services
-      await this.initializeConnectionPools();
+      this.initializeConnectionPools();
 
       // Pre-warm tool cache in smart discovery mode
       if (this.toolDiscoveryConfig?.smartDiscovery) {
@@ -187,10 +188,7 @@ export class CliModeRunner {
   /**
    * Initialize connection pools for all enabled services
    */
-  private async initializeConnectionPools(): Promise<void> {
-    // Use Promise.resolve to satisfy require-await rule
-    await Promise.resolve();
-
+  private initializeConnectionPools(): void {
     const services = this.serviceRegistry.list();
     const enabledServices = services.filter((s) => s.enabled);
 
@@ -211,73 +209,134 @@ export class CliModeRunner {
         this.toolRouter.registerConnectionPool(service.name, pool);
         this.connectionPools.set(service.name, pool);
 
+        // Register with health monitor (initial health check runs in background)
+        void this.healthMonitor.registerConnectionPool(service.name, pool).catch(() => {});
+
         log.info(`Initialized connection pool for service: ${service.name}`);
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         log.error(
-          `Failed to initialize connection pool for service ${service.name}: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to initialize connection pool for service ${service.name}: ${errorMessage}`
         );
+        this.healthMonitor.recordInitFailure(service.name, errorMessage);
       }
     }
   }
 
   /**
-   * Set up stdin/stdout transport for client communication
+   * Set up stdin/stdout transport for client communication.
    *
-   * Reads JSON-RPC messages from stdin line by line and processes them.
-   * Sends responses to stdout.
+   * Supports two framing formats for reading (stdin):
+   *   1. Content-Length: length-prefixed messages per MCP stdio transport spec
+   *   2. NDJSON: newline-delimited JSON (used by MCP SDK and Inspector)
+   *
+   * Writing (stdout) always uses Content-Length framing per MCP spec.
    */
   private setupStdioTransport(): void {
-    // Create readline interface for line-by-line reading.
-    // Use stderr for output so stdout is used only for MCP JSON-RPC messages.
-    this.readline = createInterface({
-      input: stdin,
-      output: process.stderr,
-      terminal: false,
-    });
+    let buffer = '';
+    const HEADER_RE = /Content-Length:\s*(\d+)\r?\n\r?\n/;
 
-    // Process each line as a JSON-RPC message
-    this.readline.on('line', (line: string) => {
-      void (async () => {
-        const trimmed = line.trim();
-        if (!trimmed) {
-          return; // Skip empty lines
+    stdin.setEncoding('utf8');
+    stdin.on('data', (chunk: string) => {
+      buffer += chunk;
+
+      // Try Content-Length framed messages first (MCP spec standard)
+      let clParsed = false;
+      for (;;) {
+        const match = HEADER_RE.exec(buffer);
+        if (!match) break;
+
+        clParsed = true;
+        this.useContentLength = true;
+
+        const rawLength = match[1];
+        if (rawLength === undefined) {
+          buffer = buffer.slice(match.index + match[0].length);
+          continue;
+        }
+        const contentLength = parseInt(rawLength, 10);
+        if (isNaN(contentLength) || contentLength <= 0) {
+          buffer = buffer.slice(match.index + match[0].length);
+          continue;
         }
 
-        try {
-          // Parse the JSON-RPC message
-          const message = this.parser.parse(trimmed);
+        const headerEnd = match.index + match[0].length;
+        if (buffer.length - headerEnd < contentLength) break;
 
-          // Process the message
-          await this.processMessage(message);
-        } catch (error) {
-          // Send parse error response. Use a valid id (0) so MCP clients that require id: string|number can parse it.
-          const errorResponse = {
-            jsonrpc: '2.0' as const,
-            id: 0,
-            error: {
-              code: ErrorCode.PARSE_ERROR,
-              message: `Parse error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            },
-          };
+        const body = buffer.slice(headerEnd, headerEnd + contentLength);
+        buffer = buffer.slice(headerEnd + contentLength);
 
-          // Send error response to client
-          void this.sendResponse(errorResponse);
+        // Also consume any trailing \r\n between frames
+        if (buffer.startsWith('\r\n')) {
+          buffer = buffer.slice(2);
+        } else if (buffer.startsWith('\n')) {
+          buffer = buffer.slice(1);
         }
-      })();
+
+        void this.handleStdinFrame(body);
+      }
+
+      // Fall back to NDJSON: split on newlines (used by MCP SDK/Inspector).
+      // If no Content-Length frames were parsed and the buffer contains JSON,
+      // auto-detect NDJSON mode.
+      if (!clParsed) {
+        // Check if buffer contains NDJSON (line starting with '{')
+        if (buffer.trim().startsWith('{')) {
+          this.useContentLength = false;
+        }
+        if (!this.useContentLength) {
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed) {
+              void this.handleStdinFrame(trimmed);
+            }
+          }
+        }
+      }
     });
 
-    // Handle stdin close
-    this.readline.on('close', () => {
-      // Silence stderr immediately. In CLI/stdio mode, the MCP Inspector pipes our stderr
-      // and forwards every chunk to the browser via SSEServerTransport. When the user
-      // clicks "Disconnect", the browser SSE closes first (making webAppTransport unable
-      // to send), then stdin EOF arrives here. Any console.error() at this point causes
-      // the inspector to call webAppTransport.send() on a closed transport → "Not connected".
+    stdin.on('end', () => {
       silenceStderrForShutdown();
       this.stop().catch(() => {
         process.exit(1);
       });
     });
+  }
+
+  private handleStdinFrame(body: string): void {
+    const trimmed = body.trim();
+    if (!trimmed) return;
+
+    try {
+      const message = this.parser.parse(trimmed);
+      void this.processMessage(message);
+    } catch (error) {
+      const errorResponse = {
+        jsonrpc: '2.0' as const,
+        id: 0,
+        error: {
+          code: ErrorCode.PARSE_ERROR,
+          message: `Parse error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        },
+      };
+      void this.sendResponse(errorResponse);
+    }
+  }
+
+  /**
+   * Write a frame to stdout using the detected protocol format.
+   * Content-Length framing (MCP spec) or NDJSON (MCP SDK/Inspector compatibility).
+   */
+  private writeFrame(payload: string): void {
+    if (this.useContentLength) {
+      const bodyBytes = Buffer.byteLength(payload, 'utf8');
+      stdout.write(`Content-Length: ${bodyBytes}\r\n\r\n${payload}`);
+    } else {
+      stdout.write(payload + '\n');
+    }
   }
 
   /**
@@ -302,11 +361,16 @@ export class CliModeRunner {
         requestId: String(request.id),
         correlationId: randomUUID(),
         timestamp: new Date(),
+        sessionInitialized: this.cliInitialized,
       };
 
       try {
         // Handle the request
         const response = await this.protocolHandler.handleRequest(request, context);
+
+        if (request.method === 'initialize' && 'result' in response) {
+          this.cliInitialized = true;
+        }
 
         // Send the response
         this.sendResponse(response);
@@ -337,7 +401,7 @@ export class CliModeRunner {
   }
 
   /**
-   * Send a JSON-RPC response to stdout.
+   * Send a JSON-RPC response to stdout using Content-Length framing per MCP spec.
    * Normalizes id to never be null/undefined so MCP clients that require id: string|number can parse it.
    */
   private sendResponse(response: JsonRpcMessage): void {
@@ -349,7 +413,7 @@ export class CliModeRunner {
         isResponse && 'id' in response && (response.id === null || response.id === undefined);
       const out: JsonRpcMessage = idInvalid ? { ...response, id: 0 } : response;
       const serialized = this.serializer.serialize(out);
-      stdout.write(serialized + '\n');
+      this.writeFrame(serialized);
     } catch (error) {
       log.error(
         `Failed to send response: ${error instanceof Error ? error.message : String(error)}`
@@ -358,14 +422,14 @@ export class CliModeRunner {
   }
 
   /**
-   * Send a JSON-RPC notification to stdout.
+   * Send a JSON-RPC notification to stdout using Content-Length framing per MCP spec.
    *
    * @param notification - Notification to send
    */
   private sendNotification(notification: JsonRpcMessage): void {
     try {
       const serialized = this.serializer.serialize(notification);
-      stdout.write(serialized + '\n');
+      this.writeFrame(serialized);
     } catch (error) {
       log.error(
         `Failed to send notification: ${error instanceof Error ? error.message : String(error)}`
@@ -414,11 +478,8 @@ export class CliModeRunner {
         }
       }
 
-      // Close readline interface
-      if (this.readline) {
-        this.readline.close();
-        this.readline = null;
-      }
+      // stdin is paused to stop accepting new data — no explicit cleanup needed
+      // The stdin 'end' handler will call stop()
 
       log.info('MCP Router shutdown complete');
     } catch (error) {

@@ -169,7 +169,7 @@ export class StdioTransport extends BaseTransport {
    * Format: Content-Length: <N>\r\n\r\n<JSON body of N bytes>
    */
   private tryParseContentLengthFrames(): number {
-    const HEADER_RE = /Content-Length:\s*(\d+)\r\n\r\n/;
+    const HEADER_RE = /Content-Length:\s*(\d+)\r?\n\r?\n/;
     let parsed = 0;
 
     for (;;) {
@@ -279,15 +279,17 @@ export class StdioTransport extends BaseTransport {
     }
 
     try {
-      // Serialize message and write to stdin with newline
-      const serialized = JSON.stringify(message) + '\n';
+      // Serialize message and write to stdin with Content-Length framing per MCP spec
+      const body = JSON.stringify(message);
+      const bodyBytes = Buffer.byteLength(body, 'utf8');
+      const framed = `Content-Length: ${bodyBytes}\r\n\r\n${body}`;
 
       return new Promise<void>((resolve, reject) => {
         if (!this.process || !this.process.stdin) {
           reject(new TransportError('Process or stdin not available', 'STDIN_UNAVAILABLE'));
           return;
         }
-        this.process.stdin.write(serialized, (error) => {
+        this.process.stdin.write(framed, (error) => {
           if (error) {
             reject(
               new TransportError(

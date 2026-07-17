@@ -17,6 +17,8 @@ export interface SessionContext {
   metadata?: Record<string, unknown>;
   /** Per-session smart discovery override */
   smartDiscovery?: boolean;
+  /** Whether this session has completed MCP initialization handshake */
+  initialized?: boolean;
 }
 
 /**
