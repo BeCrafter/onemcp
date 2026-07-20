@@ -23,6 +23,7 @@ import type {
 import { ErrorCode } from '../types/jsonrpc.js';
 import { enhanceDescription } from '../protocol/description-enhancer.js';
 import Ajv from 'ajv';
+import * as log from '../utils/logger.js';
 import { EventEmitter } from 'events';
 import * as log from '../utils/logger.js';
 
@@ -290,9 +291,7 @@ export class ToolRouter extends EventEmitter {
           this.queryServiceTools(service, pool),
           new Promise<Tool[]>((resolve) => {
             setTimeout(() => {
-              process.stderr.write(
-                `[WARN] Tool discovery timeout for service "${service.name}" after ${DEFAULT_DISCOVERY_TIMEOUT_MS}ms\n`
-              );
+              log.warn(`Tool discovery timeout for service "${service.name}" after ${DEFAULT_DISCOVERY_TIMEOUT_MS}ms`);
               resolve([]);
             }, DEFAULT_DISCOVERY_TIMEOUT_MS);
           }),

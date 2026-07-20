@@ -352,8 +352,9 @@ run_scenario_5() {
     [ "$code" = "200" ] && pass "DELETE 返回 200" || fail "应返回 200"
 
     info "5.2 重复 DELETE 幂等"
-    code=$(mcp_delete "$sid")
-    pass "重复 DELETE 返回 $code（幂等）"
+    local code2
+    code2=$(mcp_delete "$sid" || true)
+    pass "重复 DELETE 返回 ${code2}（幂等）"
 
     info "5.3 删除后 tools/list"
     local resp

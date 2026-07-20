@@ -539,6 +539,9 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
+    // Redirect all logger output to onemcp.log file in addition to stderr
+    log.setupLogFile(configDir);
+
     // Display effective configuration only when not in CLI mode (CLI reserves stdout for MCP JSON-RPC only)
     if (config.mode !== 'cli') {
       displayEffectiveConfig(config, configDir);
@@ -552,6 +555,10 @@ async function main(): Promise<void> {
 
     // Start the router based on mode
     if (config.mode === 'cli') {
+      // CLI mode: silence logger stderr to avoid corrupting the MCP Inspector's
+      // SSE pipe. All diagnostic logs go to onemcp.log only.
+      log.setStderrEnabled(false);
+
       const { CliModeRunner } = await import('./cli-mode.js');
 
       // Parse tag filter from CLI argument (--tag or -t)
@@ -609,6 +616,9 @@ async function main(): Promise<void> {
       // Start the runner
       await runner.start();
     } else if (config.mode === 'tui') {
+      // Silence stderr in TUI mode to keep the terminal UI clean
+      log.setStderrEnabled(false);
+
       const { runApp } = await import('./tui.js');
       await runApp(config, configProvider);
     } else {

@@ -24,6 +24,7 @@ import { randomUUID } from 'node:crypto';
 import { silenceStderrForShutdown } from './utils/silence-stderr-shutdown.js';
 import { collectServiceTriggerHints } from './protocol/smart-discovery-description.js';
 import * as log from './utils/logger.js';
+import { getPackageVersion } from './utils/package-version.js';
 
 /**
  * CLI Mode Runner class
@@ -176,7 +177,36 @@ export class CliModeRunner {
       });
 
       this.running = true;
-      log.info('MCP Router is ready and listening on stdin/stdout');
+
+      const svcCount = Object.keys(this.config.mcpServers).length;
+      const enabledCount = Object.values(this.config.mcpServers).filter(
+        (s) => s.enabled !== false
+      ).length;
+
+      log.info('');
+      log.info('╔══════════════════════════════════════════════════════════════╗');
+      log.info('║                    onemcp MCP Router                        ║');
+      log.info('╚══════════════════════════════════════════════════════════════╝');
+      log.info(`  版本: ${getPackageVersion()}    模式: cli       传输: stdio`);
+      log.info(`  服务: ${svcCount} 个已配置, ${enabledCount} 个已启用`);
+      log.info('');
+      log.info('  ── MCP 协议 ─────────────────────────────────────────────────');
+      log.info('  输入: stdin (Content-Length 帧 或 NDJSON 自动检测)');
+      log.info('  输出: stdout (Content-Length 帧)');
+      log.info('  日志: stderr (不影响 MCP 协议)');
+      log.info('');
+      log.info('  ── 支持的方法 ───────────────────────────────────────────────');
+      log.info('  initialize / notifications/initialized / tools/list / tools/call');
+      log.info('  ping / resources/list / prompts/list / logging/setLevel');
+      log.info('');
+      log.info('  ── MCP 客户端配置 ───────────────────────────────────────────');
+      log.info(`  命令: node ${process.argv[1] ?? 'dist/cli.js'} --mode cli`);
+      log.info('  协议版本: 2024-11-05');
+      log.info('╚══════════════════════════════════════════════════════════════╝');
+      log.info('');
+      // Write directly to stderr so the test harness can detect readiness even
+      // when the logger's stderr output is silenced in CLI mode.
+      process.stderr.write('[INFO] MCP Router is ready and listening on stdin/stdout\n');
     } catch (error) {
       log.error(
         `Failed to start CLI mode: ${error instanceof Error ? error.message : String(error)}`

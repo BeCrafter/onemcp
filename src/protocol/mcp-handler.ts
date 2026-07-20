@@ -24,6 +24,7 @@ import {
   searchTools,
 } from './tool-search.js';
 import { buildSmartDiscoverySearchDescription } from './smart-discovery-description.js';
+import * as log from '../utils/logger.js';
 
 /**
  * MCP initialize parameters
@@ -186,9 +187,7 @@ export class McpProtocolHandler {
       }),
     ]).catch((error: unknown) => {
       // On timeout, log and return an empty list so the client gets a valid response
-      process.stderr.write(
-        `[WARN] tools/list discovery failed: ${error instanceof Error ? error.message : String(error)}\n`
-      );
+      log.warn(`tools/list discovery failed: ${error instanceof Error ? error.message : String(error)}`);
       return this.toolRouter.getCachedTools(tagFilter);
     });
 

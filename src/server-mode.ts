@@ -656,10 +656,46 @@ export class ServerModeRunner {
       });
 
       this.running = true;
-      log.info(`MCP Router is ready and listening on http://${host}:${port}`);
-      log.info(`Health check: http://${host}:${port}/health`);
-      log.info(`Diagnostics: http://${host}:${port}/diagnostics`);
-      log.info(`Metrics: http://${host}:${port}/metrics`);
+
+      const svcCount = Object.keys(this.config.mcpServers).length;
+      const enabledCount = Object.values(this.config.mcpServers).filter(
+        (s) => s.enabled !== false
+      ).length;
+
+      log.info('');
+      log.info('╔══════════════════════════════════════════════════════════════╗');
+      log.info('║                    onemcp MCP Router                        ║');
+      log.info('╚══════════════════════════════════════════════════════════════╝');
+      log.info(`  版本: ${getPackageVersion()}    模式: server    端口: ${port}`);
+      log.info(`  服务: ${svcCount} 个已配置, ${enabledCount} 个已启用`);
+      log.info('');
+      log.info('  ── MCP 协议端点 ──────────────────────────────────────────────');
+      log.info(
+        `  POST   http://127.0.0.1:${port}/mcp   JSON-RPC 请求 (initialize, tools/list, tools/call, ping, ...)`
+      );
+      log.info(
+        `  GET    http://127.0.0.1:${port}/mcp   SSE 连接 (服务端推送 notifications/tools/list_changed)`
+      );
+      log.info(`  DELETE http://127.0.0.1:${port}/mcp   终止会话 (Mcp-Session-Id header)`);
+      log.info('');
+      log.info('  ── 辅助端点 ──────────────────────────────────────────────────');
+      log.info(`  GET    http://127.0.0.1:${port}/              服务信息`);
+      log.info(`  GET    http://127.0.0.1:${port}/health        健康检查 (200=正常, 503=降级)`);
+      log.info(`  GET    http://127.0.0.1:${port}/diagnostics   诊断信息 (服务/会话/连接池)`);
+      log.info(`  GET    http://127.0.0.1:${port}/metrics       指标数据`);
+      log.info('');
+      log.info('  ── 请求头 ────────────────────────────────────────────────────');
+      log.info('  Mcp-Session-Id          会话标识 (initialize 响应返回, 后续请求携带)');
+      log.info('  X-MCP-Tags              标签过滤 (逗号分隔, 如: "tag1,tag2")');
+      log.info('  X-MCP-Smart-Discovery   智能发现 (true/false, 覆盖服务端默认)');
+      log.info('  X-Agent-Id              客户端标识');
+      log.info('');
+      log.info('  ── MCP 客户端配置 ───────────────────────────────────────────');
+      log.info(`  Streamable HTTP:  URL = http://127.0.0.1:${port}/mcp`);
+      log.info('  传输协议:         Content-Length 帧 或 NDJSON 均支持');
+      log.info('  协议版本:         2024-11-05');
+      log.info('╚══════════════════════════════════════════════════════════════╝');
+      log.info('');
     } catch (error) {
       log.error(
         `Failed to start Server mode: ${error instanceof Error ? error.message : String(error)}`
