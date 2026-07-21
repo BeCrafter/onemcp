@@ -11,7 +11,7 @@ describe('CLI Mode Integration Tests', () => {
 
   const makeConfig = (dir: string) => ({
     mode: 'cli' as const,
-    logLevel: 'ERROR' as const,
+    logLevel: 'INFO' as const,
     configDir: dir,
     mcpServers: {},
     connectionPool: { maxConnections: 5, idleTimeout: 60000, connectionTimeout: 30000 },
@@ -24,7 +24,7 @@ describe('CLI Mode Integration Tests', () => {
       retention: { days: 30, maxSize: '1GB' },
     },
     security: { dataMasking: { enabled: true, patterns: ['password', 'token'] } },
-    logging: { level: 'ERROR' as const, outputs: ['console' as const], format: 'json' as const },
+    logging: { level: 'INFO' as const, outputs: ['console' as const], format: 'json' as const },
     metrics: { enabled: false, collectionInterval: 60000, retentionPeriod: 86400000 },
   });
 
@@ -124,6 +124,42 @@ describe('CLI Mode Integration Tests', () => {
     });
   }
 
+  function readNdjsonResponse(
+    proc: ChildProcess,
+    timeoutMs = 5000
+  ): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> {
+    return new Promise((resolve, reject) => {
+      let buffer = '';
+      const timer = setTimeout(() => {
+        proc.stdout!.off('data', onData);
+        reject(new Error('NDJSON response timeout'));
+      }, timeoutMs);
+      const onData = (chunk: Buffer) => {
+        buffer += chunk.toString();
+        const newline = buffer.indexOf('\n');
+        if (newline === -1) {
+          return;
+        }
+        const line = buffer.slice(0, newline).trim();
+        if (!line) {
+          buffer = buffer.slice(newline + 1);
+          return;
+        }
+        try {
+          const response = JSON.parse(line) as JsonRpcSuccessResponse | JsonRpcErrorResponse;
+          clearTimeout(timer);
+          proc.stdout!.off('data', onData);
+          resolve(response);
+        } catch (error) {
+          clearTimeout(timer);
+          proc.stdout!.off('data', onData);
+          reject(error);
+        }
+      };
+      proc.stdout!.on('data', onData);
+    });
+  }
+
   async function waitForReady(proc: ChildProcess, timeoutMs = 15000): Promise<void> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -160,6 +196,24 @@ describe('CLI Mode Integration Tests', () => {
     cliProcess = startCli();
     await waitForReady(cliProcess);
     expect(cliProcess.killed).toBe(false);
+  });
+
+  it('should use NDJSON with a standard MCP client', async () => {
+    cliProcess = startCli();
+    await waitForReady(cliProcess);
+
+    cliProcess.stdin!.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'ndjson-initialize',
+        method: 'initialize',
+        params: { protocolVersion: '2024-11-05' },
+      }) + '\n'
+    );
+
+    const response = await readNdjsonResponse(cliProcess);
+    expect(response.id).toBe('ndjson-initialize');
+    expect('result' in response).toBe(true);
   });
 
   it('should handle initialize request', async () => {

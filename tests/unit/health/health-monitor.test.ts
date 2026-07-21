@@ -160,25 +160,19 @@ describe('HealthMonitor', () => {
       );
     });
 
-    it('should emit serviceUnhealthy event when initial health check fails', async () => {
+    it('should emit serviceFailed when an initial health check fails', async () => {
       const pool = createMockPool({
         acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
       });
 
-      const serviceUnhealthySpy = vi.fn();
-      healthMonitor.on('serviceUnhealthy', serviceUnhealthySpy);
+      const serviceFailedSpy = vi.fn();
+      healthMonitor.on('serviceFailed', serviceFailedSpy);
 
       const status = await healthMonitor.registerConnectionPool('test-service', pool);
 
       expect(status.healthy).toBe(false);
-      expect(serviceUnhealthySpy).toHaveBeenCalledTimes(1);
-      expect(serviceUnhealthySpy).toHaveBeenCalledWith(
-        'test-service',
-        expect.objectContaining({
-          serviceName: 'test-service',
-          healthy: false,
-        })
-      );
+      expect(serviceFailedSpy).toHaveBeenCalledTimes(1);
+      expect(serviceFailedSpy).toHaveBeenCalledWith('test-service');
     });
 
     it('should return unhealthy status when initial health check fails', async () => {

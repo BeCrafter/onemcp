@@ -19,11 +19,12 @@ import type {
   JsonRpcRequest,
   JsonRpcSuccessResponse,
   JsonRpcErrorResponse,
+  JsonRpcMessage,
 } from '../types/jsonrpc.js';
 import { ErrorCode } from '../types/jsonrpc.js';
+import { TransportError } from '../transport/base.js';
 import { enhanceDescription } from '../protocol/description-enhancer.js';
 import Ajv from 'ajv';
-import * as log from '../utils/logger.js';
 import { EventEmitter } from 'events';
 import * as log from '../utils/logger.js';
 
@@ -286,16 +287,9 @@ export class ToolRouter extends EventEmitter {
         if (!pool) {
           return { service: service.name, tools: [] as Tool[] };
         }
-        // Wrap each service query with a timeout so one slow service cannot block all others.
-        const serviceTools = await Promise.race([
-          this.queryServiceTools(service, pool),
-          new Promise<Tool[]>((resolve) => {
-            setTimeout(() => {
-              log.warn(`Tool discovery timeout for service "${service.name}" after ${DEFAULT_DISCOVERY_TIMEOUT_MS}ms`);
-              resolve([]);
-            }, DEFAULT_DISCOVERY_TIMEOUT_MS);
-          }),
-        ]);
+        // queryServiceTools applies the per-service timeout and closes failed
+        // connections before this worker continues, preventing orphaned reads.
+        const serviceTools = await this.queryServiceTools(service, pool);
         const enabledTools = serviceTools.filter((tool) => tool.enabled);
         return { service: service.name, tools: enabledTools };
       }
@@ -392,10 +386,26 @@ export class ToolRouter extends EventEmitter {
    * Used as a fallback when discoverTools() times out so the MCP client
    * still receives a valid (possibly stale or empty) tool list.
    */
-  public getCachedTools(_tagFilter?: TagFilter): Tool[] {
+  public getCachedTools(tagFilter?: TagFilter): Tool[] {
+    const visibleServices = new Set(
+      this.serviceRegistry
+        .list()
+        .filter((service) => {
+          if (!service.enabled || service.tags.length === 0 || tagFilter === undefined) {
+            return service.enabled;
+          }
+          return tagFilter.logic === 'AND'
+            ? tagFilter.tags.every((tag) => service.tags.includes(tag))
+            : tagFilter.tags.some((tag) => service.tags.includes(tag));
+        })
+        .map((service) => service.name)
+    );
+
     const allTools: Tool[] = [];
-    for (const entry of this.serviceToolCache.values()) {
-      allTools.push(...entry.tools);
+    for (const [serviceName, entry] of this.serviceToolCache.entries()) {
+      if (visibleServices.has(serviceName)) {
+        allTools.push(...entry.tools.filter((tool) => tool.enabled));
+      }
     }
     return allTools;
   }
@@ -542,6 +552,10 @@ export class ToolRouter extends EventEmitter {
       'CLOSE_TIMEOUT',
       'PROCESS_START_FAILED',
       'SEND_FAILED',
+      'RESPONSE_TIMEOUT',
+      'RESPONSE_STREAM_ENDED',
+      'RESPONSE_MISMATCH',
+      'CONNECTION_FAILED',
     ]);
     return typeof code === 'string' && connectionLevelCodes.has(code);
   }
@@ -562,34 +576,56 @@ export class ToolRouter extends EventEmitter {
     timeoutMs: number = 30_000
   ): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> {
     const responseIterator = connection.transport.receive();
-    const timeoutId = setTimeout(() => {
-      void responseIterator.return?.(undefined as unknown as JsonRpcSuccessResponse);
-    }, timeoutMs);
+    let timeoutId: NodeJS.Timeout | undefined;
 
-    try {
+    const readResponse = async (): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> => {
+      let skippedMessages = 0;
       for (;;) {
         const nextResult = await responseIterator.next();
 
         if (nextResult.done || !nextResult.value) {
-          throw new Error(
-            `No matching response received for request id "${String(expectedId)}": transport stream ended`
+          throw new TransportError(
+            `No matching response received for request id "${String(expectedId)}": transport stream ended`,
+            'RESPONSE_STREAM_ENDED'
           );
         }
 
         const message = nextResult.value as unknown as Record<string, unknown>;
-
-        // Skip notifications — they have a method but no id
         if (!('id' in message) || message['id'] === undefined || message['id'] === null) {
-          continue;
+          skippedMessages++;
+        } else if (String(message['id']) === String(expectedId)) {
+          return message as unknown as JsonRpcSuccessResponse | JsonRpcErrorResponse;
+        } else {
+          skippedMessages++;
         }
 
-        // Check if this response matches our request ID
-        if (String(message['id']) === String(expectedId)) {
-          return message as unknown as JsonRpcSuccessResponse | JsonRpcErrorResponse;
+        if (skippedMessages > 100) {
+          throw new TransportError(
+            `Too many unmatched messages while waiting for request id "${String(expectedId)}"`,
+            'RESPONSE_MISMATCH'
+          );
         }
       }
+    };
+
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(
+          new TransportError(
+            `Response timeout after ${timeoutMs}ms for request id "${String(expectedId)}"`,
+            'RESPONSE_TIMEOUT'
+          )
+        );
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([readResponse(), timeout]);
     } finally {
-      clearTimeout(timeoutId);
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+      void responseIterator.return?.(undefined as unknown as JsonRpcMessage).catch(() => {});
     }
   }
 

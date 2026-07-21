@@ -279,10 +279,9 @@ export class StdioTransport extends BaseTransport {
     }
 
     try {
-      // Serialize message and write to stdin with Content-Length framing per MCP spec
-      const body = JSON.stringify(message);
-      const bodyBytes = Buffer.byteLength(body, 'utf8');
-      const framed = `Content-Length: ${bodyBytes}\r\n\r\n${body}`;
+      // MCP stdio uses one newline-delimited JSON-RPC message per line.
+      // Content-Length framing remains accepted on input only for legacy peers.
+      const framed = JSON.stringify(message) + '\n';
 
       return new Promise<void>((resolve, reject) => {
         if (!this.process || !this.process.stdin) {

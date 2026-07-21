@@ -210,6 +210,19 @@ export class ServerModeRunner {
       // Get or create session
       const sessionId = this.getSessionId(request);
       let session = this.sessionManager.getSession(sessionId);
+      const suppliedMcpSessionId = typeof request.headers['mcp-session-id'] === 'string';
+
+      if (!session && suppliedMcpSessionId) {
+        void reply.code(404).send({
+          jsonrpc: '2.0',
+          id: null,
+          error: {
+            code: -32001,
+            message: 'MCP session not found',
+          },
+        });
+        return;
+      }
 
       if (!session) {
         // Create new session for this client
@@ -588,6 +601,7 @@ export class ServerModeRunner {
    * Initializes the system, starts health monitoring, and starts the HTTP server.
    */
   async start(): Promise<void> {
+    log.configureLogger(this.config);
     log.info('Starting MCP Router in Server mode...');
 
     try {
@@ -759,6 +773,7 @@ export class ServerModeRunner {
           await pool.closeAll();
           this.connectionPools.delete(serviceName);
           this.toolRouter.unregisterConnectionPool(serviceName);
+          this.healthMonitor.unregisterConnectionPool(serviceName);
           log.info(`Removed connection pool for deleted service: ${serviceName}`);
         }
       }
@@ -794,6 +809,7 @@ export class ServerModeRunner {
             await existingPool.closeAll();
             this.connectionPools.delete(newService.name);
             this.toolRouter.unregisterConnectionPool(newService.name);
+            this.healthMonitor.unregisterConnectionPool(newService.name);
           }
 
           if (newService.enabled) {
@@ -818,8 +834,11 @@ export class ServerModeRunner {
     await this.serviceRegistry.initialize();
     this.toolRouter.invalidateCache();
 
-    // Clear health statuses for all services to allow rechecking after config change
+    // Clear health statuses and re-check the active pool set after configuration changes.
     this.healthMonitor.clearAllHealthStatuses();
+    for (const [serviceName, pool] of this.connectionPools.entries()) {
+      await this.healthMonitor.registerConnectionPool(serviceName, pool);
+    }
 
     log.info(`Reloaded ${Object.keys(newServices).length} service(s)`);
   }
@@ -890,6 +909,7 @@ export class ServerModeRunner {
       }
 
       log.info('MCP Router shutdown complete');
+      await log.closeLogger();
       this.options.onShutdownComplete?.();
     } catch (error) {
       log.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);

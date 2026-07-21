@@ -354,18 +354,18 @@ run_scenario_5() {
     info "5.2 重复 DELETE 幂等"
     local code2
     code2=$(mcp_delete "$sid" || true)
-    pass "重复 DELETE 返回 ${code2}（幂等）"
+    [ "$code2" = "200" ] && pass "重复 DELETE 返回 200（幂等）" || fail "重复 DELETE 应返回 200，实际 ${code2}"
 
     info "5.3 删除后 tools/list"
     local resp
     resp=$(mcp_post "$sid" '{"jsonrpc":"2.0","id":99,"method":"tools/list","params":{}}')
-    echo "$resp" | grep -q '"error"' && pass "删除后 tools/list 返回 error" || pass "删除后（行为可接受）"
+    echo "$resp" | grep -q '"error"' && pass "删除后 tools/list 返回 error" || fail "删除后 tools/list 应返回 error"
 
-    info "5.4 活跃会话确认"
-    local health active
-    health=$(curl -sf "http://127.0.0.1:$PORT/health" 2>&1)
-    active=$(echo "$health" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('sessions',{}).get('active',-1))" 2>/dev/null || echo "-1")
-    [ "$active" = "0" ] && pass "活跃会话数为 0" || info "活跃会话数: $active"
+    info "5.4 已删除会话不复活"
+    local health deleted_present
+    health=$(curl -sf "http://127.0.0.1:$PORT/diagnostics" 2>&1)
+    deleted_present=$(echo "$health" | python3 -c "import json,sys; sid=sys.argv[1]; sessions=json.loads(sys.stdin.read()).get('sessions',{}).get('list',[]); print('true' if any(s.get('id') == sid for s in sessions) else 'false')" "$sid" 2>/dev/null || echo "unknown")
+    [ "$deleted_present" = "false" ] && pass "已删除 session 不在诊断列表中" || fail "已删除 session 不应重建，状态 $deleted_present"
 }
 
 # ============================================================================

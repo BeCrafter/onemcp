@@ -430,6 +430,25 @@ export class FileConfigProvider implements ConfigProvider {
       typeof config.mcpServers === 'object' &&
       !Array.isArray(config.mcpServers)
     ) {
+      const normalizedNames = new Map<string, string>();
+      for (const serviceName of Object.keys(config.mcpServers)) {
+        const normalized = serviceName
+          .toLowerCase()
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9\-_]/g, '');
+        const existing = normalizedNames.get(normalized);
+        if (existing !== undefined) {
+          errors.push({
+            field: `mcpServers.${serviceName}`,
+            message: `Service name collides with "${existing}" after namespace normalization`,
+            expected: 'a unique normalized service name',
+            actual: serviceName,
+          });
+        } else {
+          normalizedNames.set(normalized, serviceName);
+        }
+      }
+
       for (const [name, service] of Object.entries(config.mcpServers)) {
         if (!service) continue;
 

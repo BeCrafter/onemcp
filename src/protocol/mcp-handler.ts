@@ -187,7 +187,9 @@ export class McpProtocolHandler {
       }),
     ]).catch((error: unknown) => {
       // On timeout, log and return an empty list so the client gets a valid response
-      log.warn(`tools/list discovery failed: ${error instanceof Error ? error.message : String(error)}`);
+      log.warn(
+        `tools/list discovery failed: ${error instanceof Error ? error.message : String(error)}`
+      );
       return this.toolRouter.getCachedTools(tagFilter);
     });
 

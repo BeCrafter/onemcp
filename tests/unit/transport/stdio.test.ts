@@ -38,7 +38,11 @@ function createMockProcess() {
   process.stdin = stdin;
   process.stdout = stdout;
   process.stderr = stderr;
-  process.kill = vi.fn();
+  process.kill = vi.fn(() => {
+    process.killed = true;
+    queueMicrotask(() => process.emit('exit', 0, null));
+    return true;
+  });
   process.killed = false;
 
   return process;
@@ -155,8 +159,7 @@ describe('StdioTransport', () => {
 
       await transport.send(message);
 
-      const body = JSON.stringify(message);
-      const expectedFrame = `Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n${body}`;
+      const expectedFrame = JSON.stringify(message) + '\n';
       expect(mockProcess.stdin.write).toHaveBeenCalledWith(expectedFrame, expect.any(Function));
     });
 
@@ -486,6 +489,7 @@ describe('StdioTransport', () => {
     });
 
     it('should force kill if process does not exit within timeout', async () => {
+      mockProcess.kill.mockImplementation(() => true);
       const closePromise = transport.close();
 
       // Don't emit exit event, let it timeout

@@ -261,6 +261,21 @@ describe('FileConfigProvider', () => {
       expect(result.errors).toHaveLength(0);
     });
 
+    it('should reject service names that collide after namespace normalization', () => {
+      const invalidConfig: SystemConfig = {
+        ...validConfig,
+        mcpServers: {
+          'Git Hub': validConfig.mcpServers['test-service']!,
+          'git-hub': validConfig.mcpServers['test-service']!,
+        },
+      };
+
+      const result = provider.validate(invalidConfig);
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((error) => error.message.includes('collides'))).toBe(true);
+    });
+
     it('should reject missing required fields', () => {
       // Arrange
       const invalidConfig = { ...validConfig };

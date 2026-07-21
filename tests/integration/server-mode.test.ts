@@ -542,6 +542,41 @@ describe('Server Mode Integration Tests', () => {
       expect(diagData.sessions).toHaveProperty('list');
       expect(Array.isArray(diagData.sessions.list)).toBe(true);
     });
+
+    it('should reject a deleted standard MCP session ID', async () => {
+      await runner.start();
+
+      const initializeResponse = await fetch(`http://localhost:${testPort}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2024-11-05' },
+        }),
+      });
+      const sessionId = initializeResponse.headers.get('mcp-session-id');
+      expect(sessionId).not.toBeNull();
+
+      const deleteResponse = await fetch(`http://localhost:${testPort}/mcp`, {
+        method: 'DELETE',
+        headers: { 'mcp-session-id': sessionId ?? '' },
+      });
+      expect(deleteResponse.status).toBe(200);
+
+      const reuseResponse = await fetch(`http://localhost:${testPort}/mcp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'mcp-session-id': sessionId ?? '',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+      });
+      expect(reuseResponse.status).toBe(404);
+      const responseBody = (await reuseResponse.json()) as { error?: { code?: number } };
+      expect(responseBody.error?.code).toBe(-32001);
+    });
   });
 
   describe('Concurrent Request Handling', () => {

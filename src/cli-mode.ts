@@ -49,8 +49,8 @@ export class CliModeRunner {
   private readonly tagFilter?: TagFilter;
   private readonly toolDiscoveryConfig?: ToolDiscoveryConfig;
   private cliInitialized = false;
-  /** Whether the connected client uses Content-Length framing (true) or NDJSON (false). Defaults true for spec compliance, auto-detects from first message. */
-  private useContentLength = true;
+  /** Whether the client selected legacy Content-Length framing. MCP stdio defaults to NDJSON. */
+  private useContentLength = false;
 
   constructor(
     private config: SystemConfig,
@@ -106,6 +106,7 @@ export class CliModeRunner {
    * requests from stdin.
    */
   async start(): Promise<void> {
+    log.configureLogger(this.config);
     log.info('Starting MCP Router in CLI mode...');
 
     try {
@@ -191,8 +192,8 @@ export class CliModeRunner {
       log.info(`  服务: ${svcCount} 个已配置, ${enabledCount} 个已启用`);
       log.info('');
       log.info('  ── MCP 协议 ─────────────────────────────────────────────────');
-      log.info('  输入: stdin (Content-Length 帧 或 NDJSON 自动检测)');
-      log.info('  输出: stdout (Content-Length 帧)');
+      log.info('  输入: stdin (NDJSON；兼容遗留 Content-Length 帧)');
+      log.info('  输出: stdout (NDJSON)');
       log.info('  日志: stderr (不影响 MCP 协议)');
       log.info('');
       log.info('  ── 支持的方法 ───────────────────────────────────────────────');
@@ -204,9 +205,7 @@ export class CliModeRunner {
       log.info('  协议版本: 2024-11-05');
       log.info('╚══════════════════════════════════════════════════════════════╝');
       log.info('');
-      // Write directly to stderr so the test harness can detect readiness even
-      // when the logger's stderr output is silenced in CLI mode.
-      process.stderr.write('[INFO] MCP Router is ready and listening on stdin/stdout\n');
+      log.info('MCP Router is ready and listening on stdin/stdout');
     } catch (error) {
       log.error(
         `Failed to start CLI mode: ${error instanceof Error ? error.message : String(error)}`
@@ -256,11 +255,9 @@ export class CliModeRunner {
   /**
    * Set up stdin/stdout transport for client communication.
    *
-   * Supports two framing formats for reading (stdin):
-   *   1. Content-Length: length-prefixed messages per MCP stdio transport spec
-   *   2. NDJSON: newline-delimited JSON (used by MCP SDK and Inspector)
-   *
-   * Writing (stdout) always uses Content-Length framing per MCP spec.
+   * Supports standard NDJSON framing and legacy Content-Length input frames.
+   * Responses use the same framing selected by the first client request, with
+   * NDJSON as the default before a request is received.
    */
   private setupStdioTransport(): void {
     let buffer = '';
@@ -512,6 +509,7 @@ export class CliModeRunner {
       // The stdin 'end' handler will call stop()
 
       log.info('MCP Router shutdown complete');
+      await log.closeLogger();
     } catch (error) {
       log.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);
       throw error;

@@ -32,6 +32,7 @@ export class HealthMonitor extends EventEmitter {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private heartbeatIntervalMs: number = 30000; // Default 30 seconds
   private failureThreshold: number = 3; // Default threshold
+  private readonly unhealthyServices: Set<string> = new Set();
   /** Maximum interval for unhealthy service checks (5 minutes) */
   private readonly maxUnhealthyIntervalMs: number = 300000;
   /** Initialization failures for services that failed during pool creation */
@@ -65,8 +66,6 @@ export class HealthMonitor extends EventEmitter {
     // Emit event for initial health check result
     if (initialStatus.healthy) {
       this.emit('serviceHealthy', serviceName, initialStatus);
-    } else {
-      this.emit('serviceUnhealthy', serviceName, initialStatus);
     }
 
     return initialStatus;
@@ -80,6 +79,7 @@ export class HealthMonitor extends EventEmitter {
   public unregisterConnectionPool(serviceName: string): void {
     this.connectionPools.delete(serviceName);
     this.healthStatuses.delete(serviceName);
+    this.unhealthyServices.delete(serviceName);
   }
 
   /**
@@ -135,6 +135,7 @@ export class HealthMonitor extends EventEmitter {
       this.healthStatuses.set(serviceName, status);
 
       if (wasUnhealthy) {
+        this.unhealthyServices.delete(serviceName);
         this.emit('healthChanged', status);
         this.emit('serviceRecovered', serviceName);
       }
@@ -218,6 +219,7 @@ export class HealthMonitor extends EventEmitter {
    */
   public clearAllHealthStatuses(): void {
     this.healthStatuses.clear();
+    this.unhealthyServices.clear();
     this.initFailures.clear();
   }
 
@@ -340,21 +342,21 @@ export class HealthMonitor extends EventEmitter {
 
         const status = await this.checkHealth(serviceName);
 
-        if (!status.healthy && status.consecutiveFailures >= this.failureThreshold) {
-          // Only log when first becoming unhealthy or at specific intervals
-          if (status.consecutiveFailures === this.failureThreshold) {
-            log.warn(
-              `[${serviceName}] Service marked as unhealthy after ${status.consecutiveFailures} failures`
-            );
-          }
+        if (
+          !status.healthy &&
+          status.consecutiveFailures >= this.failureThreshold &&
+          !this.unhealthyServices.has(serviceName)
+        ) {
+          this.unhealthyServices.add(serviceName);
+          log.warn(
+            `[${serviceName}] Service marked as unhealthy after ${status.consecutiveFailures} failures`
+          );
           this.emit('serviceUnhealthy', serviceName, status);
 
           const pool = this.connectionPools.get(serviceName);
           if (pool !== undefined) {
             await pool.removeUnhealthyConnections();
           }
-        } else if (status.healthy && currentStatus && !currentStatus.healthy) {
-          log.info(`[${serviceName}] Service recovered`);
         }
       })
     );

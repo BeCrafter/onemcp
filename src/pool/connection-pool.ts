@@ -437,56 +437,56 @@ export class ConnectionPool extends EventEmitter {
   }
 
   /**
-   * Create a full connection (transport + MCP handshake) within a single timeout.
-   *
-   * This wraps both transport creation AND the MCP initialize handshake so that
-   * a backend that accepts TCP but never replies to `initialize` cannot hang forever.
+   * Await an operation with a cleanup-aware timeout.
    */
-  private async createConnectionWithTimeout(id: string): Promise<Connection> {
-    return Promise.race([
-      (async () => {
-        const transport = await this.createTransport();
-        const connection = createConnection(id, transport);
-
-        // Attach error handler IMMEDIATELY after transport creation, before MCP init.
-        // If the backend process exits during initialize, the error event must be handled
-        // or Node.js will crash with an unhandled 'error' event.
-        transport.on('error', (error: unknown) => {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          log.info(`[${this.service.name}] Transport error: ${errorMessage}`);
-          this.emit('error', error);
-        });
-
-        await this.initializeMCPConnection(connection);
-        return connection;
-      })(),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`Connection timeout after ${this.config.connectionTimeout}ms`));
-        }, this.config.connectionTimeout);
-      }),
-    ]);
+  private async withTimeout<T>(operation: Promise<T>, message: string): Promise<T> {
+    let timeoutId: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        operation,
+        new Promise<never>((_resolve, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(message)), this.config.connectionTimeout);
+        }),
+      ]);
+    } finally {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+    }
   }
 
   /**
-   * Create transport with connection timeout
-   *
-   * Creates the appropriate transport (Stdio or HTTP) based on service configuration
-   *
-   * @returns Promise resolving to transport
-   * @throws Error if timeout occurs
+   * Create a full connection (transport + MCP handshake) within bounded time.
    */
-  private async createTransportWithTimeout(): Promise<Transport> {
-    return Promise.race([
-      this.createTransport(),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('Connection timeout'));
-        }, this.config.connectionTimeout);
-      }),
-    ]);
-  }
+  private async createConnectionWithTimeout(id: string): Promise<Connection> {
+    let transport: Transport | undefined;
+    try {
+      transport = await this.withTimeout(
+        this.createTransport(),
+        `Transport creation timeout after ${this.config.connectionTimeout}ms`
+      );
+      const connection = createConnection(id, transport);
 
+      // Attach the listener before initialization so an early process exit does not
+      // surface as an unhandled EventEmitter error.
+      transport.on('error', (error: unknown) => {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log.warn(`[${this.service.name}] Transport error: ${errorMessage}`);
+        this.emit('error', error);
+      });
+
+      await this.withTimeout(
+        this.initializeMCPConnection(connection),
+        `MCP initialization timeout after ${this.config.connectionTimeout}ms`
+      );
+      return connection;
+    } catch (error) {
+      if (transport !== undefined) {
+        await transport.close().catch(() => {});
+      }
+      throw error;
+    }
+  }
   /**
    * Create transport based on service configuration
    *
@@ -596,16 +596,10 @@ export class ConnectionPool extends EventEmitter {
     // Wait for response with timeout to prevent hanging on unresponsive backends
     const responseIterator = connection.transport.receive();
     try {
-      const nextResult = await Promise.race([
+      const nextResult = await this.withTimeout(
         responseIterator.next(),
-        new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            reject(
-              new Error(`Initialize response timeout after ${this.config.connectionTimeout}ms`)
-            );
-          }, this.config.connectionTimeout);
-        }),
-      ]);
+        `Initialize response timeout after ${this.config.connectionTimeout}ms`
+      );
       const response = nextResult.value as { error?: { message: string } } | null;
 
       if (!response) {

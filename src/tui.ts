@@ -180,9 +180,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const { setupLogFile, setStderrEnabled } = await import('./utils/logger.js');
-  setupLogFile(configDir);
-  setStderrEnabled(false);
+  const { configureLogger, setStderrEnabled } = await import('./utils/logger.js');
 
   const storage = new FileStorageAdapter(configDir);
   const configProvider = new FileConfigProvider({
@@ -191,6 +189,8 @@ async function main(): Promise<void> {
   });
 
   const config = await configProvider.load();
+  configureLogger(config);
+  setStderrEnabled(false);
 
   await runApp(config, configProvider);
 }

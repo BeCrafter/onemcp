@@ -30,8 +30,10 @@ export default defineConfig({
     testTimeout: 30000,
     hookTimeout: 30000,
     include: ['tests/**/*.test.ts'],
-    exclude: ['node_modules', 'dist', 'tests/unit/routing/tool-router.test.ts'],
+    exclude: ['node_modules', 'dist'],
     setupFiles: ['./tests/setup.ts'],
-    pool: 'forks',
+    pool: 'threads',
+    maxWorkers: 1,
+    minWorkers: 1,
   },
 });

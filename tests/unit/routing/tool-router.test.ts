@@ -1445,7 +1445,7 @@ describe('ToolRouter', () => {
       const findToolSpy = vi.spyOn(toolRouter as any, 'findTool').mockResolvedValue(mockTool);
 
       const context: RequestContext = {
-        requestId: 'my-request-id',
+        requestId: 'test-request-id',
         correlationId: 'my-correlation-id',
         sessionId: 'my-session-id',
         agentId: 'my-agent-id',
@@ -1458,7 +1458,7 @@ describe('ToolRouter', () => {
       // Verify the request was sent with the correct ID
       expect(mockTransport.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          id: 'my-request-id',
+          id: 'test-request-id',
         })
       );
 
@@ -1869,16 +1869,21 @@ describe('ToolRouter', () => {
         enabled: true,
       };
 
+      let requestId = '';
       const mockTransport = {
-        send: vi.fn(),
+        send: vi.fn(async (request: { id?: string | number }) => {
+          requestId = String(request.id ?? '');
+        }),
         receive: vi.fn().mockReturnValue({
-          next: vi.fn().mockResolvedValue({
+          next: vi.fn().mockImplementation(async () => ({
             value: {
+              jsonrpc: '2.0',
+              id: requestId,
               result: {
                 tools: [mockTool],
               },
             },
-          }),
+          })),
         }),
         getType: vi.fn().mockReturnValue('stdio'),
       };
@@ -1941,16 +1946,21 @@ describe('ToolRouter', () => {
         enabled: true,
       };
 
+      let requestId = '';
       const mockTransport = {
-        send: vi.fn(),
+        send: vi.fn(async (request: { id?: string | number }) => {
+          requestId = String(request.id ?? '');
+        }),
         receive: vi.fn().mockReturnValue({
-          next: vi.fn().mockResolvedValue({
+          next: vi.fn().mockImplementation(async () => ({
             value: {
+              jsonrpc: '2.0',
+              id: requestId,
               result: {
                 tools: [mockTool],
               },
             },
-          }),
+          })),
         }),
         getType: vi.fn().mockReturnValue('stdio'),
       };
