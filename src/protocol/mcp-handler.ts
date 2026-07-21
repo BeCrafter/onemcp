@@ -24,6 +24,7 @@ import {
   searchTools,
 } from './tool-search.js';
 import { buildSmartDiscoverySearchDescription } from './smart-discovery-description.js';
+import * as log from '../utils/logger.js';
 
 /**
  * MCP initialize parameters
@@ -83,7 +84,6 @@ export interface BatchRequest {
  * and batch request processing.
  */
 export class McpProtocolHandler {
-  private initialized = false;
   private tagFilter?: TagFilter;
   private readonly maxBatchSize: number;
   private toolDiscoveryConfig: ToolDiscoveryConfig;
@@ -121,12 +121,14 @@ export class McpProtocolHandler {
    * @returns Initialize result
    */
   async initialize(params: InitializeParams, _context: RequestContext): Promise<InitializeResult> {
+    if (_context.sessionInitialized) {
+      throw new Error('Already initialized');
+    }
+
     // Store tag filter if provided
     if (params.tagFilter) {
       this.tagFilter = params.tagFilter;
     }
-
-    this.initialized = true;
 
     // Use Promise.resolve to satisfy require-await rule
     await Promise.resolve();
@@ -164,15 +166,34 @@ export class McpProtocolHandler {
   ): Promise<{
     tools: Array<{ name: string; description: string; inputSchema: unknown; enabled: boolean }>;
   }> {
-    if (!this.initialized) {
+    if (!_context.sessionInitialized) {
       throw new Error('Protocol not initialized');
     }
 
     // Per-session header overrides server default; fall back to server-level config
     const smartDiscovery = _context.smartDiscovery ?? this.toolDiscoveryConfig.smartDiscovery;
+    const tagFilter = params?.tagFilter ?? _context.tagFilter ?? this.tagFilter;
+
+    // Wrap discovery with an overall handler timeout so the MCP client always gets a response.
+    // If discovery hangs on unresponsive backends, return whatever we have (possibly empty).
+    const HANDLER_TIMEOUT_MS = 15_000;
+    const discoveryPromise = this.toolRouter.discoverTools(tagFilter);
+    const allTools = await Promise.race([
+      discoveryPromise,
+      new Promise<never>((_resolve, reject) => {
+        setTimeout(() => {
+          reject(new Error('tools/list discovery timed out'));
+        }, HANDLER_TIMEOUT_MS);
+      }),
+    ]).catch((error: unknown) => {
+      // On timeout, log and return an empty list so the client gets a valid response
+      log.warn(
+        `tools/list discovery failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return this.toolRouter.getCachedTools(tagFilter);
+    });
+
     if (smartDiscovery) {
-      const tagFilter = params?.tagFilter ?? _context.tagFilter ?? this.tagFilter;
-      const allTools = await this.toolRouter.discoverTools(tagFilter);
       const dynamicDescription = buildSmartDiscoverySearchDescription(
         SEARCH_DESCRIPTION_PREAMBLE,
         allTools,
@@ -197,11 +218,8 @@ export class McpProtocolHandler {
       };
     }
 
-    const tagFilter = params?.tagFilter ?? _context.tagFilter ?? this.tagFilter;
-    const tools = await this.toolRouter.discoverTools(tagFilter);
-
     return {
-      tools: tools.map((tool) => ({
+      tools: allTools.map((tool) => ({
         name: tool.namespacedName,
         description: tool.description,
         inputSchema: tool.inputSchema,
@@ -223,7 +241,7 @@ export class McpProtocolHandler {
    * @returns Tool call result
    */
   async toolsCall(params: ToolCallParams, context: RequestContext): Promise<unknown> {
-    if (!this.initialized) {
+    if (!context.sessionInitialized) {
       throw new Error('Protocol not initialized');
     }
 
@@ -379,6 +397,31 @@ export class McpProtocolHandler {
           result = await this.ping();
           break;
 
+        // MCP protocol: return empty results for resources/prompts so clients
+        // that probe these endpoints get a valid response instead of an error.
+        case 'resources/list':
+          result = { resources: [] };
+          break;
+
+        case 'resources/templates/list':
+          result = { resourceTemplates: [] };
+          break;
+
+        case 'prompts/list':
+          result = { prompts: [] };
+          break;
+
+        case 'logging/setLevel':
+          // Accept and acknowledge; no-op since onemcp has its own logging config
+          result = {};
+          break;
+
+        case 'resources/read':
+          throw new Error('Resource not found');
+
+        case 'prompts/get':
+          throw new Error('Prompt not found');
+
         default:
           return ErrorBuilder.methodNotFound(request.method, request.id, context);
       }
@@ -419,13 +462,6 @@ export class McpProtocolHandler {
         },
       };
     }
-  }
-
-  /**
-   * Check if the protocol is initialized
-   */
-  isInitialized(): boolean {
-    return this.initialized;
   }
 
   /**

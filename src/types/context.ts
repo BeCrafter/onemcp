@@ -25,6 +25,8 @@ export interface RequestContext {
   tagFilter?: TagFilter;
   /** Per-session smart discovery override (overrides server default when set) */
   smartDiscovery?: boolean;
+  /** Whether this session has completed MCP initialization handshake */
+  sessionInitialized?: boolean;
 }
 
 /**
@@ -45,6 +47,10 @@ export interface ResourceLimits {
 export interface SessionContext {
   /** Tag filter for this session */
   tagFilter?: TagFilter;
+  /** Smart discovery override for this session */
+  smartDiscovery?: boolean;
+  /** Whether this session has completed MCP initialization handshake */
+  initialized?: boolean;
   /** Resource limits for this session */
   resourceLimits?: ResourceLimits;
   /** Additional metadata */

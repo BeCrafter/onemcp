@@ -113,6 +113,7 @@ describe('McpProtocolHandler', () => {
       requestId: 'test-request-1',
       correlationId: 'test-correlation-1',
       timestamp: new Date(),
+      sessionInitialized: false,
     };
   });
 
@@ -142,7 +143,8 @@ describe('McpProtocolHandler', () => {
         },
       });
 
-      expect(mcpHandler.isInitialized()).toBe(true);
+      // Initialization is tracked per-session via context, not on the handler
+      expect(context.sessionInitialized).toBe(false); // context isn't auto-updated — caller does it
     });
 
     it('should store tag filter from initialization parameters', async () => {
@@ -205,6 +207,7 @@ describe('McpProtocolHandler', () => {
         },
         context
       );
+      context.sessionInitialized = true;
     });
 
     it('should return empty list when no services are registered', async () => {
@@ -215,8 +218,14 @@ describe('McpProtocolHandler', () => {
 
     it('should throw error if not initialized', async () => {
       const uninitializedHandler = new McpProtocolHandler(toolRouter);
+      const uninitContext: RequestContext = {
+        requestId: 'test',
+        correlationId: 'test',
+        timestamp: new Date(),
+        sessionInitialized: false,
+      };
 
-      await expect(uninitializedHandler.toolsList(undefined, context)).rejects.toThrow(
+      await expect(uninitializedHandler.toolsList(undefined, uninitContext)).rejects.toThrow(
         'not initialized'
       );
     });
@@ -246,6 +255,12 @@ describe('McpProtocolHandler', () => {
         toolDiscoveryConfig: { smartDiscovery: false },
       });
       const tagFilter = { tags: ['production'], logic: 'AND' as const };
+      const freshContext: RequestContext = {
+        requestId: 'test-1',
+        correlationId: 'test-1',
+        timestamp: new Date(),
+        sessionInitialized: false,
+      };
 
       await handlerWithFilter.initialize(
         {
@@ -253,14 +268,15 @@ describe('McpProtocolHandler', () => {
           clientInfo: { name: 'test-client', version: '1.0.0' },
           tagFilter,
         },
-        context
+        freshContext
       );
 
       // Mock discoverTools to verify tag filter is passed
       const discoverToolsSpy = vi.spyOn(toolRouter, 'discoverTools');
       discoverToolsSpy.mockResolvedValue([]);
 
-      await handlerWithFilter.toolsList(undefined, context);
+      freshContext.sessionInitialized = true;
+      await handlerWithFilter.toolsList(undefined, freshContext);
 
       expect(discoverToolsSpy).toHaveBeenCalledWith(tagFilter);
     });
@@ -311,13 +327,20 @@ describe('McpProtocolHandler', () => {
         },
         context
       );
+      context.sessionInitialized = true;
     });
 
     it('should throw error if not initialized', async () => {
       const uninitializedHandler = new McpProtocolHandler(toolRouter);
+      const uninitContext: RequestContext = {
+        requestId: 'test',
+        correlationId: 'test',
+        timestamp: new Date(),
+        sessionInitialized: false,
+      };
 
       await expect(
-        uninitializedHandler.toolsCall({ name: 'test-tool', arguments: {} }, context)
+        uninitializedHandler.toolsCall({ name: 'test-tool', arguments: {} }, uninitContext)
       ).rejects.toThrow('not initialized');
     });
 
@@ -365,6 +388,7 @@ describe('McpProtocolHandler', () => {
         { protocolVersion: '2024-11-05', clientInfo: { name: 'test', version: '1.0' } },
         context
       );
+      context.sessionInitialized = true;
     });
 
     it('should expose search and invoke wrappers when smart discovery is enabled', async () => {
@@ -532,6 +556,7 @@ describe('McpProtocolHandler', () => {
         },
         context
       );
+      context.sessionInitialized = true;
     });
 
     it('should handle empty batch', async () => {
@@ -672,9 +697,17 @@ describe('McpProtocolHandler', () => {
         },
         context
       );
+      context.sessionInitialized = true;
     });
 
     it('should route initialize method', async () => {
+      const freshContext: RequestContext = {
+        requestId: 'test-init-2',
+        correlationId: 'test-correlation-init-2',
+        timestamp: new Date(),
+        sessionInitialized: false,
+      };
+
       const request: JsonRpcRequest = {
         jsonrpc: '2.0',
         id: 1,
@@ -685,7 +718,7 @@ describe('McpProtocolHandler', () => {
         },
       };
 
-      const response = await mcpHandler.handleRequest(request, context);
+      const response = await mcpHandler.handleRequest(request, freshContext);
 
       expect('result' in response).toBe(true);
       if ('result' in response) {

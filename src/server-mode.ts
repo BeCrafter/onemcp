@@ -23,6 +23,7 @@ import { MetricsService } from './metrics/service.js';
 import type { ConfigProvider } from './types/config.js';
 import type { RequestContext } from './types/context.js';
 import { collectServiceTriggerHints } from './protocol/smart-discovery-description.js';
+import * as log from './utils/logger.js';
 
 /**
  * Server Mode Runner class
@@ -94,6 +95,11 @@ export class ServerModeRunner {
     // Main MCP endpoint - handles JSON-RPC requests
     this.fastify.post('/mcp', async (request: FastifyRequest, reply: FastifyReply) => {
       return this.handleMcpRequest(request, reply);
+    });
+
+    // DELETE endpoint for session termination (MCP Streamable HTTP spec)
+    this.fastify.delete('/mcp', async (request: FastifyRequest, reply: FastifyReply) => {
+      return this.handleSessionTermination(request, reply);
     });
 
     // SSE endpoint for server-to-client notifications (MCP Streamable HTTP spec)
@@ -204,6 +210,19 @@ export class ServerModeRunner {
       // Get or create session
       const sessionId = this.getSessionId(request);
       let session = this.sessionManager.getSession(sessionId);
+      const suppliedMcpSessionId = typeof request.headers['mcp-session-id'] === 'string';
+
+      if (!session && suppliedMcpSessionId) {
+        void reply.code(404).send({
+          jsonrpc: '2.0',
+          id: null,
+          error: {
+            code: -32001,
+            message: 'MCP session not found',
+          },
+        });
+        return;
+      }
 
       if (!session) {
         // Create new session for this client
@@ -219,7 +238,7 @@ export class ServerModeRunner {
             .filter((t) => t.length > 0);
           if (tags.length > 0) {
             tagFilter = { tags, logic: 'OR' };
-            console.error(`Tag filter from header: ${tags.join(', ')} (OR logic)`);
+            log.info(`Tag filter from header: ${tags.join(', ')} (OR logic)`);
           }
         }
 
@@ -237,7 +256,7 @@ export class ServerModeRunner {
             sessionSmartDiscovery = true;
           }
           if (sessionSmartDiscovery !== undefined) {
-            console.error(
+            log.info(
               `Smart discovery from header: ${sessionSmartDiscovery ? 'enabled' : 'disabled'}`
             );
           }
@@ -288,6 +307,7 @@ export class ServerModeRunner {
           sessionId: session.id,
           agentId: session.agentId,
           timestamp: new Date(),
+          sessionInitialized: session.context.initialized === true,
         };
         if (sessionTagFilter) {
           context.tagFilter = sessionTagFilter;
@@ -302,6 +322,13 @@ export class ServerModeRunner {
         try {
           // Handle the request
           const response = await this.protocolHandler.handleRequest(jsonRpcRequest, context);
+
+          // Mark session as initialized after successful initialize handshake
+          if (jsonRpcRequest.method === 'initialize' && 'result' in response) {
+            session.context.initialized = true;
+            // Echo session ID back so client includes it in subsequent requests (MCP Streamable HTTP spec)
+            void reply.header('mcp-session-id', session.id);
+          }
 
           // Send response
           void reply.code(200).send(response);
@@ -357,28 +384,106 @@ export class ServerModeRunner {
   }
 
   /**
+   * Handle session termination (DELETE /mcp)
+   *
+   * Per MCP Streamable HTTP spec, clients send DELETE with Mcp-Session-Id header
+   * to explicitly terminate a session. Cleans up SSE connection and session state.
+   */
+  private async handleSessionTermination(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ): Promise<void> {
+    const sessionId = request.headers['mcp-session-id'];
+    if (typeof sessionId === 'string') {
+      // Close SSE connection if exists
+      const sseRes = this.sseConnections.get(sessionId);
+      if (sseRes) {
+        this.sseConnections.delete(sessionId);
+        try {
+          sseRes.end();
+        } catch {
+          /* already closed */
+        }
+      }
+      // Close session
+      await this.sessionManager.closeSession(sessionId);
+      log.info(`Session terminated: ${sessionId}`);
+    }
+    void reply.code(200).send();
+  }
+
+  /**
    * Handle health check requests
+   *
+   * Returns the status of all configured services by merging data from:
+   * 1. ServiceRegistry — all configured services (including disabled ones)
+   * 2. HealthMonitor — health status of registered services
+   * 3. connectionPools — services that successfully created a connection pool
    */
   private handleHealthCheck(_request: FastifyRequest, reply: FastifyReply): void {
     try {
+      const services = this.serviceRegistry.list();
       const healthStatuses = this.healthMonitor.getAllHealthStatus();
-      const allHealthy = healthStatuses.every((status) => status.healthy);
+      const healthMap = new Map(healthStatuses.map((s) => [s.serviceName, s]));
 
-      const response = {
-        status: allHealthy ? 'healthy' : 'degraded',
+      const serviceDetails = services.map((service) => {
+        const health = healthMap.get(service.name);
+        const hasPool = this.connectionPools.has(service.name);
+
+        if (!service.enabled) {
+          return { name: service.name, status: 'disabled' as const, healthy: null };
+        }
+        if (!hasPool) {
+          const initFailure = this.healthMonitor.getInitFailure(service.name);
+          return {
+            name: service.name,
+            status: 'broken' as const,
+            healthy: false,
+            error: {
+              message: initFailure?.message ?? 'Failed to initialize connection pool',
+              code: 'INIT_FAILED',
+            },
+          };
+        }
+        if (!health) {
+          return {
+            name: service.name,
+            status: 'initializing' as const,
+            healthy: null,
+            lastCheck: null,
+          };
+        }
+        return {
+          name: service.name,
+          status: health.healthy ? ('healthy' as const) : ('degraded' as const),
+          healthy: health.healthy,
+          lastCheck: health.lastCheck.toISOString(),
+          consecutiveFailures: health.consecutiveFailures,
+          error: health.error ?? null,
+        };
+      });
+
+      const hasDegraded = serviceDetails.some(
+        (s) => s.status === 'broken' || s.status === 'degraded'
+      );
+      const overallStatus = hasDegraded ? 'degraded' : 'healthy';
+
+      void reply.code(overallStatus === 'healthy' ? 200 : 503).send({
+        status: overallStatus,
         timestamp: new Date().toISOString(),
-        services: healthStatuses.map((status) => ({
-          name: status.serviceName,
-          healthy: status.healthy,
-          lastCheck: status.lastCheck.toISOString(),
-          error: status.error,
-        })),
+        services: serviceDetails,
+        summary: {
+          total: services.length,
+          healthy: serviceDetails.filter((s) => s.status === 'healthy').length,
+          degraded: serviceDetails.filter((s) => s.status === 'degraded').length,
+          broken: serviceDetails.filter((s) => s.status === 'broken').length,
+          initializing: serviceDetails.filter((s) => s.status === 'initializing').length,
+          disabled: serviceDetails.filter((s) => s.status === 'disabled').length,
+        },
         sessions: {
           active: this.sessionManager.getActiveSessionCount(),
         },
-      };
-
-      void reply.code(allHealthy ? 200 : 503).send(response);
+      });
     } catch (error) {
       void reply.code(500).send({
         status: 'error',
@@ -465,6 +570,12 @@ export class ServerModeRunner {
    * Get session ID from request headers or create new one
    */
   private getSessionId(request: FastifyRequest): string {
+    // MCP Streamable HTTP spec: mcp-session-id (standard)
+    const mcpSession = request.headers['mcp-session-id'];
+    if (typeof mcpSession === 'string') {
+      return mcpSession;
+    }
+    // Legacy: x-session-id (onemcp custom)
     const sessionHeader = request.headers['x-session-id'];
     if (typeof sessionHeader === 'string') {
       return sessionHeader;
@@ -490,12 +601,13 @@ export class ServerModeRunner {
    * Initializes the system, starts health monitoring, and starts the HTTP server.
    */
   async start(): Promise<void> {
-    console.error('Starting MCP Router in Server mode...');
+    log.configureLogger(this.config);
+    log.info('Starting MCP Router in Server mode...');
 
     try {
       // Initialize service registry
       await this.serviceRegistry.initialize();
-      console.error(`Loaded ${Object.keys(this.config.mcpServers).length} service(s)`);
+      log.info(`Loaded ${Object.keys(this.config.mcpServers).length} service(s)`);
 
       // Create connection pools for all enabled services
       this.initializeConnectionPools();
@@ -525,21 +637,21 @@ export class ServerModeRunner {
           this.config.healthCheck.interval,
           this.config.healthCheck.failureThreshold ?? 3
         );
-        console.error('Health monitoring started');
+        log.info('Health monitoring started');
       }
 
       // Start session cleanup
       void this.sessionManager.startAutoCleanup(60000, 300000); // Cleanup every minute, 5 min timeout
 
       this.unwatchConfig = this.configProvider.watch((newConfig) => {
-        console.error('Configuration change detected, reloading...');
+        log.info('Configuration change detected, reloading...');
         void this.reloadConfig(newConfig).catch((error) => {
-          console.error(
+          log.error(
             `Failed to reload configuration: ${error instanceof Error ? error.message : String(error)}`
           );
         });
       });
-      console.error('Config file watcher started');
+      log.info('Config file watcher started');
 
       // Start HTTP server
       const port = this.config.port || 3000;
@@ -549,7 +661,7 @@ export class ServerModeRunner {
 
       // Broadcast tools/list_changed notification to all connected SSE clients
       this.toolRouter.on('cacheInvalidated', () => {
-        console.error('Tool list changed - notifying connected clients via SSE');
+        log.debug('Tool list changed - notifying connected clients via SSE');
         this.broadcastSseEvent('message', {
           jsonrpc: '2.0',
           method: 'notifications/tools/list_changed',
@@ -558,12 +670,48 @@ export class ServerModeRunner {
       });
 
       this.running = true;
-      console.error(`MCP Router is ready and listening on http://${host}:${port}`);
-      console.error(`Health check: http://${host}:${port}/health`);
-      console.error(`Diagnostics: http://${host}:${port}/diagnostics`);
-      console.error(`Metrics: http://${host}:${port}/metrics`);
+
+      const svcCount = Object.keys(this.config.mcpServers).length;
+      const enabledCount = Object.values(this.config.mcpServers).filter(
+        (s) => s.enabled !== false
+      ).length;
+
+      log.info('');
+      log.info('╔══════════════════════════════════════════════════════════════╗');
+      log.info('║                    onemcp MCP Router                        ║');
+      log.info('╚══════════════════════════════════════════════════════════════╝');
+      log.info(`  版本: ${getPackageVersion()}    模式: server    端口: ${port}`);
+      log.info(`  服务: ${svcCount} 个已配置, ${enabledCount} 个已启用`);
+      log.info('');
+      log.info('  ── MCP 协议端点 ──────────────────────────────────────────────');
+      log.info(
+        `  POST   http://127.0.0.1:${port}/mcp   JSON-RPC 请求 (initialize, tools/list, tools/call, ping, ...)`
+      );
+      log.info(
+        `  GET    http://127.0.0.1:${port}/mcp   SSE 连接 (服务端推送 notifications/tools/list_changed)`
+      );
+      log.info(`  DELETE http://127.0.0.1:${port}/mcp   终止会话 (Mcp-Session-Id header)`);
+      log.info('');
+      log.info('  ── 辅助端点 ──────────────────────────────────────────────────');
+      log.info(`  GET    http://127.0.0.1:${port}/              服务信息`);
+      log.info(`  GET    http://127.0.0.1:${port}/health        健康检查 (200=正常, 503=降级)`);
+      log.info(`  GET    http://127.0.0.1:${port}/diagnostics   诊断信息 (服务/会话/连接池)`);
+      log.info(`  GET    http://127.0.0.1:${port}/metrics       指标数据`);
+      log.info('');
+      log.info('  ── 请求头 ────────────────────────────────────────────────────');
+      log.info('  Mcp-Session-Id          会话标识 (initialize 响应返回, 后续请求携带)');
+      log.info('  X-MCP-Tags              标签过滤 (逗号分隔, 如: "tag1,tag2")');
+      log.info('  X-MCP-Smart-Discovery   智能发现 (true/false, 覆盖服务端默认)');
+      log.info('  X-Agent-Id              客户端标识');
+      log.info('');
+      log.info('  ── MCP 客户端配置 ───────────────────────────────────────────');
+      log.info(`  Streamable HTTP:  URL = http://127.0.0.1:${port}/mcp`);
+      log.info('  传输协议:         Content-Length 帧 或 NDJSON 均支持');
+      log.info('  协议版本:         2024-11-05');
+      log.info('╚══════════════════════════════════════════════════════════════╝');
+      log.info('');
     } catch (error) {
-      console.error(
+      log.error(
         `Failed to start Server mode: ${error instanceof Error ? error.message : String(error)}`
       );
       throw error;
@@ -585,15 +733,25 @@ export class ServerModeRunner {
           service.connectionPool || this.config.connectionPool
         );
 
+        // Listen for pool errors to prevent unhandled error events
+        pool.on('error', () => {
+          // Pool errors are already logged by ConnectionPool, no need to log again
+        });
+
         // Register the pool with the tool router
         this.toolRouter.registerConnectionPool(service.name, pool);
         this.connectionPools.set(service.name, pool);
 
-        console.error(`Initialized connection pool for service: ${service.name}`);
+        // Register with health monitor (initial health check runs in background)
+        void this.healthMonitor.registerConnectionPool(service.name, pool).catch(() => {});
+
+        log.info(`Initialized connection pool for service: ${service.name}`);
       } catch (error) {
-        console.error(
-          `Failed to initialize connection pool for service ${service.name}: ${error instanceof Error ? error.message : String(error)}`
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log.warn(
+          `Failed to initialize connection pool for service ${service.name}: ${errorMessage}`
         );
+        this.healthMonitor.recordInitFailure(service.name, errorMessage);
       }
     }
   }
@@ -615,7 +773,8 @@ export class ServerModeRunner {
           await pool.closeAll();
           this.connectionPools.delete(serviceName);
           this.toolRouter.unregisterConnectionPool(serviceName);
-          console.error(`Removed connection pool for deleted service: ${serviceName}`);
+          this.healthMonitor.unregisterConnectionPool(serviceName);
+          log.info(`Removed connection pool for deleted service: ${serviceName}`);
         }
       }
     }
@@ -632,9 +791,9 @@ export class ServerModeRunner {
             );
             this.toolRouter.registerConnectionPool(newService.name, pool);
             this.connectionPools.set(newService.name, pool);
-            console.error(`Added connection pool for new service: ${newService.name}`);
+            log.info(`Added connection pool for new service: ${newService.name}`);
           } catch (error) {
-            console.error(
+            log.warn(
               `Failed to create connection pool for new service ${newService.name}: ${error instanceof Error ? error.message : String(error)}`
             );
           }
@@ -650,6 +809,7 @@ export class ServerModeRunner {
             await existingPool.closeAll();
             this.connectionPools.delete(newService.name);
             this.toolRouter.unregisterConnectionPool(newService.name);
+            this.healthMonitor.unregisterConnectionPool(newService.name);
           }
 
           if (newService.enabled) {
@@ -660,9 +820,9 @@ export class ServerModeRunner {
               );
               this.toolRouter.registerConnectionPool(newService.name, pool);
               this.connectionPools.set(newService.name, pool);
-              console.error(`Updated connection pool for service: ${newService.name}`);
+              log.info(`Updated connection pool for service: ${newService.name}`);
             } catch (error) {
-              console.error(
+              log.warn(
                 `Failed to update connection pool for service ${newService.name}: ${error instanceof Error ? error.message : String(error)}`
               );
             }
@@ -673,7 +833,14 @@ export class ServerModeRunner {
 
     await this.serviceRegistry.initialize();
     this.toolRouter.invalidateCache();
-    console.error(`Reloaded ${Object.keys(newServices).length} service(s)`);
+
+    // Clear health statuses and re-check the active pool set after configuration changes.
+    this.healthMonitor.clearAllHealthStatuses();
+    for (const [serviceName, pool] of this.connectionPools.entries()) {
+      await this.healthMonitor.registerConnectionPool(serviceName, pool);
+    }
+
+    log.info(`Reloaded ${Object.keys(newServices).length} service(s)`);
   }
 
   /**
@@ -692,13 +859,13 @@ export class ServerModeRunner {
       return;
     }
 
-    console.error('Shutting down MCP Router...');
+    log.info('Shutting down MCP Router...');
     this.running = false;
 
     try {
       // Stop accepting new connections
       await this.fastify.close();
-      console.error('HTTP server closed');
+      log.info('HTTP server closed');
 
       // Stop session cleanup
       this.sessionManager.stopAutoCleanup();
@@ -706,7 +873,7 @@ export class ServerModeRunner {
       // Stop health monitoring
       if (this.config.healthCheck.enabled) {
         this.healthMonitor.stopHeartbeat();
-        console.error('Health monitoring stopped');
+        log.info('Health monitoring stopped');
       }
 
       // Close all SSE connections
@@ -721,32 +888,31 @@ export class ServerModeRunner {
 
       // Close all sessions
       await this.sessionManager.closeAllSessions();
-      console.error('All sessions closed');
+      log.info('All sessions closed');
 
       if (this.unwatchConfig) {
         this.unwatchConfig();
         this.unwatchConfig = null;
-        console.error('Config file watcher stopped');
+        log.info('Config file watcher stopped');
       }
 
       // Close all connection pools
       for (const [serviceName, pool] of this.connectionPools.entries()) {
         try {
           await pool.closeAll();
-          console.error(`Closed connection pool for service: ${serviceName}`);
+          log.info(`Closed connection pool for service: ${serviceName}`);
         } catch (error) {
-          console.error(
+          log.warn(
             `Error closing connection pool for service ${serviceName}: ${error instanceof Error ? error.message : String(error)}`
           );
         }
       }
 
-      console.error('MCP Router shutdown complete');
+      log.info('MCP Router shutdown complete');
+      await log.closeLogger();
       this.options.onShutdownComplete?.();
     } catch (error) {
-      console.error(
-        `Error during shutdown: ${error instanceof Error ? error.message : String(error)}`
-      );
+      log.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
   }

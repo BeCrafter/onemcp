@@ -9,7 +9,7 @@
  * - Concurrent request handling
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -27,6 +27,9 @@ describe('Server Mode Integration Tests', () => {
   const testPort = 13000; // Use a high port to avoid conflicts
 
   beforeEach(async () => {
+    // Suppress console.error from server lifecycle logging during tests
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
     // Create a temporary directory for test files
     tempConfigDir = path.join(
       os.tmpdir(),
@@ -154,7 +157,7 @@ describe('Server Mode Integration Tests', () => {
   });
 
   describe('Health Check Endpoint', () => {
-    it('should return health status', async () => {
+    it('should return health status with summary counts', async () => {
       await runner.start();
 
       const response = await fetch(`http://localhost:${testPort}/health`);
@@ -165,8 +168,17 @@ describe('Server Mode Integration Tests', () => {
       expect(data).toHaveProperty('timestamp');
       expect(data).toHaveProperty('services');
       expect(data).toHaveProperty('sessions');
+      expect(data).toHaveProperty('summary');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Checking JSON response structure in test
       expect(Array.isArray((data as any).services)).toBe(true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Checking JSON response structure in test
+      const summary = (data as any).summary;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Accessing JSON response property in test
+      expect(typeof summary.total).toBe('number');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Accessing JSON response property in test
+      expect(typeof summary.healthy).toBe('number');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Accessing JSON response property in test
+      expect(typeof summary.disabled).toBe('number');
     });
 
     it('should return healthy status when all services are healthy', async () => {
@@ -529,6 +541,41 @@ describe('Server Mode Integration Tests', () => {
       expect(diagData).toHaveProperty('sessions');
       expect(diagData.sessions).toHaveProperty('list');
       expect(Array.isArray(diagData.sessions.list)).toBe(true);
+    });
+
+    it('should reject a deleted standard MCP session ID', async () => {
+      await runner.start();
+
+      const initializeResponse = await fetch(`http://localhost:${testPort}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2024-11-05' },
+        }),
+      });
+      const sessionId = initializeResponse.headers.get('mcp-session-id');
+      expect(sessionId).not.toBeNull();
+
+      const deleteResponse = await fetch(`http://localhost:${testPort}/mcp`, {
+        method: 'DELETE',
+        headers: { 'mcp-session-id': sessionId ?? '' },
+      });
+      expect(deleteResponse.status).toBe(200);
+
+      const reuseResponse = await fetch(`http://localhost:${testPort}/mcp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'mcp-session-id': sessionId ?? '',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+      });
+      expect(reuseResponse.status).toBe(404);
+      const responseBody = (await reuseResponse.json()) as { error?: { code?: number } };
+      expect(responseBody.error?.code).toBe(-32001);
     });
   });
 

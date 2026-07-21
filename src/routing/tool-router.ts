@@ -19,14 +19,17 @@ import type {
   JsonRpcRequest,
   JsonRpcSuccessResponse,
   JsonRpcErrorResponse,
+  JsonRpcMessage,
 } from '../types/jsonrpc.js';
 import { ErrorCode } from '../types/jsonrpc.js';
+import { TransportError } from '../transport/base.js';
 import { enhanceDescription } from '../protocol/description-enhancer.js';
 import Ajv from 'ajv';
 import { EventEmitter } from 'events';
+import * as log from '../utils/logger.js';
 
 /** Default timeout for a single service's tools/list during discovery (ms) */
-const DEFAULT_DISCOVERY_TIMEOUT_MS = 30_000;
+const DEFAULT_DISCOVERY_TIMEOUT_MS = 10_000;
 
 /** Cache TTL: use cached tool list only if younger than this (ms). Set to 0 to use cache until invalidated. */
 const CACHE_TTL_MS: number = 60_000;
@@ -50,7 +53,7 @@ interface ServiceToolCacheEntry {
  * tool routing solution.
  */
 export class ToolRouter extends EventEmitter {
-  /** Per-service tool cache; key = service name */
+  /** Per-service tool cache; key = original service name */
   private serviceToolCache: Map<string, ServiceToolCacheEntry> = new Map();
   private connectionPools: Map<string, ConnectionPool> = new Map();
   /** In-flight discovery promise per tag-filter key for request coalescing */
@@ -109,10 +112,11 @@ export class ToolRouter extends EventEmitter {
    * the lazy loading benefits of smart discovery.
    *
    * @param tagFilter - Optional tag filter to limit which services to verify
-   * @returns Promise resolving when all connections are verified
-   * @throws Error if any service connection fails
+   * @returns Promise resolving with verification results (succeeded and failed services)
    */
-  public async verifyConnections(tagFilter?: TagFilter): Promise<void> {
+  public async verifyConnections(
+    tagFilter?: TagFilter
+  ): Promise<{ succeeded: string[]; failed: Array<{ service: string; error: string }> }> {
     let services: ServiceDefinition[];
     if (tagFilter) {
       const matchAll = tagFilter.logic === 'AND';
@@ -123,56 +127,50 @@ export class ToolRouter extends EventEmitter {
 
     const enabledServices = services.filter((service) => service.enabled);
 
+    const succeeded: string[] = [];
+    const failed: Array<{ service: string; error: string }> = [];
+
     const results = await this.runWithConcurrencyLimit(
       enabledServices,
       MAX_CONCURRENT_DISCOVERY,
       async (service) => {
         const pool = this.connectionPools.get(service.name);
         if (!pool) {
-          throw new Error(`No connection pool registered for service: ${service.name}`);
+          return {
+            service: service.name,
+            success: false,
+            error: 'No connection pool registered for service',
+          };
         }
 
         try {
-          // Acquire a connection to establish and verify the connection
           const connection = await pool.acquire();
-          // Immediately release the connection back to the pool
           pool.release(connection);
           return { service: service.name, success: true };
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          return {
-            service: service.name,
-            success: false,
-            error: errorMessage,
-          };
+          return { service: service.name, success: false, error: errorMessage };
         }
       }
     );
 
-    // Check for failures and throw if any service failed to connect
-    const failures: Array<{ service: string; error: string }> = [];
-
     for (const result of results) {
       if (result.status === 'rejected') {
-        const errorMessage =
-          result.reason instanceof Error ? result.reason.message : String(result.reason);
-        failures.push({ service: 'unknown', error: errorMessage });
-      } else if (result.status === 'fulfilled' && !result.value.success) {
-        failures.push({
+        failed.push({
+          service: 'unknown',
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
+      } else if (result.value.success) {
+        succeeded.push(result.value.service);
+      } else {
+        failed.push({
           service: result.value.service,
           error: result.value.error ?? 'Unknown error',
         });
       }
     }
 
-    if (failures.length > 0) {
-      const failureDetails = failures
-        .map((failure) => `${failure.service}: ${failure.error}`)
-        .join('\n  ');
-      throw new Error(
-        `Failed to verify connections for ${failures.length} service(s):\n  ${failureDetails}`
-      );
-    }
+    return { succeeded, failed };
   }
 
   /**
@@ -182,6 +180,19 @@ export class ToolRouter extends EventEmitter {
    */
   public unregisterConnectionPool(serviceName: string): void {
     this.connectionPools.delete(serviceName);
+  }
+
+  /**
+   * ponytail: O(n) scan over registered services to reverse the sanitize mapping.
+   * Add a reverse index if service count exceeds ~1000.
+   */
+  private resolveServiceName(maybeSanitized: string): string {
+    for (const s of this.serviceRegistry.list()) {
+      if (this.namespaceManager.sanitizeServiceName(s.name) === maybeSanitized) {
+        return s.name;
+      }
+    }
+    return maybeSanitized;
   }
 
   /**
@@ -276,6 +287,8 @@ export class ToolRouter extends EventEmitter {
         if (!pool) {
           return { service: service.name, tools: [] as Tool[] };
         }
+        // queryServiceTools applies the per-service timeout and closes failed
+        // connections before this worker continues, preventing orphaned reads.
         const serviceTools = await this.queryServiceTools(service, pool);
         const enabledTools = serviceTools.filter((tool) => tool.enabled);
         return { service: service.name, tools: enabledTools };
@@ -303,9 +316,8 @@ export class ToolRouter extends EventEmitter {
         }
       } else {
         const reason: unknown = result.reason;
-        console.error(
-          `Failed to discover tools from service "${service.name}":`,
-          reason instanceof Error ? reason.message : String(reason)
+        log.error(
+          `Failed to discover tools from service "${service.name}": ${reason instanceof Error ? reason.message : String(reason)}`
         );
         this.emit('toolDiscoveryError', service.name, reason);
       }
@@ -368,6 +380,35 @@ export class ToolRouter extends EventEmitter {
     this.validatorCache.clear();
     this.emit('cacheInvalidated');
   }
+  /**
+   * Return whatever tools are currently in the per-service cache.
+   *
+   * Used as a fallback when discoverTools() times out so the MCP client
+   * still receives a valid (possibly stale or empty) tool list.
+   */
+  public getCachedTools(tagFilter?: TagFilter): Tool[] {
+    const visibleServices = new Set(
+      this.serviceRegistry
+        .list()
+        .filter((service) => {
+          if (!service.enabled || service.tags.length === 0 || tagFilter === undefined) {
+            return service.enabled;
+          }
+          return tagFilter.logic === 'AND'
+            ? tagFilter.tags.every((tag) => service.tags.includes(tag))
+            : tagFilter.tags.some((tag) => service.tags.includes(tag));
+        })
+        .map((service) => service.name)
+    );
+
+    const allTools: Tool[] = [];
+    for (const [serviceName, entry] of this.serviceToolCache.entries()) {
+      if (visibleServices.has(serviceName)) {
+        allTools.push(...entry.tools.filter((tool) => tool.enabled));
+      }
+    }
+    return allTools;
+  }
 
   /**
    * Invalidate the cache for a single service, leaving other services' caches intact.
@@ -401,11 +442,12 @@ export class ToolRouter extends EventEmitter {
   public async setToolState(namespacedName: string, enabled: boolean): Promise<void> {
     // Parse the namespaced name to get service and tool names
     const { serviceName, toolName } = this.namespaceManager.parseNamespacedName(namespacedName);
+    const actualServiceName = this.resolveServiceName(serviceName);
 
     // Get the service
-    const service = this.serviceRegistry.get(serviceName);
+    const service = this.serviceRegistry.get(actualServiceName);
     if (!service) {
-      throw new Error(`Service not found: ${serviceName}`);
+      throw new Error(`Service not found: ${actualServiceName}`);
     }
 
     // Initialize toolStates if not present
@@ -427,7 +469,7 @@ export class ToolRouter extends EventEmitter {
     await this.serviceRegistry.register(service);
 
     // Invalidate only this service's cache to reflect the tool state change
-    this.invalidateServiceCache(serviceName);
+    this.invalidateServiceCache(actualServiceName);
 
     // Emit event (Requirement 3.9)
     this.emit('toolStateChanged', {
@@ -454,9 +496,10 @@ export class ToolRouter extends EventEmitter {
   public getToolState(namespacedName: string): boolean {
     // Parse the namespaced name to get service and tool names
     const { serviceName, toolName } = this.namespaceManager.parseNamespacedName(namespacedName);
+    const actualServiceName = this.resolveServiceName(serviceName);
 
     // Get the service
-    const service = this.serviceRegistry.get(serviceName);
+    const service = this.serviceRegistry.get(actualServiceName);
     if (!service) {
       throw new Error(`Service not found: ${serviceName}`);
     }
@@ -483,7 +526,10 @@ export class ToolRouter extends EventEmitter {
     if (!(error instanceof Error)) {
       return false;
     }
-    if (error.name !== 'TransportError' || !('code' in error)) {
+    if (
+      (error.name !== 'TransportError' && error.name !== 'ConnectionPoolError') ||
+      !('code' in error)
+    ) {
       return false;
     }
     const code = (error as { code?: string }).code;
@@ -500,31 +546,86 @@ export class ToolRouter extends EventEmitter {
       'HTTP_TIMEOUT',
       'HTTP_REQUEST_FAILED',
       'HTTP_SEND_FAILED',
+      'SSE_CONNECTION_FAILED',
+      'SSE_INIT_FAILED',
+      'SSE_NOT_CONNECTED',
+      'CLOSE_TIMEOUT',
+      'PROCESS_START_FAILED',
+      'SEND_FAILED',
+      'RESPONSE_TIMEOUT',
+      'RESPONSE_STREAM_ENDED',
+      'RESPONSE_MISMATCH',
+      'CONNECTION_FAILED',
     ]);
     return typeof code === 'string' && connectionLevelCodes.has(code);
   }
 
   /**
-   * Run a promise with a timeout; reject with an Error if it exceeds the limit.
+   * Read responses from the transport iterator until a response matching the given
+   * request ID is found. Notifications (messages without an id field) are skipped.
+   *
+   * @param connection - Connection to read from
+   * @param expectedId - The request ID to match
+   * @returns The matching JSON-RPC success or error response
+   * @throws If no matching response is received or the iterator ends
+   * @private
    */
-  private async withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<never>((_, reject) => {
+  private async receiveMatchingResponse(
+    connection: Connection,
+    expectedId: string | number,
+    timeoutMs: number = 30_000
+  ): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> {
+    const responseIterator = connection.transport.receive();
+    let timeoutId: NodeJS.Timeout | undefined;
+
+    const readResponse = async (): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> => {
+      let skippedMessages = 0;
+      for (;;) {
+        const nextResult = await responseIterator.next();
+
+        if (nextResult.done || !nextResult.value) {
+          throw new TransportError(
+            `No matching response received for request id "${String(expectedId)}": transport stream ended`,
+            'RESPONSE_STREAM_ENDED'
+          );
+        }
+
+        const message = nextResult.value as unknown as Record<string, unknown>;
+        if (!('id' in message) || message['id'] === undefined || message['id'] === null) {
+          skippedMessages++;
+        } else if (String(message['id']) === String(expectedId)) {
+          return message as unknown as JsonRpcSuccessResponse | JsonRpcErrorResponse;
+        } else {
+          skippedMessages++;
+        }
+
+        if (skippedMessages > 100) {
+          throw new TransportError(
+            `Too many unmatched messages while waiting for request id "${String(expectedId)}"`,
+            'RESPONSE_MISMATCH'
+          );
+        }
+      }
+    };
+
+    const timeout = new Promise<never>((_resolve, reject) => {
       timeoutId = setTimeout(() => {
-        reject(new Error(`${label} timed out after ${ms}ms`));
-      }, ms);
+        reject(
+          new TransportError(
+            `Response timeout after ${timeoutMs}ms for request id "${String(expectedId)}"`,
+            'RESPONSE_TIMEOUT'
+          )
+        );
+      }, timeoutMs);
     });
+
     try {
-      const result = await Promise.race([promise, timeoutPromise]);
+      return await Promise.race([readResponse(), timeout]);
+    } finally {
       if (timeoutId !== undefined) {
         clearTimeout(timeoutId);
       }
-      return result;
-    } catch (e) {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
-      throw e;
+      void responseIterator.return?.(undefined as unknown as JsonRpcMessage).catch(() => {});
     }
   }
 
@@ -535,12 +636,8 @@ export class ToolRouter extends EventEmitter {
     const connection = await pool.acquire();
     let connectionHandled = false;
     try {
-      const timeoutMs = service.connectionPool?.connectionTimeout ?? DEFAULT_DISCOVERY_TIMEOUT_MS;
-      const rawTools: unknown[] = await this.withTimeout(
-        this.queryToolsViaMCP(connection),
-        timeoutMs,
-        `tools/list for ${service.name}`
-      );
+      const timeoutMs = DEFAULT_DISCOVERY_TIMEOUT_MS;
+      const rawTools: unknown[] = await this.queryToolsViaMCP(connection, timeoutMs);
 
       const tools: Tool[] = rawTools.map((rawTool: unknown) => {
         const toolObj = rawTool as {
@@ -602,11 +699,12 @@ export class ToolRouter extends EventEmitter {
    * @returns Promise resolving to raw tool definitions
    * @private
    */
-  private async queryToolsViaMCP(connection: Connection): Promise<unknown[]> {
+  private async queryToolsViaMCP(connection: Connection, timeoutMs?: number): Promise<unknown[]> {
     // Create the JSON-RPC request for tools/list
+    const requestId = `tools-list-${Date.now()}`;
     const request: JsonRpcRequest = {
       jsonrpc: '2.0',
-      id: `tools-list-${Date.now()}`,
+      id: requestId,
       method: 'tools/list',
       params: {},
     };
@@ -614,14 +712,8 @@ export class ToolRouter extends EventEmitter {
     // Send the request via the transport
     await connection.transport.send(request);
 
-    // Wait for the response
-    const responseIterator = connection.transport.receive();
-    const nextResult = await responseIterator.next();
-    const response = nextResult.value as JsonRpcSuccessResponse | JsonRpcErrorResponse | null;
-
-    if (!response) {
-      throw new Error('No response received from service for tools/list request');
-    }
+    // Wait for the matching response (skip notifications that lack an id)
+    const response = await this.receiveMatchingResponse(connection, requestId, timeoutMs);
 
     // Check if it's an error response
     if ('error' in response && response) {
@@ -746,15 +838,16 @@ export class ToolRouter extends EventEmitter {
   ): Promise<unknown> {
     // Parse the namespaced name to get service and tool names (Requirement 5.1)
     const { serviceName, toolName } = this.namespaceManager.parseNamespacedName(namespacedName);
+    const actualServiceName = this.resolveServiceName(serviceName);
 
     // Get the service
-    const service = this.serviceRegistry.get(serviceName);
+    const service = this.serviceRegistry.get(actualServiceName);
     if (!service) {
       throw this.createToolError(
         ErrorCode.TOOL_NOT_FOUND,
         `Tool not found: ${namespacedName}`,
         context,
-        { serviceName, toolName }
+        { serviceName: actualServiceName, toolName }
       );
     }
 
@@ -762,9 +855,9 @@ export class ToolRouter extends EventEmitter {
     if (!service.enabled) {
       throw this.createToolError(
         ErrorCode.SERVICE_UNAVAILABLE,
-        `Service is disabled: ${serviceName}`,
+        `Service is disabled: ${actualServiceName}`,
         context,
-        { serviceName, toolName }
+        { serviceName: actualServiceName, toolName }
       );
     }
 
@@ -775,40 +868,40 @@ export class ToolRouter extends EventEmitter {
         ErrorCode.TOOL_DISABLED,
         `Tool is disabled: ${namespacedName}`,
         context,
-        { serviceName, toolName }
+        { serviceName: actualServiceName, toolName }
       );
     }
 
     // Check if service is healthy
-    const healthStatus = this.healthMonitor.getHealthStatus(serviceName);
+    const healthStatus = this.healthMonitor.getHealthStatus(actualServiceName);
     if (healthStatus && !healthStatus.healthy) {
       throw this.createToolError(
         ErrorCode.SERVICE_UNHEALTHY,
-        `Service is unhealthy: ${serviceName}`,
+        `Service is unhealthy: ${actualServiceName}`,
         context,
-        { serviceName, toolName, details: healthStatus.error }
+        { serviceName: actualServiceName, toolName, details: healthStatus.error }
       );
     }
 
     // Get the connection pool for the service
-    const pool = this.connectionPools.get(serviceName);
+    const pool = this.connectionPools.get(actualServiceName);
     if (!pool) {
       throw this.createToolError(
         ErrorCode.SERVICE_UNAVAILABLE,
-        `No connection pool available for service: ${serviceName}`,
+        `No connection pool available for service: ${actualServiceName}`,
         context,
-        { serviceName, toolName }
+        { serviceName: actualServiceName, toolName }
       );
     }
 
     // Get tool schema for validation (Requirement 5.2)
-    const tool = await this.findTool(serviceName, toolName, pool);
+    const tool = await this.findTool(actualServiceName, toolName, pool);
     if (!tool) {
       throw this.createToolError(
         ErrorCode.TOOL_NOT_FOUND,
         `Tool not found in service: ${namespacedName}`,
         context,
-        { serviceName, toolName }
+        { serviceName: actualServiceName, toolName }
       );
     }
 
@@ -981,12 +1074,9 @@ export class ToolRouter extends EventEmitter {
     // Send the request via the transport
     await connection.transport.send(request);
 
-    // Wait for the response
-    // Note: In a real implementation, we would need to handle the async iterator
-    // and match responses to requests by ID. For now, we'll use a simplified approach.
-    const responseIterator = connection.transport.receive();
-    const nextResult = await responseIterator.next();
-    const response = nextResult.value as JsonRpcSuccessResponse | JsonRpcErrorResponse | null;
+    // Wait for the matching response — skip notifications by matching request ID
+    // Use a generous default timeout; caller can override if needed
+    const response = await this.receiveMatchingResponse(connection, context.requestId, 60_000);
 
     if (!response) {
       throw new Error('No response received from service');

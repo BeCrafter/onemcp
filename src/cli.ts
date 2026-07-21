@@ -17,6 +17,7 @@ import type { SystemConfig, ToolDiscoveryConfig } from './types/config.js';
 import type { TagFilter } from './types/tool.js';
 import { getPackageVersion } from './utils/package-version.js';
 import { silenceStderrForShutdown } from './utils/silence-stderr-shutdown.js';
+import * as log from './utils/logger.js';
 
 /**
  * CLI argument definitions
@@ -538,6 +539,10 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
+    // Initialize logging after loading the effective configuration so level, sinks,
+    // format, and data masking are honored in every runtime mode.
+    log.configureLogger(config);
+
     // Display effective configuration only when not in CLI mode (CLI reserves stdout for MCP JSON-RPC only)
     if (config.mode !== 'cli') {
       displayEffectiveConfig(config, configDir);
@@ -562,7 +567,7 @@ async function main(): Promise<void> {
           .filter((t) => t.length > 0);
         if (tags.length > 0) {
           tagFilter = { tags, logic: 'OR' };
-          console.error(`Tag filter: ${tags.join(', ')} (OR logic)`);
+          log.info(`Tag filter: ${tags.join(', ')} (OR logic)`);
         }
       }
 
@@ -575,9 +580,9 @@ async function main(): Promise<void> {
           searchDescription: true,
           eagerVerify: args['eager-verify'] ?? false,
         };
-        console.error(`Smart tool discovery: ${args['smart-discovery'] ? 'enabled' : 'disabled'}`);
+        log.info(`Smart tool discovery: ${args['smart-discovery'] ? 'enabled' : 'disabled'}`);
         if (args['eager-verify']) {
-          console.error('Eager connection verification: enabled');
+          log.info('Eager connection verification: enabled');
         }
       }
 
@@ -608,6 +613,9 @@ async function main(): Promise<void> {
       // Start the runner
       await runner.start();
     } else if (config.mode === 'tui') {
+      // Silence stderr in TUI mode to keep the terminal UI clean
+      log.setStderrEnabled(false);
+
       const { runApp } = await import('./tui.js');
       await runApp(config, configProvider);
     } else {
@@ -659,9 +667,9 @@ async function main(): Promise<void> {
           searchDescription: true,
           eagerVerify: args['eager-verify'] ?? false,
         };
-        console.error(`Smart tool discovery: ${args['smart-discovery'] ? 'enabled' : 'disabled'}`);
+        log.info(`Smart tool discovery: ${args['smart-discovery'] ? 'enabled' : 'disabled'}`);
         if (args['eager-verify']) {
-          console.error('Eager connection verification: enabled');
+          log.info('Eager connection verification: enabled');
         }
       }
 

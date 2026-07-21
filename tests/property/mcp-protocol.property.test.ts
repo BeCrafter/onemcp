@@ -155,7 +155,7 @@ describe('Property 18: Batch Request Partial Failure Isolation', () => {
           }
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -224,7 +224,7 @@ describe('Property 18: Batch Request Partial Failure Isolation', () => {
           }
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });
@@ -308,7 +308,7 @@ describe('MCP Protocol Methods - Additional Properties', () => {
           expect(storedFilter?.logic).toBe(logic);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 

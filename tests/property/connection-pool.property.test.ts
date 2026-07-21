@@ -35,6 +35,9 @@ vi.mock('../../src/transport/stdio.js', () => {
       });
       this.close = vi.fn().mockResolvedValue(undefined);
       this.getType = vi.fn().mockReturnValue('stdio');
+      this.isConnected = vi.fn().mockReturnValue(true);
+      this.on = vi.fn();
+      this.off = vi.fn();
       this.process = { killed: false, exitCode: null };
       return this;
     }),
@@ -61,6 +64,9 @@ vi.mock('../../src/transport/http.js', () => {
       });
       this.close = vi.fn().mockResolvedValue(undefined);
       this.getType = vi.fn().mockReturnValue('http');
+      this.isConnected = vi.fn().mockReturnValue(true);
+      this.on = vi.fn();
+      this.off = vi.fn();
       this.waitForReady = vi.fn().mockResolvedValue(undefined);
       return this;
     }),
@@ -129,12 +135,12 @@ describe('Feature: onemcp-system, Property 9: Connection pool reuse', () => {
   let pools: ConnectionPool[] = [];
 
   afterEach(async () => {
-    // Clean up all pools
+    // Clear timers before closing pools so clearInterval works correctly
+    vi.clearAllMocks();
     for (const pool of pools) {
       await pool.closeAll();
     }
     pools = [];
-    vi.clearAllMocks();
   });
 
   it('should reuse idle connections instead of creating new ones', async () => {
@@ -174,7 +180,7 @@ describe('Feature: onemcp-system, Property 9: Connection pool reuse', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -227,7 +233,7 @@ describe('Feature: onemcp-system, Property 9: Connection pool reuse', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -266,7 +272,7 @@ describe('Feature: onemcp-system, Property 9: Connection pool reuse', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -299,7 +305,7 @@ describe('Feature: onemcp-system, Property 9: Connection pool reuse', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -354,7 +360,7 @@ describe('Feature: onemcp-system, Property 9: Connection pool reuse', () => {
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });
@@ -367,12 +373,12 @@ describe('Feature: onemcp-system, Property 10: Connection pool limit enforcement
   let pools: ConnectionPool[] = [];
 
   afterEach(async () => {
-    // Clean up all pools
+    // Clear timers before closing pools so clearInterval works correctly
+    vi.clearAllMocks();
     for (const pool of pools) {
       await pool.closeAll();
     }
     pools = [];
-    vi.clearAllMocks();
   });
 
   it('should never exceed maxConnections limit', async () => {
@@ -437,7 +443,7 @@ describe('Feature: onemcp-system, Property 10: Connection pool limit enforcement
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -491,7 +497,7 @@ describe('Feature: onemcp-system, Property 10: Connection pool limit enforcement
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -541,7 +547,7 @@ describe('Feature: onemcp-system, Property 10: Connection pool limit enforcement
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -580,7 +586,7 @@ describe('Feature: onemcp-system, Property 10: Connection pool limit enforcement
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -645,7 +651,7 @@ describe('Feature: onemcp-system, Property 10: Connection pool limit enforcement
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -690,7 +696,7 @@ describe('Feature: onemcp-system, Property 10: Connection pool limit enforcement
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });

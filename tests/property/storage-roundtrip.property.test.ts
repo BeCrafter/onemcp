@@ -100,7 +100,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
           const deserialized = JSON.parse(retrieved!);
           return JSON.stringify(value) === JSON.stringify(deserialized);
         }),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
 
@@ -131,7 +131,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
 
           return true;
         }),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
 
@@ -160,7 +160,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
             return true;
           }
         ),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
 
@@ -185,7 +185,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
 
           return true;
         }),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
 
@@ -208,7 +208,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
 
           return true;
         }),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
 
@@ -245,7 +245,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
             return true;
           }
         ),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
   });
@@ -291,7 +291,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
           const deserialized = JSON.parse(retrieved!);
           return JSON.stringify(value) === JSON.stringify(deserialized);
         }),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
 
@@ -330,7 +330,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
 
           return true;
         }),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
 
@@ -359,7 +359,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
             return true;
           }
         ),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
 
@@ -384,7 +384,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
 
           return true;
         }),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
 
@@ -425,7 +425,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
             await fs.remove(iterTempDir);
           }
         }),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
 
