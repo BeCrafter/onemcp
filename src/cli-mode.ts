@@ -6,7 +6,6 @@
  */
 
 import { stdin, stdout } from 'node:process';
-import { createInterface } from 'node:readline';
 import type { SystemConfig, ToolDiscoveryConfig } from './types/config.js';
 import type { JsonRpcMessage, JsonRpcNotification } from './types/jsonrpc.js';
 import { JsonRpcParser } from './protocol/parser.js';
@@ -24,6 +23,8 @@ import type { TagFilter } from './types/tool.js';
 import { randomUUID } from 'node:crypto';
 import { silenceStderrForShutdown } from './utils/silence-stderr-shutdown.js';
 import { collectServiceTriggerHints } from './protocol/smart-discovery-description.js';
+import * as log from './utils/logger.js';
+import { getPackageVersion } from './utils/package-version.js';
 
 /**
  * CLI Mode Runner class
@@ -45,9 +46,11 @@ export class CliModeRunner {
   private toolRouter: ToolRouter;
   private connectionPools: Map<string, ConnectionPool> = new Map();
   private running = false;
-  private readline: ReturnType<typeof createInterface> | null = null;
   private readonly tagFilter?: TagFilter;
   private readonly toolDiscoveryConfig?: ToolDiscoveryConfig;
+  private cliInitialized = false;
+  /** Whether the client selected legacy Content-Length framing. MCP stdio defaults to NDJSON. */
+  private useContentLength = false;
 
   constructor(
     private config: SystemConfig,
@@ -103,38 +106,48 @@ export class CliModeRunner {
    * requests from stdin.
    */
   async start(): Promise<void> {
-    console.error('Starting MCP Router in CLI mode...');
+    log.configureLogger(this.config);
+    log.info('Starting MCP Router in CLI mode...');
 
     try {
       // Initialize service registry
       await this.serviceRegistry.initialize();
-      console.error(`Loaded ${Object.keys(this.config.mcpServers).length} service(s)`);
+      log.info(`Loaded ${Object.keys(this.config.mcpServers).length} service(s)`);
 
       // Create connection pools for all enabled services
-      await this.initializeConnectionPools();
+      this.initializeConnectionPools();
 
       // Pre-warm tool cache in smart discovery mode
       if (this.toolDiscoveryConfig?.smartDiscovery) {
         if (this.toolDiscoveryConfig.eagerVerify) {
           // Blocking: verify connections then warm tool cache before accepting requests
-          console.error('Verifying connections for all enabled services (eager)...');
-          try {
-            await this.toolRouter.verifyConnections(this.tagFilter);
-            console.error('All connections verified');
-          } catch (error) {
-            console.error(
-              `Connection verification failed: ${error instanceof Error ? error.message : String(error)}`
-            );
-            throw error;
+          log.info('Verifying connections for all enabled services (eager)...');
+          const verifyResult = await this.toolRouter.verifyConnections(this.tagFilter);
+
+          if (verifyResult.failed.length > 0) {
+            log.warn(`${verifyResult.failed.length} service(s) failed verification:`);
+            for (const f of verifyResult.failed) {
+              log.warn(`  - ${f.service}: ${f.error}`);
+            }
           }
-          console.error('Pre-warming tool cache...');
+
+          if (verifyResult.succeeded.length === 0 && verifyResult.failed.length > 0) {
+            throw new Error(
+              `All ${verifyResult.failed.length} service(s) failed verification. At least one service must be reachable.`
+            );
+          }
+
+          log.info(
+            `Connections verified: ${verifyResult.succeeded.length} succeeded, ${verifyResult.failed.length} failed`
+          );
+          log.info('Pre-warming tool cache...');
           await this.toolRouter.discoverTools(this.tagFilter);
-          console.error('Tool cache warmed');
+          log.info('Tool cache warmed');
         } else {
           // Non-blocking: warm cache in background; first search_tools may wait briefly
-          console.error('Pre-warming tool cache in background...');
+          log.info('Pre-warming tool cache in background...');
           void this.toolRouter.discoverTools(this.tagFilter).catch((error: unknown) => {
-            console.error(
+            log.error(
               `Background cache warm-up failed: ${error instanceof Error ? error.message : String(error)}`
             );
           });
@@ -149,7 +162,7 @@ export class CliModeRunner {
           this.config.healthCheck.interval,
           this.config.healthCheck.failureThreshold ?? 3
         );
-        console.error('Health monitoring started');
+        log.info('Health monitoring started');
       }
 
       // Set up stdin/stdout communication
@@ -160,13 +173,41 @@ export class CliModeRunner {
         void this.sendNotification({
           jsonrpc: '2.0',
           method: 'notifications/tools/list_changed',
+          params: {},
         });
       });
 
       this.running = true;
-      console.error('MCP Router is ready and listening on stdin/stdout');
+
+      const svcCount = Object.keys(this.config.mcpServers).length;
+      const enabledCount = Object.values(this.config.mcpServers).filter(
+        (s) => s.enabled !== false
+      ).length;
+
+      log.info('');
+      log.info('╔══════════════════════════════════════════════════════════════╗');
+      log.info('║                    onemcp MCP Router                        ║');
+      log.info('╚══════════════════════════════════════════════════════════════╝');
+      log.info(`  版本: ${getPackageVersion()}    模式: cli       传输: stdio`);
+      log.info(`  服务: ${svcCount} 个已配置, ${enabledCount} 个已启用`);
+      log.info('');
+      log.info('  ── MCP 协议 ─────────────────────────────────────────────────');
+      log.info('  输入: stdin (NDJSON；兼容遗留 Content-Length 帧)');
+      log.info('  输出: stdout (NDJSON)');
+      log.info('  日志: stderr (不影响 MCP 协议)');
+      log.info('');
+      log.info('  ── 支持的方法 ───────────────────────────────────────────────');
+      log.info('  initialize / notifications/initialized / tools/list / tools/call');
+      log.info('  ping / resources/list / prompts/list / logging/setLevel');
+      log.info('');
+      log.info('  ── MCP 客户端配置 ───────────────────────────────────────────');
+      log.info(`  命令: node ${process.argv[1] ?? 'dist/cli.js'} --mode cli`);
+      log.info('  协议版本: 2024-11-05');
+      log.info('╚══════════════════════════════════════════════════════════════╝');
+      log.info('');
+      log.info('MCP Router is ready and listening on stdin/stdout');
     } catch (error) {
-      console.error(
+      log.error(
         `Failed to start CLI mode: ${error instanceof Error ? error.message : String(error)}`
       );
       throw error;
@@ -176,10 +217,7 @@ export class CliModeRunner {
   /**
    * Initialize connection pools for all enabled services
    */
-  private async initializeConnectionPools(): Promise<void> {
-    // Use Promise.resolve to satisfy require-await rule
-    await Promise.resolve();
-
+  private initializeConnectionPools(): void {
     const services = this.serviceRegistry.list();
     const enabledServices = services.filter((s) => s.enabled);
 
@@ -191,77 +229,141 @@ export class CliModeRunner {
           service.connectionPool || this.config.connectionPool
         );
 
+        // Listen for pool errors to prevent unhandled error events
+        pool.on('error', () => {
+          // Pool errors are already logged by ConnectionPool, no need to log again
+        });
+
         // Register the pool with the tool router
         this.toolRouter.registerConnectionPool(service.name, pool);
         this.connectionPools.set(service.name, pool);
 
-        console.error(`Initialized connection pool for service: ${service.name}`);
+        // Register with health monitor (initial health check runs in background)
+        void this.healthMonitor.registerConnectionPool(service.name, pool).catch(() => {});
+
+        log.info(`Initialized connection pool for service: ${service.name}`);
       } catch (error) {
-        console.error(
-          `Failed to initialize connection pool for service ${service.name}: ${error instanceof Error ? error.message : String(error)}`
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log.error(
+          `Failed to initialize connection pool for service ${service.name}: ${errorMessage}`
         );
+        this.healthMonitor.recordInitFailure(service.name, errorMessage);
       }
     }
   }
 
   /**
-   * Set up stdin/stdout transport for client communication
+   * Set up stdin/stdout transport for client communication.
    *
-   * Reads JSON-RPC messages from stdin line by line and processes them.
-   * Sends responses to stdout.
+   * Supports standard NDJSON framing and legacy Content-Length input frames.
+   * Responses use the same framing selected by the first client request, with
+   * NDJSON as the default before a request is received.
    */
   private setupStdioTransport(): void {
-    // Create readline interface for line-by-line reading.
-    // Use stderr for output so stdout is used only for MCP JSON-RPC messages.
-    this.readline = createInterface({
-      input: stdin,
-      output: process.stderr,
-      terminal: false,
-    });
+    let buffer = '';
+    const HEADER_RE = /Content-Length:\s*(\d+)\r?\n\r?\n/;
 
-    // Process each line as a JSON-RPC message
-    this.readline.on('line', (line: string) => {
-      void (async () => {
-        const trimmed = line.trim();
-        if (!trimmed) {
-          return; // Skip empty lines
+    stdin.setEncoding('utf8');
+    stdin.on('data', (chunk: string) => {
+      buffer += chunk;
+
+      // Try Content-Length framed messages first (MCP spec standard)
+      let clParsed = false;
+      for (;;) {
+        const match = HEADER_RE.exec(buffer);
+        if (!match) break;
+
+        clParsed = true;
+        this.useContentLength = true;
+
+        const rawLength = match[1];
+        if (rawLength === undefined) {
+          buffer = buffer.slice(match.index + match[0].length);
+          continue;
+        }
+        const contentLength = parseInt(rawLength, 10);
+        if (isNaN(contentLength) || contentLength <= 0) {
+          buffer = buffer.slice(match.index + match[0].length);
+          continue;
         }
 
-        try {
-          // Parse the JSON-RPC message
-          const message = this.parser.parse(trimmed);
+        const headerEnd = match.index + match[0].length;
+        if (buffer.length - headerEnd < contentLength) break;
 
-          // Process the message
-          await this.processMessage(message);
-        } catch (error) {
-          // Send parse error response. Use a valid id (0) so MCP clients that require id: string|number can parse it.
-          const errorResponse = {
-            jsonrpc: '2.0' as const,
-            id: 0,
-            error: {
-              code: ErrorCode.PARSE_ERROR,
-              message: `Parse error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            },
-          };
+        const body = buffer.slice(headerEnd, headerEnd + contentLength);
+        buffer = buffer.slice(headerEnd + contentLength);
 
-          // Send error response to client
-          void this.sendResponse(errorResponse);
+        // Also consume any trailing \r\n between frames
+        if (buffer.startsWith('\r\n')) {
+          buffer = buffer.slice(2);
+        } else if (buffer.startsWith('\n')) {
+          buffer = buffer.slice(1);
         }
-      })();
+
+        void this.handleStdinFrame(body);
+      }
+
+      // Fall back to NDJSON: split on newlines (used by MCP SDK/Inspector).
+      // If no Content-Length frames were parsed and the buffer contains JSON,
+      // auto-detect NDJSON mode.
+      if (!clParsed) {
+        // Check if buffer contains NDJSON (line starting with '{')
+        if (buffer.trim().startsWith('{')) {
+          this.useContentLength = false;
+        }
+        if (!this.useContentLength) {
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed) {
+              void this.handleStdinFrame(trimmed);
+            }
+          }
+        }
+      }
     });
 
-    // Handle stdin close
-    this.readline.on('close', () => {
-      // Silence stderr immediately. In CLI/stdio mode, the MCP Inspector pipes our stderr
-      // and forwards every chunk to the browser via SSEServerTransport. When the user
-      // clicks "Disconnect", the browser SSE closes first (making webAppTransport unable
-      // to send), then stdin EOF arrives here. Any console.error() at this point causes
-      // the inspector to call webAppTransport.send() on a closed transport → "Not connected".
+    stdin.on('end', () => {
       silenceStderrForShutdown();
       this.stop().catch(() => {
         process.exit(1);
       });
     });
+  }
+
+  private handleStdinFrame(body: string): void {
+    const trimmed = body.trim();
+    if (!trimmed) return;
+
+    try {
+      const message = this.parser.parse(trimmed);
+      void this.processMessage(message);
+    } catch (error) {
+      const errorResponse = {
+        jsonrpc: '2.0' as const,
+        id: 0,
+        error: {
+          code: ErrorCode.PARSE_ERROR,
+          message: `Parse error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        },
+      };
+      void this.sendResponse(errorResponse);
+    }
+  }
+
+  /**
+   * Write a frame to stdout using the detected protocol format.
+   * Content-Length framing (MCP spec) or NDJSON (MCP SDK/Inspector compatibility).
+   */
+  private writeFrame(payload: string): void {
+    if (this.useContentLength) {
+      const bodyBytes = Buffer.byteLength(payload, 'utf8');
+      stdout.write(`Content-Length: ${bodyBytes}\r\n\r\n${payload}`);
+    } else {
+      stdout.write(payload + '\n');
+    }
   }
 
   /**
@@ -286,11 +388,16 @@ export class CliModeRunner {
         requestId: String(request.id),
         correlationId: randomUUID(),
         timestamp: new Date(),
+        sessionInitialized: this.cliInitialized,
       };
 
       try {
         // Handle the request
         const response = await this.protocolHandler.handleRequest(request, context);
+
+        if (request.method === 'initialize' && 'result' in response) {
+          this.cliInitialized = true;
+        }
 
         // Send the response
         this.sendResponse(response);
@@ -316,12 +423,12 @@ export class CliModeRunner {
       // In CLI mode, we receive notifications like 'notifications/initialized'
       // Log these for debugging purposes
       const notification = message as JsonRpcNotification;
-      console.error(`Received notification: ${notification.method}`);
+      log.info(`Received notification: ${notification.method}`);
     }
   }
 
   /**
-   * Send a JSON-RPC response to stdout.
+   * Send a JSON-RPC response to stdout using Content-Length framing per MCP spec.
    * Normalizes id to never be null/undefined so MCP clients that require id: string|number can parse it.
    */
   private sendResponse(response: JsonRpcMessage): void {
@@ -333,25 +440,25 @@ export class CliModeRunner {
         isResponse && 'id' in response && (response.id === null || response.id === undefined);
       const out: JsonRpcMessage = idInvalid ? { ...response, id: 0 } : response;
       const serialized = this.serializer.serialize(out);
-      stdout.write(serialized + '\n');
+      this.writeFrame(serialized);
     } catch (error) {
-      console.error(
+      log.error(
         `Failed to send response: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
 
   /**
-   * Send a JSON-RPC notification to stdout.
+   * Send a JSON-RPC notification to stdout using Content-Length framing per MCP spec.
    *
    * @param notification - Notification to send
    */
   private sendNotification(notification: JsonRpcMessage): void {
     try {
       const serialized = this.serializer.serialize(notification);
-      stdout.write(serialized + '\n');
+      this.writeFrame(serialized);
     } catch (error) {
-      console.error(
+      log.error(
         `Failed to send notification: ${error instanceof Error ? error.message : String(error)}`
       );
     }
@@ -383,32 +490,28 @@ export class CliModeRunner {
       // Stop health monitoring
       if (this.config.healthCheck.enabled) {
         this.healthMonitor.stopHeartbeat();
-        console.error('Health monitoring stopped');
+        log.info('Health monitoring stopped');
       }
 
       // Close all connection pools
       for (const [serviceName, pool] of this.connectionPools.entries()) {
         try {
           await pool.closeAll();
-          console.error(`Closed connection pool for service: ${serviceName}`);
+          log.info(`Closed connection pool for service: ${serviceName}`);
         } catch (error) {
-          console.error(
+          log.warn(
             `Error closing connection pool for service ${serviceName}: ${error instanceof Error ? error.message : String(error)}`
           );
         }
       }
 
-      // Close readline interface
-      if (this.readline) {
-        this.readline.close();
-        this.readline = null;
-      }
+      // stdin is paused to stop accepting new data — no explicit cleanup needed
+      // The stdin 'end' handler will call stop()
 
-      console.error('MCP Router shutdown complete');
+      log.info('MCP Router shutdown complete');
+      await log.closeLogger();
     } catch (error) {
-      console.error(
-        `Error during shutdown: ${error instanceof Error ? error.message : String(error)}`
-      );
+      log.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
   }

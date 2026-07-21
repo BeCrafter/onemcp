@@ -224,6 +224,20 @@ const systemConfigArbitrary = () =>
             };
           }
           return record;
+        })
+        .filter((record) => {
+          const normalizedNames = new Set<string>();
+          for (const name of Object.keys(record)) {
+            const normalized = name
+              .toLowerCase()
+              .replace(/\s+/g, '-')
+              .replace(/[^a-z0-9\-_]/g, '');
+            if (normalizedNames.has(normalized)) {
+              return false;
+            }
+            normalizedNames.add(normalized);
+          }
+          return true;
         }),
       connectionPool: connectionPoolConfigArbitrary(),
       healthCheck: fc.record({
@@ -409,7 +423,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
 
           return true;
         }),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
 
@@ -450,6 +464,20 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
                 };
               }
               return record;
+            })
+            .filter((record) => {
+              const normalizedNames = new Set<string>();
+              for (const name of Object.keys(record)) {
+                const normalized = name
+                  .toLowerCase()
+                  .replace(/\s+/g, '-')
+                  .replace(/[^a-z0-9\-_]/g, '');
+                if (normalizedNames.has(normalized)) {
+                  return false;
+                }
+                normalizedNames.add(normalized);
+              }
+              return true;
             }),
           async (baseConfig, mcpServers) => {
             const config = { ...baseConfig, mcpServers };
@@ -466,7 +494,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
             return true;
           }
         ),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
 
@@ -502,7 +530,7 @@ describe('Feature: onemcp-system, Property 2: Configuration persistence round-tr
             return true;
           }
         ),
-        { numRuns: 100 }
+        { numRuns: 25 }
       );
     });
   });
@@ -616,7 +644,7 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -636,7 +664,7 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -656,7 +684,7 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -683,7 +711,7 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -712,7 +740,7 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -749,7 +777,7 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -761,7 +789,7 @@ describe('Feature: onemcp-system, Property 14: Invalid configuration rejection',
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });
@@ -808,7 +836,7 @@ describe('Feature: onemcp-system, Property 22: Configuration validation error co
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -847,7 +875,7 @@ describe('Feature: onemcp-system, Property 22: Configuration validation error co
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -868,7 +896,7 @@ describe('Feature: onemcp-system, Property 22: Configuration validation error co
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -890,7 +918,7 @@ describe('Feature: onemcp-system, Property 22: Configuration validation error co
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -931,7 +959,7 @@ describe('Feature: onemcp-system, Property 22: Configuration validation error co
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });

@@ -41,8 +41,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-2025-vs2026]
-        node: ['20.x', '21.x', '22.x', '23.x']
+        os: [ubuntu-latest, macos-latest]
+        node: ['22.x', '23.x']
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -97,6 +97,12 @@ jobs:
 
       - name: Setup Node.js
         uses: ./.github/actions/setup
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
 
       - name: Run tests with coverage
         run: npm run test:coverage

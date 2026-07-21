@@ -4,18 +4,27 @@
  * This module implements health monitoring for backend MCP services.
  * It performs health checks, tracks service health status, and provides
  * methods to query health information.
+ *
+ * For unhealthy services, uses exponential backoff to reduce log noise
+ * while still allowing recovery detection.
  */
 
 import type { HealthStatus } from '../types/service.js';
 import type { ServiceRegistry } from '../registry/service-registry.js';
 import type { ConnectionPool } from '../pool/connection-pool.js';
 import { EventEmitter } from 'events';
+import * as log from '../utils/logger.js';
 
 /**
  * Health Monitor class
  *
  * Monitors the health of registered services by performing connectivity checks.
  * Tracks consecutive failures and provides health status information.
+ *
+ * For unhealthy services, uses exponential backoff:
+ * - Base interval: 30 seconds
+ * - Max interval: 5 minutes
+ * - Formula: min(baseInterval * 2^(failures - threshold), maxInterval)
  */
 export class HealthMonitor extends EventEmitter {
   private healthStatuses: Map<string, HealthStatus> = new Map();
@@ -23,6 +32,11 @@ export class HealthMonitor extends EventEmitter {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private heartbeatIntervalMs: number = 30000; // Default 30 seconds
   private failureThreshold: number = 3; // Default threshold
+  private readonly unhealthyServices: Set<string> = new Set();
+  /** Maximum interval for unhealthy service checks (5 minutes) */
+  private readonly maxUnhealthyIntervalMs: number = 300000;
+  /** Initialization failures for services that failed during pool creation */
+  private initFailures: Map<string, { message: string; timestamp: Date }> = new Map();
 
   constructor(_serviceRegistry: ServiceRegistry) {
     super();
@@ -52,8 +66,6 @@ export class HealthMonitor extends EventEmitter {
     // Emit event for initial health check result
     if (initialStatus.healthy) {
       this.emit('serviceHealthy', serviceName, initialStatus);
-    } else {
-      this.emit('serviceUnhealthy', serviceName, initialStatus);
     }
 
     return initialStatus;
@@ -67,6 +79,7 @@ export class HealthMonitor extends EventEmitter {
   public unregisterConnectionPool(serviceName: string): void {
     this.connectionPools.delete(serviceName);
     this.healthStatuses.delete(serviceName);
+    this.unhealthyServices.delete(serviceName);
   }
 
   /**
@@ -122,6 +135,7 @@ export class HealthMonitor extends EventEmitter {
       this.healthStatuses.set(serviceName, status);
 
       if (wasUnhealthy) {
+        this.unhealthyServices.delete(serviceName);
         this.emit('healthChanged', status);
         this.emit('serviceRecovered', serviceName);
       }
@@ -205,6 +219,31 @@ export class HealthMonitor extends EventEmitter {
    */
   public clearAllHealthStatuses(): void {
     this.healthStatuses.clear();
+    this.unhealthyServices.clear();
+    this.initFailures.clear();
+  }
+
+  /**
+   * Record that a service failed to initialize its connection pool
+   *
+   * These failures are exposed via /health to show services that are configured
+   * but could not be started, rather than silently omitting them.
+   *
+   * @param serviceName - Name of the service
+   * @param message - Error message describing the failure
+   */
+  public recordInitFailure(serviceName: string, message: string): void {
+    this.initFailures.set(serviceName, { message, timestamp: new Date() });
+  }
+
+  /**
+   * Get initialization failure info for a service
+   *
+   * @param serviceName - Name of the service
+   * @returns Failure info or undefined if no init failure
+   */
+  public getInitFailure(serviceName: string): { message: string; timestamp: Date } | undefined {
+    return this.initFailures.get(serviceName);
   }
 
   /**
@@ -268,18 +307,50 @@ export class HealthMonitor extends EventEmitter {
    *
    * This is called periodically by the heartbeat mechanism.
    * Services that exceed the failure threshold will be marked as unhealthy.
+   * Unhealthy services are checked with exponential backoff to reduce log noise
+   * while still allowing recovery detection.
    *
    * @private
    */
   private async performHeartbeatChecks(): Promise<void> {
     const serviceNames = Array.from(this.connectionPools.keys());
+    const now = Date.now();
 
     // Check all services in parallel
     await Promise.allSettled(
       serviceNames.map(async (serviceName) => {
+        const currentStatus = this.healthStatuses.get(serviceName);
+
+        // For unhealthy services, use exponential backoff
+        if (currentStatus && !currentStatus.healthy) {
+          const failures = currentStatus.consecutiveFailures;
+          const backoffMultiplier = Math.pow(2, Math.max(0, failures - this.failureThreshold));
+          const checkIntervalMs = Math.min(
+            this.heartbeatIntervalMs * backoffMultiplier,
+            this.maxUnhealthyIntervalMs
+          );
+
+          // Calculate when the next check should happen based on last check time
+          const lastCheckTime = currentStatus.lastCheck.getTime();
+          const nextCheckTime = lastCheckTime + checkIntervalMs;
+
+          // Skip if it's not time to check yet
+          if (now < nextCheckTime) {
+            return;
+          }
+        }
+
         const status = await this.checkHealth(serviceName);
 
-        if (!status.healthy && status.consecutiveFailures >= this.failureThreshold) {
+        if (
+          !status.healthy &&
+          status.consecutiveFailures >= this.failureThreshold &&
+          !this.unhealthyServices.has(serviceName)
+        ) {
+          this.unhealthyServices.add(serviceName);
+          log.warn(
+            `[${serviceName}] Service marked as unhealthy after ${status.consecutiveFailures} failures`
+          );
           this.emit('serviceUnhealthy', serviceName, status);
 
           const pool = this.connectionPools.get(serviceName);

@@ -183,7 +183,7 @@ async function discoverToolsViaStdio(service: ServiceDefinition, timeout: number
     // Send initialized notification
     await transport.send({
       jsonrpc: '2.0' as const,
-      method: 'initialized',
+      method: 'notifications/initialized',
       params: {},
     });
 
@@ -385,8 +385,8 @@ async function discoverToolsViaSse(service: ServiceDefinition, timeout: number):
           );
         }
 
-        // 'initialized' is a notification — no response expected
-        await postJson({ jsonrpc: '2.0', method: 'initialized', params: {} });
+        // 'notifications/initialized' is a notification — no response expected
+        await postJson({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} });
 
         const toolsResp = await sendRequest({
           jsonrpc: '2.0',
@@ -504,7 +504,7 @@ async function discoverToolsViaHttp(service: ServiceDefinition, timeout: number)
       throw new Error(initData.error.message);
     }
 
-    // Send initialized notification
+    // Send initialized notification (no id field - it's a notification, not a request)
     await fetch(service.url, {
       method: 'POST',
       headers: {
@@ -513,8 +513,7 @@ async function discoverToolsViaHttp(service: ServiceDefinition, timeout: number)
       },
       body: JSON.stringify({
         jsonrpc: '2.0',
-        id: `notif-${Date.now()}`,
-        method: 'initialized',
+        method: 'notifications/initialized',
         params: {},
       }),
     });

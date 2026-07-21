@@ -15,6 +15,7 @@ import type {
 } from '../types/config.js';
 import type { ServiceDefinition } from '../types/service.js';
 import type { StorageAdapter } from '../types/storage.js';
+import * as log from '../utils/logger.js';
 
 /**
  * Configuration options for FileConfigProvider
@@ -429,6 +430,25 @@ export class FileConfigProvider implements ConfigProvider {
       typeof config.mcpServers === 'object' &&
       !Array.isArray(config.mcpServers)
     ) {
+      const normalizedNames = new Map<string, string>();
+      for (const serviceName of Object.keys(config.mcpServers)) {
+        const normalized = serviceName
+          .toLowerCase()
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9\-_]/g, '');
+        const existing = normalizedNames.get(normalized);
+        if (existing !== undefined) {
+          errors.push({
+            field: `mcpServers.${serviceName}`,
+            message: `Service name collides with "${existing}" after namespace normalization`,
+            expected: 'a unique normalized service name',
+            actual: serviceName,
+          });
+        } else {
+          normalizedNames.set(normalized, serviceName);
+        }
+      }
+
       for (const [name, service] of Object.entries(config.mcpServers)) {
         if (!service) continue;
 
@@ -507,7 +527,7 @@ export class FileConfigProvider implements ConfigProvider {
         const fileData = await this.storageAdapter.read(configKey);
 
         if (!fileData) {
-          console.warn(`Configuration file deleted: ${configPath}`);
+          log.warn(`Configuration file deleted: ${configPath}`);
           return;
         }
 
@@ -516,15 +536,13 @@ export class FileConfigProvider implements ConfigProvider {
         try {
           callback(newConfig);
         } catch (callbackError) {
-          console.error(
-            'Error in configuration watch callback:',
-            callbackError instanceof Error ? callbackError.message : String(callbackError)
+          log.error(
+            `Error in configuration watch callback: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}`
           );
         }
       } catch (error) {
-        console.error(
-          'Failed to reload configuration, keeping previous valid configuration:',
-          error instanceof Error ? error.message : String(error)
+        log.error(
+          `Failed to reload configuration, keeping previous valid configuration: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     };
@@ -565,12 +583,11 @@ export class FileConfigProvider implements ConfigProvider {
       });
 
       watcher.on('error', (error: Error) => {
-        console.error('Configuration file watcher error:', error.message);
+        log.error(`Configuration file watcher error: ${error.message}`);
       });
     } catch (error) {
-      console.error(
-        'Failed to start fs.watch, falling back to polling:',
-        error instanceof Error ? error.message : String(error)
+      log.error(
+        `Failed to start fs.watch, falling back to polling: ${error instanceof Error ? error.message : String(error)}`
       );
     }
 

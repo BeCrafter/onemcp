@@ -44,6 +44,7 @@ export type {
   SecurityConfig,
   MetricsConfig,
   SystemConfig,
+  ConfigProvider,
 } from './config.js';
 
 // Audit types
@@ -54,9 +55,6 @@ export type { Transport } from './transport.js';
 
 // Storage types
 export type { StorageAdapter } from './storage.js';
-
-// Provider types
-export type { ConfigProvider } from './provider.js';
 
 // Metrics types
 export type {

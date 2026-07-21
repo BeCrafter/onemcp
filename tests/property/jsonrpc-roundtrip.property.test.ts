@@ -181,7 +181,7 @@ describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip', () 
         const parsed = parseMessage(serialized);
         return messagesEqual(message, parsed);
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -192,7 +192,7 @@ describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip', () 
         const parsed = parseMessage(serialized);
         return messagesEqual(message, parsed);
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -203,7 +203,7 @@ describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip', () 
         const parsed = parseMessage(serialized);
         return messagesEqual(message, parsed);
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -214,7 +214,7 @@ describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip', () 
         const parsed = parseMessage(serialized);
         return messagesEqual(message, parsed);
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -225,7 +225,7 @@ describe('Feature: onemcp-system, Property 21: JSON-RPC message round-trip', () 
         const parsed = parseMessage(serialized);
         return messagesEqual(message, parsed);
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });

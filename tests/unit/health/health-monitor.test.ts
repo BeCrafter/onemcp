@@ -160,25 +160,19 @@ describe('HealthMonitor', () => {
       );
     });
 
-    it('should emit serviceUnhealthy event when initial health check fails', async () => {
+    it('should emit serviceFailed when an initial health check fails', async () => {
       const pool = createMockPool({
         acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
       });
 
-      const serviceUnhealthySpy = vi.fn();
-      healthMonitor.on('serviceUnhealthy', serviceUnhealthySpy);
+      const serviceFailedSpy = vi.fn();
+      healthMonitor.on('serviceFailed', serviceFailedSpy);
 
       const status = await healthMonitor.registerConnectionPool('test-service', pool);
 
       expect(status.healthy).toBe(false);
-      expect(serviceUnhealthySpy).toHaveBeenCalledTimes(1);
-      expect(serviceUnhealthySpy).toHaveBeenCalledWith(
-        'test-service',
-        expect.objectContaining({
-          serviceName: 'test-service',
-          healthy: false,
-        })
-      );
+      expect(serviceFailedSpy).toHaveBeenCalledTimes(1);
+      expect(serviceFailedSpy).toHaveBeenCalledWith('test-service');
     });
 
     it('should return unhealthy status when initial health check fails', async () => {
@@ -514,10 +508,11 @@ describe('HealthMonitor', () => {
         acquire: vi.fn().mockRejectedValue(new Error('Connection failed')),
       });
 
-      await healthMonitor.registerConnectionPool('test-service', pool);
-
+      // Set up the spy before registering the pool to catch the initial event
       const serviceUnhealthySpy = vi.fn();
       healthMonitor.on('serviceUnhealthy', serviceUnhealthySpy);
+
+      await healthMonitor.registerConnectionPool('test-service', pool);
 
       // Start heartbeat with threshold of 2 (registration already counted as 1 failure)
       healthMonitor.startHeartbeat(50, 2);

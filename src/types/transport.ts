@@ -28,4 +28,21 @@ export interface Transport {
    * Get the transport type
    */
   getType(): TransportType;
+
+  /**
+   * Check if transport is in connected state
+   */
+  isConnected(): boolean;
+
+  /**
+   * Register an event listener
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  on(event: string, listener: (...args: any[]) => void): this;
+
+  /**
+   * Remove an event listener
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  off(event: string, listener: (...args: any[]) => void): this;
 }

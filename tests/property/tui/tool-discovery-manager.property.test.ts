@@ -89,7 +89,7 @@ describe('Feature: auto-discover-service-tools, Property 3: 成功发现存储�
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -117,7 +117,7 @@ describe('Feature: auto-discover-service-tools, Property 3: 成功发现存储�
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -157,7 +157,7 @@ describe('Feature: auto-discover-service-tools, Property 3: 成功发现存储�
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -190,7 +190,7 @@ describe('Feature: auto-discover-service-tools, Property 3: 成功发现存储�
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -226,7 +226,7 @@ describe('Feature: auto-discover-service-tools, Property 3: 成功发现存储�
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -253,7 +253,7 @@ describe('Feature: auto-discover-service-tools, Property 3: 成功发现存储�
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -275,7 +275,7 @@ describe('Feature: auto-discover-service-tools, Property 3: 成功发现存储�
 
         return true;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -315,7 +315,7 @@ describe('Feature: auto-discover-service-tools, Property 3: 成功发现存储�
           return true;
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });

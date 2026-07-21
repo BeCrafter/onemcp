@@ -2,7 +2,7 @@
  * Unit tests for FileConfigProvider
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -259,6 +259,21 @@ describe('FileConfigProvider', () => {
       // Assert
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
+    });
+
+    it('should reject service names that collide after namespace normalization', () => {
+      const invalidConfig: SystemConfig = {
+        ...validConfig,
+        mcpServers: {
+          'Git Hub': validConfig.mcpServers['test-service']!,
+          'git-hub': validConfig.mcpServers['test-service']!,
+        },
+      };
+
+      const result = provider.validate(invalidConfig);
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((error) => error.message.includes('collides'))).toBe(true);
     });
 
     it('should reject missing required fields', () => {
@@ -714,6 +729,17 @@ describe('FileConfigProvider', () => {
   });
 
   describe('watch()', () => {
+    let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {}) as any;
+    });
+
+    afterEach(() => {
+      consoleErrorSpy.mockRestore();
+    });
+
     it('should return unwatch function', () => {
       // Act
       const unwatch = provider.watch(() => {});

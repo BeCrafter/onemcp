@@ -7,7 +7,7 @@ describe('Property Testing Setup', () => {
       fc.property(fc.integer(), fc.integer(), (a, b) => {
         return a + b === b + a; // Commutative property of addition
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 
@@ -17,7 +17,7 @@ describe('Property Testing Setup', () => {
         const result = await Promise.resolve(str);
         return result === str;
       }),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
   });
 });

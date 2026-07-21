@@ -12,6 +12,7 @@ vi.mock('../../../src/transport/stdio.js', () => {
   return {
     StdioTransport: vi.fn().mockImplementation(function (this: any) {
       this.send = vi.fn().mockResolvedValue(undefined);
+      this.on = vi.fn();
       this.receive = vi.fn().mockReturnValue({
         async next() {
           return { value: { jsonrpc: '2.0', id: 1, result: {} }, done: false };
@@ -28,6 +29,7 @@ vi.mock('../../../src/transport/stdio.js', () => {
       });
       this.close = vi.fn().mockResolvedValue(undefined);
       this.getType = vi.fn().mockReturnValue('stdio');
+      this.isConnected = vi.fn().mockReturnValue(true);
       this.process = { killed: false, exitCode: null }; // Add process property for health checks
       return this;
     }),
@@ -38,6 +40,7 @@ vi.mock('../../../src/transport/http.js', () => {
   return {
     HttpTransport: vi.fn().mockImplementation(function (this: any) {
       this.send = vi.fn().mockResolvedValue(undefined);
+      this.on = vi.fn();
       this.receive = vi.fn().mockReturnValue({
         async next() {
           return { value: { jsonrpc: '2.0', id: 1, result: {} }, done: false };
@@ -54,6 +57,7 @@ vi.mock('../../../src/transport/http.js', () => {
       });
       this.close = vi.fn().mockResolvedValue(undefined);
       this.getType = vi.fn().mockReturnValue('http');
+      this.isConnected = vi.fn().mockReturnValue(true);
       return this;
     }),
   };
@@ -304,6 +308,9 @@ describe('ConnectionPool', () => {
         receive: vi.fn(),
         close: vi.fn().mockResolvedValue(undefined),
         getType: vi.fn().mockReturnValue('stdio'),
+        isConnected: vi.fn().mockReturnValue(true),
+        on: vi.fn(),
+        off: vi.fn(),
       };
 
       const unknownConnection = {
@@ -458,29 +465,65 @@ describe('ConnectionPool', () => {
   });
 
   describe('idle timeout cleanup', () => {
-    it.skip('should close connections exceeding idle timeout', async () => {
-      // This test is skipped because testing setInterval with fake timers is complex
-      // The idle timeout functionality is tested manually and works correctly
-      // The core pool functionality (acquire, release, limits) is thoroughly tested
+    it('should close connections exceeding idle timeout', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'] });
+
+      // Create a new pool after faking timers so setInterval is intercepted
+      const timeoutPool = new ConnectionPool(serviceDefinition, poolConfig);
+
+      // Acquire and release a connection (makes it idle)
+      const conn = await timeoutPool.acquire();
+      timeoutPool.release(conn);
+
+      const stats = timeoutPool.getStats();
+      expect(stats.idle).toBe(1);
+      expect(stats.total).toBe(1);
+
+      // Advance time past idleTimeout plus the monitor interval
+      await vi.advanceTimersByTimeAsync(poolConfig.idleTimeout + 15000);
+
+      // The idle connection should now be closed
+      const statsAfter = timeoutPool.getStats();
+      expect(statsAfter.total).toBe(0);
+
+      await timeoutPool.closeAll();
+      vi.useRealTimers();
     });
 
     it('should not close busy connections', async () => {
-      vi.useFakeTimers();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'] });
 
-      await pool.acquire();
+      const timeoutPool = new ConnectionPool(serviceDefinition, poolConfig);
+      await timeoutPool.acquire();
 
       // Advance time beyond idle timeout
       await vi.advanceTimersByTimeAsync(poolConfig.idleTimeout + 10000);
 
-      const stats = pool.getStats();
+      const stats = timeoutPool.getStats();
       expect(stats.total).toBe(1);
 
+      await timeoutPool.closeAll();
       vi.useRealTimers();
     });
 
-    it.skip('should emit idleTimeout event when closing idle connection', async () => {
-      // This test is skipped because testing setInterval with fake timers is complex
-      // The idle timeout functionality is tested manually and works correctly
+    it('should emit idleTimeout event when closing idle connection', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'] });
+
+      const timeoutPool = new ConnectionPool(serviceDefinition, poolConfig);
+
+      const conn = await timeoutPool.acquire();
+      timeoutPool.release(conn);
+
+      const idleTimeoutSpy = vi.fn();
+      timeoutPool.on('idleTimeout', idleTimeoutSpy);
+
+      // Advance time past idleTimeout
+      await vi.advanceTimersByTimeAsync(poolConfig.idleTimeout + 15000);
+
+      expect(idleTimeoutSpy).toHaveBeenCalledWith(conn.id);
+
+      await timeoutPool.closeAll();
+      vi.useRealTimers();
     });
   });
 
@@ -497,6 +540,7 @@ describe('ConnectionPool', () => {
               receive: vi.fn(),
               close: vi.fn().mockResolvedValue(undefined),
               getType: vi.fn().mockReturnValue('stdio'),
+              isConnected: vi.fn().mockReturnValue(true),
             });
           }, 10000);
         });
@@ -583,6 +627,7 @@ describe('ConnectionPool', () => {
       // Ensure mock is properly set up for these tests
       vi.mocked(StdioTransport).mockImplementation(function (this: any) {
         this.send = vi.fn().mockResolvedValue(undefined);
+        this.on = vi.fn();
         this.receive = vi.fn().mockReturnValue({
           async next() {
             return { value: { jsonrpc: '2.0', id: 1, result: {} }, done: false };
@@ -599,6 +644,7 @@ describe('ConnectionPool', () => {
         });
         this.close = vi.fn().mockResolvedValue(undefined);
         this.getType = vi.fn().mockReturnValue('stdio');
+        this.isConnected = vi.fn().mockReturnValue(true);
         this.process = { killed: false, exitCode: null };
         return this;
       });
@@ -671,6 +717,9 @@ describe('ConnectionPool', () => {
         receive: vi.fn(),
         close: vi.fn().mockResolvedValue(undefined),
         getType: vi.fn().mockReturnValue('stdio'),
+        isConnected: vi.fn().mockReturnValue(true),
+        on: vi.fn(),
+        off: vi.fn(),
       };
 
       const unknownConnection = {

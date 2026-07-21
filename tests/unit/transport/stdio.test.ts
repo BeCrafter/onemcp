@@ -38,7 +38,11 @@ function createMockProcess() {
   process.stdin = stdin;
   process.stdout = stdout;
   process.stderr = stderr;
-  process.kill = vi.fn();
+  process.kill = vi.fn(() => {
+    process.killed = true;
+    queueMicrotask(() => process.emit('exit', 0, null));
+    return true;
+  });
   process.killed = false;
 
   return process;
@@ -51,6 +55,8 @@ describe('StdioTransport', () => {
   beforeEach(() => {
     mockProcess = createMockProcess();
     vi.mocked(spawn).mockReturnValue(mockProcess);
+    // Suppress expected console.error from JSON parse failures in tests
+    vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(async () => {
@@ -153,10 +159,8 @@ describe('StdioTransport', () => {
 
       await transport.send(message);
 
-      expect(mockProcess.stdin.write).toHaveBeenCalledWith(
-        JSON.stringify(message) + '\n',
-        expect.any(Function)
-      );
+      const expectedFrame = JSON.stringify(message) + '\n';
+      expect(mockProcess.stdin.write).toHaveBeenCalledWith(expectedFrame, expect.any(Function));
     });
 
     it('should handle multiple messages', async () => {
@@ -443,17 +447,17 @@ describe('StdioTransport', () => {
     });
 
     it('should log stderr output', async () => {
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const stderrWriteSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
       mockProcess.stderr.emit('data', 'Error message from process\n');
 
       await new Promise((resolve) => setImmediate(resolve));
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect(stderrWriteSpy).toHaveBeenCalledWith(
         expect.stringContaining('Error message from process')
       );
 
-      consoleErrorSpy.mockRestore();
+      stderrWriteSpy.mockRestore();
     });
   });
 
@@ -485,6 +489,7 @@ describe('StdioTransport', () => {
     });
 
     it('should force kill if process does not exit within timeout', async () => {
+      mockProcess.kill.mockImplementation(() => true);
       const closePromise = transport.close();
 
       // Don't emit exit event, let it timeout
