@@ -13,16 +13,22 @@ import { ServiceTools } from '../../src/tui/components/ServiceTools.js';
 import { Header } from '../../src/tui/components/Header.js';
 import type { ServiceDefinition } from '../../src/types/service.js';
 
+// Hoisted so the mock factory can reference it and tests can assert that the
+// mock (not a real connection attempt) drove the render.
+const { fetchServiceToolsMock } = vi.hoisted(() => {
+  const tools = Array.from({ length: 50 }, (_, i) => ({
+    // Long names well beyond the tool-list panel width, to exercise truncation
+    name: `namespace___tool_${String(i).padStart(3, '0')}_with_a_very_long_extra_suffix_that_goes_well_beyond_the_tool_list_width_0123456789`,
+    description: 'mock tool',
+    inputSchema: { type: 'object', properties: {} },
+  }));
+  return { fetchServiceToolsMock: vi.fn(() => Promise.resolve(tools)) };
+});
+
 vi.mock('../../src/tui/discovery-worker.js', () => ({
-  fetchServiceTools: () =>
-    Promise.resolve(
-      Array.from({ length: 50 }, (_, i) => ({
-        // Long names well beyond the tool-list panel width, to exercise truncation
-        name: `namespace___tool_${String(i).padStart(3, '0')}_with_a_very_long_extra_suffix_that_goes_well_beyond_the_tool_list_width_0123456789`,
-        description: 'mock tool',
-        inputSchema: { type: 'object', properties: {} },
-      }))
-    ),
+  __esModule: true,
+  fetchServiceTools: fetchServiceToolsMock,
+  default: fetchServiceToolsMock,
 }));
 
 // Minimal ANSI terminal emulator (same as repro script)
@@ -187,6 +193,17 @@ function renderApp(rows: number, cols: number) {
 }
 
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+// Poll the rendered terminal until `pred` holds or the timeout elapses, so slow
+// CI runners don't flake on Ink's 32ms-throttled render loop.
+const waitFor = async (pred: () => boolean, timeoutMs = 5000): Promise<boolean> => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    await new Promise((r) => setImmediate(r));
+    await sleep(20);
+    if (pred()) return true;
+  }
+  return pred();
+};
 // Push a sequence of keystrokes with enough delay between each for Ink's
 // throttled render loop (32ms) to flush, then flush the scheduler.
 const typeKeys = async (stdin: any, chars: string, perKey = 60) => {
@@ -201,18 +218,24 @@ describe('ServiceTools scroll indicator (real components, optimized chrome)', ()
   it('keeps ↑ more on its own line at the bottom of a long tool list (24-row terminal)', async () => {
     const { instance, term, stdin } = renderApp(24, 80);
 
-    // Wait for tools to load
-    for (let i = 0; i < 60; i++) {
-      await new Promise((r) => setImmediate(r));
-      await sleep(10);
-      if (term.text().includes('namespace___tool_000')) break;
-    }
+    // Wait for tools to load (mocked discovery must drive the render)
+    await waitFor(() => term.text().includes('namespace___tool_000'));
+    expect(fetchServiceToolsMock).toHaveBeenCalled();
     expect(term.text()).toContain('namespace___tool_000');
 
-    // Scroll all the way to the bottom
-    for (let i = 0; i < 60; i++) {
+    // Scroll all the way to the bottom (stop early once tool_049 is selected)
+    for (let i = 0; i < 120; i++) {
       stdin.push(Buffer.from('\x1b[B', 'utf8')); // down arrow
-      await sleep(20);
+      await new Promise((r) => setImmediate(r));
+      await sleep(25);
+      if (
+        term
+          .text()
+          .split('\n')
+          .some((l) => l.includes('▶') && l.includes('tool_049'))
+      ) {
+        break;
+      }
     }
 
     const text = term.text();
@@ -255,12 +278,8 @@ describe('ServiceTools scroll indicator (real components, optimized chrome)', ()
   it('filters the tool list by name when entering search mode', async () => {
     const { instance, term, stdin } = renderApp(24, 80);
 
-    // Wait for tools to load
-    for (let i = 0; i < 60; i++) {
-      await new Promise((r) => setImmediate(r));
-      await sleep(10);
-      if (term.text().includes('namespace___tool_000')) break;
-    }
+    // Wait for tools to load (mocked discovery must drive the render)
+    await waitFor(() => term.text().includes('namespace___tool_000'));
 
     // Enter search mode and type "tool_04" → matches tool_040..tool_049 (10 tools)
     await typeKeys(stdin, '/');
