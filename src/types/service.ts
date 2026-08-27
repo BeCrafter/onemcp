@@ -20,6 +20,16 @@ export interface ConnectionPoolConfig {
 }
 
 /**
+ * Default connection pool settings shared by config defaults and UI help text,
+ * so the user-facing hints never drift from what actually gets applied.
+ */
+export const DEFAULT_CONNECTION_POOL: ConnectionPoolConfig = {
+  maxConnections: 5,
+  idleTimeout: 60000,
+  connectionTimeout: 30000,
+};
+
+/**
  * Service definition for an MCP server
  */
 export interface ServiceDefinition {

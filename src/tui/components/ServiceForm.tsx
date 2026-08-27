@@ -12,6 +12,7 @@ import { Box, Text, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import SelectInput from 'ink-select-input';
 import type { ServiceDefinition, TransportType } from '../../types/service.js';
+import { fieldHelp, fieldPlaceholder } from './service-field-config.js';
 
 export interface ServiceFormProps {
   /** Existing service to edit (undefined for new service) */
@@ -138,26 +139,7 @@ function getFieldLabel(field: FormField): string {
  * Get field help text
  */
 function getFieldHelp(field: FormField): string {
-  const help: Record<FormField, string> = {
-    name: 'Unique identifier for this service',
-    transport: 'Protocol used to communicate with the service',
-    command: 'Command to start the MCP server (e.g., npx, node, python)',
-    url: 'HTTP(S) URL of the MCP server',
-    args: 'Command-line arguments (e.g., -y, @modelcontextprotocol/server-filesystem, /tmp)',
-    env: 'Environment variables to pass to the process (e.g., NODE_ENV=production, DEBUG=true).',
-    headers: 'Custom HTTP headers (e.g., Authorization: Bearer token, Content-Type: application/json).',
-    tags: 'Labels for categorization and filtering (e.g., local, storage, api)',
-    enabled: 'Whether this service should be active',
-    maxConnections: 'Maximum number of concurrent connections (default: 5)',
-    idleTimeout: 'Time before idle connections are closed (default: 60000)',
-    connectionTimeout: 'Maximum time to wait for connection (default: 30000)',
-    triggerHintsStart: 'Reason the LLM should call this service at conversation start (e.g., "recall role memory").',
-    triggerHintsEnd: 'Reason the LLM should call this service before conversation ends (e.g., "persist new memory").',
-    triggerHintsPhrases: 'Extra trigger phrases the LLM should treat as a search signal (e.g., "我是X, switch role").',
-    confirm: 'Review and save the configuration',
-    quickMode: 'Use quick mode with defaults for advanced options',
-  };
-  return help[field];
+  return fieldHelp[field];
 }
 
 /**
@@ -473,6 +455,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
 
   // Render text input field
   const renderTextInput = (field: FormField) => {
+    const placeholder = fieldPlaceholder[field];
     return (
       <TextInput
         value={formData[field as keyof FormData] as string}
@@ -480,6 +463,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
           setFormData({ ...formData, [field]: value });
         }}
         onSubmit={() => goToNextField()}
+        {...(placeholder ? { placeholder } : {})}
       />
     );
   };

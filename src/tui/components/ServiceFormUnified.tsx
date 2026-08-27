@@ -12,6 +12,7 @@ import { Box, Text, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import SelectInput from 'ink-select-input';
 import type { ServiceDefinition, TransportType } from '../../types/service.js';
+import { fieldHelp, fieldPlaceholder } from './service-field-config.js';
 
 export interface ServiceFormUnifiedProps {
   /** Existing service to edit (undefined for new service) */
@@ -91,14 +92,14 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
     {
       field: 'name',
       label: 'Service Name',
-      help: 'Unique identifier (letters, numbers, hyphens, underscores)',
+      help: fieldHelp.name,
       required: true,
       type: 'text',
     },
     {
       field: 'transport',
       label: 'Transport Type',
-      help: 'Protocol for communication',
+      help: fieldHelp.transport,
       required: true,
       type: 'select',
     },
@@ -108,7 +109,7 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
     configs.push({
       field: 'command',
       label: 'Command',
-      help: 'Command to start the MCP server (e.g., npx, node, python)',
+      help: fieldHelp.command,
       required: true,
       type: 'text',
       dependsOn: { field: 'transport', value: 'stdio' },
@@ -116,7 +117,7 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
     configs.push({
       field: 'args',
       label: 'Arguments',
-      help: 'Command-line arguments (comma-separated, optional)',
+      help: fieldHelp.args,
       required: false,
       type: 'text',
       dependsOn: { field: 'transport', value: 'stdio' },
@@ -124,7 +125,7 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
     configs.push({
       field: 'env',
       label: 'Environment Variables',
-      help: 'Environment variables to pass to the process (KEY=VALUE pairs, comma-separated, optional).',
+      help: fieldHelp.env,
       required: false,
       type: 'text',
       dependsOn: { field: 'transport', value: 'stdio' },
@@ -133,7 +134,7 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
     configs.push({
       field: 'url',
       label: 'URL',
-      help: 'HTTP(S) URL of the MCP server',
+      help: fieldHelp.url,
       required: true,
       type: 'text',
       dependsOn: { field: 'transport', value: transport },
@@ -141,7 +142,7 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
     configs.push({
       field: 'headers',
       label: 'Headers',
-      help: 'Custom HTTP headers (Key: Value pairs, comma-separated, optional).',
+      help: fieldHelp.headers,
       required: false,
       type: 'text',
       dependsOn: { field: 'transport', value: transport },
@@ -152,56 +153,56 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
     {
       field: 'tags',
       label: 'Tags',
-      help: 'Labels for categorization (comma-separated, optional)',
+      help: fieldHelp.tags,
       required: false,
       type: 'text',
     },
     {
       field: 'enabled',
       label: 'Enabled',
-      help: 'Whether this service should be active',
+      help: fieldHelp.enabled,
       required: false,
       type: 'select',
     },
     {
       field: 'maxConnections',
       label: 'Max Connections',
-      help: 'Maximum concurrent connections (1-100, default: 5)',
+      help: fieldHelp.maxConnections,
       required: false,
       type: 'text',
     },
     {
       field: 'idleTimeout',
       label: 'Idle Timeout',
-      help: 'Time before idle connections close in ms (min: 1000, default: 60000)',
+      help: fieldHelp.idleTimeout,
       required: false,
       type: 'text',
     },
     {
       field: 'connectionTimeout',
       label: 'Connection Timeout',
-      help: 'Maximum time to wait for connection in ms (min: 1000, default: 30000)',
+      help: fieldHelp.connectionTimeout,
       required: false,
       type: 'text',
     },
     {
       field: 'triggerHintsStart',
       label: 'Trigger: On Session Start',
-      help: 'Reason for the LLM to call this service at conversation start (optional, e.g. "recall role memory").',
+      help: fieldHelp.triggerHintsStart,
       required: false,
       type: 'text',
     },
     {
       field: 'triggerHintsEnd',
       label: 'Trigger: On Session End',
-      help: 'Reason to call before the conversation ends (optional, e.g. "persist new memory").',
+      help: fieldHelp.triggerHintsEnd,
       required: false,
       type: 'text',
     },
     {
       field: 'triggerHintsPhrases',
       label: 'Trigger Phrases',
-      help: 'Extra phrases that should make the LLM search this service (comma-separated, optional).',
+      help: fieldHelp.triggerHintsPhrases,
       required: false,
       type: 'text',
     }
@@ -615,6 +616,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
 
   // Render text input
   const renderTextInput = (field: FormField) => {
+    const placeholder = fieldPlaceholder[field];
     return (
       <TextInput
         value={formData[field as keyof FormData] as string}
@@ -629,6 +631,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
           setTouched(prev => new Set(prev).add(field));
           goToNextField();
         }}
+        {...(placeholder ? { placeholder } : {})}
       />
     );
   };

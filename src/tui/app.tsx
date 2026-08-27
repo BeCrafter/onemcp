@@ -65,6 +65,13 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
 
   const terminalHeight = stdout?.rows || 24;
 
+  // Vertical space consumed by chrome above the content area:
+  // app header box (border 2 + padding 2 + 1 line + margin 1 = 6) + info bar (3 lines + margin 1 = 4).
+  // A transient status message adds a single-bordered box (6 lines).
+  const OUTER_CHROME_LINES = 10;
+  const STATUS_MESSAGE_LINES = statusMessage ? 6 : 0;
+  const contentHeight = Math.max(8, terminalHeight - OUTER_CHROME_LINES - STATUS_MESSAGE_LINES);
+
   // Calculate global tool statistics
   const globalToolStats = React.useMemo(() => {
     let totalTools = 0;
@@ -366,12 +373,8 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
       return;
     }
 
-    // Tools view - handle back
+    // Tools view: ServiceTools handles its own input including Esc layering.
     if (view === 'tools') {
-      if (key.escape) {
-        setView('list');
-        setRefreshKey(k => k + 1);
-      }
       return;
     }
 
@@ -544,11 +547,15 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
         {view === 'tools' && editingService && (
           <ServiceTools
             service={editingService}
-            onBack={() => setView('list')}
+            onBack={() => {
+              setView('list');
+              setRefreshKey(k => k + 1);
+            }}
             onToggleTool={handleToggleTool}
             onBatchToggleTools={handleBatchToggleTools}
             toolStates={editingService.toolStates || {}}
             onToolsDiscovered={handleToolsDiscovered}
+            terminalHeight={contentHeight}
           />
         )}
 
