@@ -8,6 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { ServiceDefinition } from '../../types/service.js';
+import { DEFAULT_CONNECTION_POOL } from '../../types/service.js';
 
 export interface ServiceJsonEditorProps {
   /** Initial JSON content (for editing existing service) */
@@ -191,9 +192,9 @@ function getExampleJson(): string {
       "tags": ["local", "storage"],
       "enabled": true,
       "connectionPool": {
-        "maxConnections": 5,
-        "idleTimeout": 60000,
-        "connectionTimeout": 30000
+        "maxConnections": DEFAULT_CONNECTION_POOL.maxConnections,
+        "idleTimeout": DEFAULT_CONNECTION_POOL.idleTimeout,
+        "connectionTimeout": DEFAULT_CONNECTION_POOL.connectionTimeout
       }
     },
     "github": {
@@ -205,6 +206,21 @@ function getExampleJson(): string {
       },
       "tags": ["remote", "api"],
       "enabled": true
+    },
+    "remote-api": {
+      "transport": "http",
+      "url": "https://example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer token",
+        "Content-Type": "application/json"
+      },
+      "tags": ["remote", "api"],
+      "enabled": true,
+      "connectionPool": {
+        "maxConnections": DEFAULT_CONNECTION_POOL.maxConnections,
+        "idleTimeout": DEFAULT_CONNECTION_POOL.idleTimeout,
+        "connectionTimeout": DEFAULT_CONNECTION_POOL.connectionTimeout
+      }
     }
   }, null, 2);
 }

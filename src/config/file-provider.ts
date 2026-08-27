@@ -14,6 +14,7 @@ import type {
   ValidationError,
 } from '../types/config.js';
 import type { ServiceDefinition } from '../types/service.js';
+import { DEFAULT_CONNECTION_POOL } from '../types/service.js';
 import type { StorageAdapter } from '../types/storage.js';
 import * as log from '../utils/logger.js';
 
@@ -683,11 +684,7 @@ export class FileConfigProvider implements ConfigProvider {
       logLevel: 'INFO',
       configDir: this.configDir,
       mcpServers: {},
-      connectionPool: {
-        maxConnections: 5,
-        idleTimeout: 60000,
-        connectionTimeout: 30000,
-      },
+      connectionPool: { ...DEFAULT_CONNECTION_POOL },
       healthCheck: {
         enabled: true,
         interval: 30000,

@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { FileConfigProvider } from './config/file-provider.js';
 import { FileStorageAdapter } from './storage/file.js';
 import type { SystemConfig, ToolDiscoveryConfig } from './types/config.js';
+import { DEFAULT_CONNECTION_POOL } from './types/service.js';
 import type { TagFilter } from './types/tool.js';
 import { getPackageVersion } from './utils/package-version.js';
 import { silenceStderrForShutdown } from './utils/silence-stderr-shutdown.js';
@@ -292,11 +293,7 @@ function initializeConfigDir(configDir: string): void {
       logLevel: 'INFO',
       configDir,
       mcpServers: {},
-      connectionPool: {
-        maxConnections: 5,
-        idleTimeout: 60000,
-        connectionTimeout: 30000,
-      },
+      connectionPool: { ...DEFAULT_CONNECTION_POOL },
       healthCheck: {
         enabled: true,
         interval: 30000,

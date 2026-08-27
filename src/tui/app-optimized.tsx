@@ -73,6 +73,13 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
   const terminalHeight = stdout?.rows || 24;
 
+  // Vertical space consumed by chrome above the content area:
+  // Header (double border title 3 rows + stats 1 row + margin 1 = 5).
+  // StatusBar adds a round-bordered box (border 2 + 1 line + margin 1 = 4) while a message is visible.
+  const OUTER_CHROME_LINES = 5;
+  const STATUS_BAR_LINES = statusMessage ? 4 : 0;
+  const contentHeight = Math.max(8, terminalHeight - OUTER_CHROME_LINES - STATUS_BAR_LINES);
+
   // Calculate global tool statistics from in-memory cache
   const globalToolStats = React.useMemo(() => {
     let total = 0;
@@ -469,12 +476,11 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       process.exit(0);
     }
 
-    // Tools view
+    // Tools view: ServiceTools handles its own input (search Esc layering,
+    // tool navigation/toggle). Do not intercept Esc here — that would bypass
+    // ServiceTools' layered Esc (exit search → clear filter → back) and jump
+    // straight to the service list.
     if (view === 'tools') {
-      if (key.escape) {
-        setView('list');
-        setRefreshKey(k => k + 1);
-      }
       return;
     }
 
@@ -632,11 +638,15 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
         {view === 'tools' && editingService && (
           <ServiceTools
             service={editingService}
-            onBack={() => setView('list')}
+            onBack={() => {
+              setView('list');
+              setRefreshKey(k => k + 1);
+            }}
             onToggleTool={handleToggleTool}
             onBatchToggleTools={handleBatchToggleTools}
             toolStates={editingService.toolStates || {}}
             onToolsDiscovered={handleToolsDiscovered}
+            terminalHeight={contentHeight}
           />
         )}
       </Box>
