@@ -1,5 +1,9 @@
 #!/bin/sh
 
+# Ensure nvm/node/npm are available in PATH for git hooks
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
 echo "Running pre-commit checks..."
 
 npm run lint:fix || { echo "❌ Lint failed. Fix the issues and try again."; exit 1; }

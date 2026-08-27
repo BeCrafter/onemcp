@@ -1,6 +1,6 @@
 {
   "name": "onemcp",
-  "version": "0.1.12",
+  "version": "0.2.1",
   "description": "MCP Router System - Intelligent routing layer between MCP clients and multiple backend MCP servers",
   "type": "module",
   "main": "./dist/index.js",
@@ -55,6 +55,8 @@
     "fastify": "^4.25.2",
     "fs-extra": "^11.2.0",
     "ink": "^4.4.1",
+    "ink-select-input": "^5.0.0",
+    "ink-text-input": "^5.0.1",
     "node-fetch": "^3.3.2",
     "pino": "^8.17.2",
     "pino-pretty": "^10.3.1",
