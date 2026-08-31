@@ -780,5 +780,51 @@ describe('ConnectionPool', () => {
 
       await httpPool.closeAll();
     }, 15000);
+
+    it('should treat a transport in ERROR state as unhealthy', async () => {
+      const connection = await pool.acquire();
+
+      // Simulate transport reaching ERROR (e.g. SSE reconnect exhausted,
+      // HTTP request failure, process exit) — isConnected() flips to false.
+      (connection.transport as { isConnected: () => boolean }).isConnected = () => false;
+
+      expect(pool.isConnectionHealthy(connection)).toBe(false);
+    }, 15000);
+
+    it('should not reuse an unhealthy idle connection and should create a new one', async () => {
+      const conn1 = await pool.acquire();
+      // Simulate the backend connection dying while idle in the pool.
+      (conn1.transport as { isConnected: () => boolean }).isConnected = () => false;
+      pool.release(conn1);
+
+      const conn2 = await pool.acquire();
+
+      // The dead connection must not be handed out again — a fresh one is created.
+      expect(conn2.id).not.toBe(conn1.id);
+      expect(pool.isConnectionHealthy(conn2)).toBe(true);
+
+      // The unhealthy connection should no longer occupy a pool slot.
+      const stats = pool.getStats();
+      expect(stats.total).toBe(1);
+
+      await pool.closeAll();
+    }, 15000);
+
+    it('should remove an unhealthy idle connection from the pool', async () => {
+      const conn1 = await pool.acquire();
+      (conn1.transport as { isConnected: () => boolean }).isConnected = () => false;
+      pool.release(conn1);
+
+      const statsBefore = pool.getStats();
+      expect(statsBefore.total).toBe(1);
+      expect(statsBefore.idle).toBe(1);
+
+      // Trigger a path that scans idle connections (acquire).
+      await pool.acquire();
+
+      const statsAfter = pool.getStats();
+      expect(statsAfter.total).toBe(1); // one fresh connection, the dead one is gone
+      expect(statsAfter.idle).toBe(0); // it's busy (acquired) and healthy
+    }, 15000);
   });
 });

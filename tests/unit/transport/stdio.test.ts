@@ -386,17 +386,20 @@ describe('StdioTransport', () => {
       });
     });
 
-    it('should handle process exit with code 0', async () => {
-      const exitPromise = new Promise<void>((resolve) => {
-        transport.on('error', () => {
-          // Should not emit error for clean exit
-          throw new Error('Should not emit error for exit code 0');
+    it('should handle process exit with code 0 as an error', async () => {
+      // A code-0 exit the pool did not initiate still means the backend process
+      // is gone — the transport must go ERROR so the connection is not reused.
+      const errorPromise = new Promise<Error>((resolve) => {
+        transport.on('error', (error) => {
+          resolve(error);
         });
-        setTimeout(resolve, 100);
       });
 
       mockProcess.emit('exit', 0, null);
-      await exitPromise;
+
+      const error = await errorPromise;
+      expect(error).toBeInstanceOf(TransportError);
+      expect(error.message).toContain('code 0');
     });
 
     it('should handle process exit with non-zero code', async () => {
@@ -413,22 +416,20 @@ describe('StdioTransport', () => {
       expect(error.message).toContain('code 1');
     });
 
-    it('should handle process exit with signal', async () => {
-      // SIGTERM is a normal termination signal, should not emit error
-      const errorPromise = new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          resolve(); // No error is expected
-        }, 100);
-
-        transport.on('error', (_error) => {
-          clearTimeout(timeout);
-          reject(new Error('Should not emit error for SIGTERM'));
+    it('should handle process exit with signal as an error', async () => {
+      // A signal (SIGTERM/SIGKILL) that was not caused by our own close() means
+      // the process died externally — mark ERROR so the pool rebuilds it.
+      const errorPromise = new Promise<Error>((resolve) => {
+        transport.on('error', (error) => {
+          resolve(error);
         });
       });
 
       mockProcess.emit('exit', null, 'SIGTERM');
 
-      await errorPromise;
+      const error = await errorPromise;
+      expect(error).toBeInstanceOf(TransportError);
+      expect(error.message).toContain('signal SIGTERM');
     });
 
     it('should handle process errors', async () => {

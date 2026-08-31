@@ -3,7 +3,7 @@
  */
 
 import { ChildProcess, spawn } from 'child_process';
-import { BaseTransport, TransportError } from './base.js';
+import { BaseTransport, TransportError, TransportState } from './base.js';
 import type { JsonRpcMessage } from '../types/jsonrpc.js';
 import type { TransportType } from '../types/service.js';
 import * as log from '../utils/logger.js';
@@ -246,15 +246,21 @@ export class StdioTransport extends BaseTransport {
 
   /**
    * Handle process exit
+   *
+   * Any exit not caused by our own close() means the backend process is gone and
+   * the connection is dead — even a clean code-0 exit or an external signal like
+   * SIGTERM/SIGKILL. Mark the transport ERROR so the connection pool stops reusing
+   * it. During an intentional close() the state is CLOSING/CLOSED, so skip then.
    */
   private handleProcessExit(code: number | null, signal: NodeJS.Signals | null): void {
     const exitInfo = signal ? `signal ${signal}` : `code ${code}`;
 
-    // Only treat non-zero exit codes as errors
-    // Signals like SIGTERM are normal termination
-    if (code !== null && code !== 0) {
+    if (this.state !== TransportState.CLOSING && this.state !== TransportState.CLOSED) {
       this.handleError(new TransportError(`Process exited with ${exitInfo}`, 'PROCESS_EXITED'));
     }
+
+    // Close the receive side and settle all waiting receivers
+    this.handleStreamEnd();
 
     // Reject all waiting receivers
     const error = new TransportError(`Process exited with ${exitInfo}`, 'PROCESS_EXITED');
