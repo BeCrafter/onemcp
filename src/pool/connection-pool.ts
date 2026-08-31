@@ -287,6 +287,13 @@ export class ConnectionPool extends EventEmitter {
       return false;
     }
 
+    // Transport must be in CONNECTED state. A transport that reached ERROR
+    // (SSE reconnect exhausted, HTTP request failure, process exit) must not
+    // be reused — otherwise the pool keeps handing out a dead connection.
+    if (!connection.transport.isConnected()) {
+      return false;
+    }
+
     // For stdio transport, check if the process is still running
     if (connection.transport.getType() === 'stdio') {
       const stdioTransport = connection.transport as {
@@ -396,15 +403,66 @@ export class ConnectionPool extends EventEmitter {
   /**
    * Find an idle connection in the pool
    *
-   * @returns Idle connection or undefined if none available
+   * Only healthy idle connections are returned. If an idle connection is no
+   * longer healthy (e.g. its transport reached ERROR), it is removed from the
+   * pool so the next acquire creates a fresh connection instead of reusing a
+   * dead one or letting it occupy a slot up to maxConnections.
+   *
+   * @returns Healthy idle connection or undefined if none available
    */
   private findIdleConnection(): Connection | undefined {
+    let unhealthy: Connection | undefined;
+
     for (const connection of this.connections.values()) {
-      if (isIdle(connection)) {
+      if (!isIdle(connection)) {
+        continue;
+      }
+
+      if (this.isConnectionHealthy(connection)) {
+        // If we passed an unhealthy idle connection on the way, remove it first
+        if (unhealthy) {
+          void this.invalidateConnection(unhealthy, new Error('Connection is unhealthy'));
+        }
         return connection;
       }
+
+      if (!unhealthy) {
+        unhealthy = connection;
+      }
     }
+
+    if (unhealthy) {
+      void this.invalidateConnection(unhealthy, new Error('Connection is unhealthy'));
+    }
+
     return undefined;
+  }
+
+  /**
+   * Remove a connection from the pool.
+   *
+   * Idempotent: drops the connection from the pool immediately (so a dead
+   * connection does not occupy a maxConnections slot), closes its transport,
+   * and awakes any queued requests so they get a fresh connection.
+   */
+  private async invalidateConnection(connection: Connection, error: Error): Promise<void> {
+    if (!this.connections.has(connection.id)) {
+      return;
+    }
+
+    // Drop from the pool synchronously before awaiting the transport close so
+    // concurrent health checks / request failures cannot double-remove it.
+    this.connections.delete(connection.id);
+    this.emit('connectionFailed', connection.id, error);
+
+    try {
+      await connection.transport.close();
+      this.emit('connectionClosed', connection.id);
+    } catch (closeError) {
+      this.emit('error', closeError);
+    }
+
+    this.processQueue();
   }
 
   /**
@@ -468,11 +526,15 @@ export class ConnectionPool extends EventEmitter {
       const connection = createConnection(id, transport);
 
       // Attach the listener before initialization so an early process exit does not
-      // surface as an unhandled EventEmitter error.
+      // surface as an unhandled EventEmitter error. A transport error (SSE reconnect
+      // exhausted, HTTP request failure, process exit) makes the connection unusable:
+      // invalidate it in the pool so it is not reused or counted against maxConnections.
       transport.on('error', (error: unknown) => {
         const errorMessage = error instanceof Error ? error.message : String(error);
         log.warn(`[${this.service.name}] Transport error: ${errorMessage}`);
         this.emit('error', error);
+        const cause = error instanceof Error ? error : new Error(String(error));
+        void this.invalidateConnection(connection, cause).catch(() => {});
       });
 
       await this.withTimeout(

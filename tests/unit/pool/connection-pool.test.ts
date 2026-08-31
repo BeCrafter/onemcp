@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { EventEmitter } from 'events';
 import { ConnectionPool, ConnectionPoolError } from '../../../src/pool/connection-pool.js';
 import type { ServiceDefinition, ConnectionPoolConfig } from '../../../src/types/service.js';
 import { StdioTransport } from '../../../src/transport/stdio.js';
@@ -779,6 +780,167 @@ describe('ConnectionPool', () => {
       expect(httpPool.isConnectionHealthy(connection)).toBe(true);
 
       await httpPool.closeAll();
+    }, 15000);
+
+    it('should treat a transport in ERROR state as unhealthy', async () => {
+      const connection = await pool.acquire();
+
+      // Simulate transport reaching ERROR (e.g. SSE reconnect exhausted,
+      // HTTP request failure, process exit) — isConnected() flips to false.
+      (connection.transport as { isConnected: () => boolean }).isConnected = () => false;
+
+      expect(pool.isConnectionHealthy(connection)).toBe(false);
+    }, 15000);
+
+    it('should not reuse an unhealthy idle connection and should create a new one', async () => {
+      const conn1 = await pool.acquire();
+      // Simulate the backend connection dying while idle in the pool.
+      (conn1.transport as { isConnected: () => boolean }).isConnected = () => false;
+      pool.release(conn1);
+
+      const conn2 = await pool.acquire();
+
+      // The dead connection must not be handed out again — a fresh one is created.
+      expect(conn2.id).not.toBe(conn1.id);
+      expect(pool.isConnectionHealthy(conn2)).toBe(true);
+
+      // The unhealthy connection should no longer occupy a pool slot.
+      const stats = pool.getStats();
+      expect(stats.total).toBe(1);
+
+      await pool.closeAll();
+    }, 15000);
+
+    it('should remove an unhealthy idle connection from the pool', async () => {
+      const conn1 = await pool.acquire();
+      (conn1.transport as { isConnected: () => boolean }).isConnected = () => false;
+      pool.release(conn1);
+
+      const statsBefore = pool.getStats();
+      expect(statsBefore.total).toBe(1);
+      expect(statsBefore.idle).toBe(1);
+
+      // Trigger a path that scans idle connections (acquire).
+      await pool.acquire();
+
+      const statsAfter = pool.getStats();
+      expect(statsAfter.total).toBe(1); // one fresh connection, the dead one is gone
+      expect(statsAfter.idle).toBe(0); // it's busy (acquired) and healthy
+    }, 15000);
+  });
+
+  describe('transport error invalidates pool connection', () => {
+    // The previous tests mock isConnected() directly. These tests exercise the
+    // real "transport emits 'error' → pool invalidates → next acquire is fresh"
+    // path that the fix added in createConnectionWithTimeout, using a transport
+    // whose `on/emit` behave like a real EventEmitter so listeners actually fire.
+    beforeEach(() => {
+      vi.mocked(StdioTransport).mockImplementation(function (this: any) {
+        const ee = new EventEmitter();
+        this.on = (event: string, listener: (...args: unknown[]) => void) => {
+          ee.on(event, listener);
+          return this;
+        };
+        this.emit = (event: string, ...args: unknown[]) => ee.emit(event, ...args);
+        this.send = vi.fn().mockResolvedValue(undefined);
+        this.receive = vi.fn().mockReturnValue({
+          async next() {
+            return { value: { jsonrpc: '2.0', id: 1, result: {} }, done: false };
+          },
+          async return(value?: any) {
+            return { value, done: true };
+          },
+          async throw(error?: any) {
+            throw error;
+          },
+          [Symbol.asyncIterator]() {
+            return this;
+          },
+        });
+        this.close = vi.fn().mockResolvedValue(undefined);
+        this.getType = vi.fn().mockReturnValue('stdio');
+        this.isConnected = vi.fn().mockReturnValue(true);
+        this.process = { killed: false, exitCode: null };
+        return this;
+      });
+    });
+
+    it('should emit connectionFailed and remove the connection when a pooled transport emits error', async () => {
+      const conn1 = await pool.acquire();
+      pool.release(conn1); // back to idle in the pool
+
+      const failedSpy = vi.fn();
+      const closedSpy = vi.fn();
+      pool.on('connectionFailed', failedSpy);
+      pool.on('connectionClosed', closedSpy);
+      // The pool re-emits transport errors on itself; swallow them so Node's
+      // EventEmitter does not throw on an unhandled 'error' event.
+      pool.on('error', () => {});
+
+      const error = new Error('backend process died');
+      // Fire the transport-level 'error' event — the "instant invalidation" path.
+      (conn1.transport as unknown as { emit: (e: string, ...a: unknown[]) => void }).emit(
+        'error',
+        error
+      );
+
+      // invalidateConnection awaits transport.close() before emitting connectionClosed.
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(failedSpy).toHaveBeenCalledWith(conn1.id, error);
+      expect(closedSpy).toHaveBeenCalledWith(conn1.id);
+
+      // The dead connection no longer occupies a maxConnections slot.
+      const stats = pool.getStats();
+      expect(stats.total).toBe(0);
+    }, 15000);
+
+    it('should hand out a fresh connection on the next acquire after a transport error', async () => {
+      const conn1 = await pool.acquire();
+      pool.release(conn1);
+
+      pool.on('error', () => {}); // swallow pool-level error re-emit
+
+      (conn1.transport as unknown as { emit: (e: string, ...a: unknown[]) => void }).emit(
+        'error',
+        new Error('backend died')
+      );
+      // Let invalidateConnection finish.
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+
+      const conn2 = await pool.acquire();
+
+      // A fresh connection is created, not the dead one reused.
+      expect(conn2.id).not.toBe(conn1.id);
+      expect(pool.isConnectionHealthy(conn2)).toBe(true);
+
+      await pool.closeAll();
+    }, 15000);
+
+    it('should not double-invalidate if both a transport error and a failed request occur', async () => {
+      const conn1 = await pool.acquire();
+      pool.release(conn1);
+
+      const failedSpy = vi.fn();
+      pool.on('connectionFailed', failedSpy);
+      pool.on('error', () => {}); // swallow pool-level error re-emit
+
+      (conn1.transport as unknown as { emit: (e: string, ...a: unknown[]) => void }).emit(
+        'error',
+        new Error('transport error')
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // A later markConnectionFailed on the same (already removed) connection is a no-op.
+      await pool.markConnectionFailed(conn1, new Error('request failed'));
+
+      expect(failedSpy).toHaveBeenCalledTimes(1);
+      expect(pool.getStats().total).toBe(0);
+
+      await pool.closeAll();
     }, 15000);
   });
 });
