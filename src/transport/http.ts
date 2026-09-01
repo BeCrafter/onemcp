@@ -379,6 +379,11 @@ export class HttpTransport extends BaseTransport {
         if (message) {
           yield message;
         }
+        // Loop back to drain any remaining queued messages before waiting for
+        // a new one. Without this, a receiver that skips a queued message (e.g.
+        // a notification response) would await a fresh message and never see the
+        // actual response already sitting in the queue.
+        continue;
       }
 
       // If receive is closed, we're done
