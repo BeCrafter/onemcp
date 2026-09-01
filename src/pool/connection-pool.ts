@@ -348,6 +348,13 @@ export class ConnectionPool extends EventEmitter {
   }
 
   /**
+   * Get the configured maximum number of concurrent connections.
+   */
+  public get maxConnections(): number {
+    return this.config.maxConnections;
+  }
+
+  /**
    * Get pool statistics
    *
    * @returns Current pool statistics

@@ -7,6 +7,7 @@ import { ToolRouter } from '../../../src/routing/tool-router';
 import { ServiceRegistry } from '../../../src/registry/service-registry';
 import { NamespaceManager } from '../../../src/namespace/manager';
 import { HealthMonitor } from '../../../src/health/health-monitor';
+import { TransportError } from '../../../src/transport/base';
 import type { ServiceDefinition } from '../../../src/types/service';
 import type { ConnectionPool } from '../../../src/pool/connection-pool';
 import type { ConfigProvider, SystemConfig } from '../../../src/types/config';
@@ -1835,6 +1836,365 @@ describe('ToolRouter', () => {
       expect(result.succeeded).toEqual(['service3']);
       expect(result.failed).toHaveLength(2);
       expect(result.failed.map((f) => f.service).sort()).toEqual(['service1', 'service2']);
+    });
+  });
+
+  describe('session expiry recovery', () => {
+    it('should re-establish the backend session when discovery hits an expired session', async () => {
+      // Register an enabled service
+      const service: ServiceDefinition = {
+        name: 'test-service',
+        enabled: true,
+        tags: [],
+        transport: 'http',
+        url: 'http://127.0.0.1:9999/mcp',
+        connectionPool: {
+          maxConnections: 5,
+          idleTimeout: 60000,
+          connectionTimeout: 30000,
+        },
+      };
+
+      await serviceRegistry.register(service);
+
+      const mockTool = {
+        name: 'real_tool',
+        description: 'Real tool',
+        inputSchema: { type: 'object' as const, properties: {} },
+      };
+
+      // Build a transport that answers tools/list with either a session-expired
+      // error (-32001, the JSON-RPC error SSE/HTTP backends return) or success.
+      const makeTransport = (respondWithExpiredSession: boolean) => {
+        let requestId = '';
+        return {
+          send: vi.fn(async (request: { id?: string | number }) => {
+            requestId = String(request.id ?? '');
+          }),
+          receive: vi.fn().mockReturnValue({
+            next: vi.fn().mockImplementation(async () => ({
+              done: false as const,
+              value: respondWithExpiredSession
+                ? {
+                    jsonrpc: '2.0',
+                    id: requestId,
+                    error: {
+                      code: -32001,
+                      message: 'Session not found or expired. Please send initialize again.',
+                    },
+                  }
+                : {
+                    jsonrpc: '2.0',
+                    id: requestId,
+                    result: { tools: [mockTool] },
+                  },
+            })),
+            return: vi.fn().mockResolvedValue({ done: true }),
+          }),
+          close: vi.fn().mockResolvedValue(undefined),
+          getType: vi.fn().mockReturnValue('http'),
+          isConnected: vi.fn().mockReturnValue(true),
+        };
+      };
+
+      const staleConnection = {
+        id: 'conn-stale',
+        transport: makeTransport(true),
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+      const freshConnection = {
+        id: 'conn-fresh',
+        transport: makeTransport(false),
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+
+      const acquire = vi
+        .fn()
+        .mockResolvedValueOnce(staleConnection)
+        .mockResolvedValueOnce(freshConnection);
+      const mockPool = {
+        acquire,
+        release: vi.fn(),
+        markConnectionFailed: vi.fn().mockResolvedValue(undefined),
+        maxConnections: 1,
+      } as any;
+
+      toolRouter.registerConnectionPool('test-service', mockPool);
+
+      const tools = await toolRouter.discoverTools();
+
+      // The stale session connection must be invalidated and a fresh one acquired.
+      expect(acquire).toHaveBeenCalledTimes(2);
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledTimes(1);
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledWith(
+        staleConnection,
+        expect.any(Error)
+      );
+      expect(mockPool.release).not.toHaveBeenCalledWith(staleConnection);
+
+      // Discovery must recover transparently instead of returning an empty list.
+      expect(tools).toHaveLength(1);
+      expect(tools[0]?.namespacedName).toBe('test-service__real_tool');
+    });
+
+    it('should detect session expiry from the error message alone (no numeric code)', async () => {
+      const service: ServiceDefinition = {
+        name: 'test-service',
+        enabled: true,
+        tags: [],
+        transport: 'http',
+        url: 'http://127.0.0.1:9999/mcp',
+        connectionPool: { maxConnections: 5, idleTimeout: 60000, connectionTimeout: 30000 },
+      };
+      await serviceRegistry.register(service);
+
+      const mockTool = {
+        name: 'real_tool',
+        description: 'Real tool',
+        inputSchema: { type: 'object' as const, properties: {} },
+      };
+      const makeTransport = (expired: boolean) => {
+        let requestId = '';
+        return {
+          send: vi.fn(async (request: { id?: string | number }) => {
+            requestId = String(request.id ?? '');
+          }),
+          receive: vi.fn().mockReturnValue({
+            next: vi.fn().mockImplementation(async () => ({
+              done: false as const,
+              value: expired
+                ? {
+                    jsonrpc: '2.0',
+                    id: requestId,
+                    // No `code` field — detection must rely on the message text.
+                    error: {
+                      message: 'Session not found or expired. Please send initialize again.',
+                    },
+                  }
+                : { jsonrpc: '2.0', id: requestId, result: { tools: [mockTool] } },
+            })),
+            return: vi.fn().mockResolvedValue({ done: true }),
+          }),
+          close: vi.fn().mockResolvedValue(undefined),
+          getType: vi.fn().mockReturnValue('http'),
+          isConnected: vi.fn().mockReturnValue(true),
+        };
+      };
+      const staleConnection = {
+        id: 'conn-stale',
+        transport: makeTransport(true),
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+      const freshConnection = {
+        id: 'conn-fresh',
+        transport: makeTransport(false),
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+
+      const acquire = vi
+        .fn()
+        .mockResolvedValueOnce(staleConnection)
+        .mockResolvedValueOnce(freshConnection);
+      const mockPool = {
+        acquire,
+        release: vi.fn(),
+        markConnectionFailed: vi.fn().mockResolvedValue(undefined),
+        maxConnections: 1,
+      } as any;
+      toolRouter.registerConnectionPool('test-service', mockPool);
+
+      const tools = await toolRouter.discoverTools();
+
+      expect(acquire).toHaveBeenCalledTimes(2);
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledTimes(1);
+      expect(tools).toHaveLength(1);
+    });
+
+    it('should fail fast (no retry) on a non-session connection error', async () => {
+      const service: ServiceDefinition = {
+        name: 'test-service',
+        enabled: true,
+        tags: [],
+        transport: 'http',
+        url: 'http://127.0.0.1:9999/mcp',
+        connectionPool: { maxConnections: 5, idleTimeout: 60000, connectionTimeout: 30000 },
+      };
+      await serviceRegistry.register(service);
+
+      const staleConnection = {
+        id: 'conn-1',
+        transport: {
+          send: vi
+            .fn()
+            .mockRejectedValue(new TransportError('Response timeout', 'RESPONSE_TIMEOUT')),
+          receive: vi.fn(),
+          close: vi.fn(),
+          getType: vi.fn().mockReturnValue('http'),
+          isConnected: vi.fn().mockReturnValue(true),
+        },
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+
+      const acquire = vi.fn().mockResolvedValue(staleConnection);
+      const mockPool = {
+        acquire,
+        release: vi.fn(),
+        markConnectionFailed: vi.fn().mockResolvedValue(undefined),
+        maxConnections: 2,
+      } as any;
+      toolRouter.registerConnectionPool('test-service', mockPool);
+
+      const errorSpy = vi.fn();
+      toolRouter.on('toolDiscoveryError', errorSpy);
+
+      const tools = await toolRouter.discoverTools();
+
+      // A real transport failure should not trigger a second backend spawn.
+      expect(acquire).toHaveBeenCalledTimes(1);
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledTimes(1);
+      expect(tools).toHaveLength(0);
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('should not treat a generic "not found in session" error as session expiry', async () => {
+      const service: ServiceDefinition = {
+        name: 'test-service',
+        enabled: true,
+        tags: [],
+        transport: 'http',
+        url: 'http://127.0.0.1:9999/mcp',
+        connectionPool: { maxConnections: 5, idleTimeout: 60000, connectionTimeout: 30000 },
+      };
+      await serviceRegistry.register(service);
+
+      let requestId = '';
+      const connection = {
+        id: 'conn-1',
+        transport: {
+          send: vi.fn(async (request: { id?: string | number }) => {
+            requestId = String(request.id ?? '');
+          }),
+          receive: vi.fn().mockReturnValue({
+            next: vi.fn().mockImplementation(async () => ({
+              done: false as const,
+              value: {
+                jsonrpc: '2.0',
+                id: requestId,
+                // "not found" precedes "session" — this is NOT a session-expiry
+                // signal and must not invalidate the connection.
+                error: { message: "Tool 'foo' not found in session local" },
+              },
+            })),
+            return: vi.fn().mockResolvedValue({ done: true }),
+          }),
+          close: vi.fn().mockResolvedValue(undefined),
+          getType: vi.fn().mockReturnValue('http'),
+          isConnected: vi.fn().mockReturnValue(true),
+        },
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+
+      const mockPool = {
+        acquire: vi.fn().mockResolvedValue(connection),
+        release: vi.fn(),
+        markConnectionFailed: vi.fn().mockResolvedValue(undefined),
+        maxConnections: 1,
+      } as any;
+      toolRouter.registerConnectionPool('test-service', mockPool);
+
+      await toolRouter.discoverTools();
+
+      // Not session expiry: the connection is released intact, not dropped.
+      expect(mockPool.release).toHaveBeenCalledWith(connection);
+      expect(mockPool.markConnectionFailed).not.toHaveBeenCalled();
+    });
+
+    it('should invalidate the connection when a tool call hits an expired session', async () => {
+      const service: ServiceDefinition = {
+        name: 'test-service',
+        enabled: true,
+        tags: [],
+        transport: 'http',
+        url: 'http://127.0.0.1:9999/mcp',
+        connectionPool: { maxConnections: 5, idleTimeout: 60000, connectionTimeout: 30000 },
+      };
+      await serviceRegistry.register(service);
+
+      let requestId = '';
+      const mockTransport = {
+        send: vi.fn(async (request: { id?: string | number }) => {
+          requestId = String(request.id ?? '');
+        }),
+        receive: vi.fn().mockReturnValue({
+          next: vi.fn().mockImplementation(async () => ({
+            done: false as const,
+            value: {
+              jsonrpc: '2.0',
+              id: requestId,
+              error: {
+                code: -32001,
+                message: 'Session not found or expired. Please send initialize again.',
+              },
+            },
+          })),
+          return: vi.fn().mockResolvedValue({ done: true }),
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+        getType: vi.fn().mockReturnValue('http'),
+        isConnected: vi.fn().mockReturnValue(true),
+      };
+      const mockConnection = {
+        id: 'conn-1',
+        transport: mockTransport,
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+      const mockPool = {
+        acquire: vi.fn().mockResolvedValue(mockConnection),
+        release: vi.fn(),
+        markConnectionFailed: vi.fn().mockResolvedValue(undefined),
+        maxConnections: 1,
+      } as any;
+      toolRouter.registerConnectionPool('test-service', mockPool);
+
+      const mockTool: Tool = {
+        name: 'test_tool',
+        namespacedName: 'test-service__test_tool',
+        serviceName: 'test-service',
+        description: 'Test tool',
+        inputSchema: { type: 'object', properties: {} },
+        enabled: true,
+      };
+      const findToolSpy = vi.spyOn(toolRouter as any, 'findTool').mockResolvedValue(mockTool);
+
+      const context: RequestContext = {
+        requestId: 'req-1',
+        correlationId: 'corr-1',
+        timestamp: new Date(),
+      };
+
+      await expect(toolRouter.callTool('test-service__test_tool', {}, context)).rejects.toThrow(
+        'Session not found'
+      );
+
+      // The stale session connection must be dropped so the next call reconnects.
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledTimes(1);
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledWith(mockConnection, expect.any(Error));
+
+      findToolSpy.mockRestore();
     });
   });
 

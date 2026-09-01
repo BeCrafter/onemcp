@@ -520,9 +520,45 @@ export class ToolRouter extends EventEmitter {
    * @private
    */
   /**
+   * Whether an error indicates the backend session has expired or is no longer valid.
+   *
+   * SSE/HTTP backends often report an expired session as a JSON-RPC *error*
+   * (HTTP 200, code `-32001` or a "session ... not found/expired" message) rather
+   * than dropping the connection. A connection whose backend session is gone must
+   * be invalidated and re-initialized — releasing it back into the pool would keep
+   * reusing the stale session and fail every subsequent tools/list / tools/call.
+   */
+  private isSessionExpiryError(error: unknown): boolean {
+    if (error instanceof TransportError && error.code === 'SESSION_EXPIRED') {
+      return true;
+    }
+
+    if (error && typeof error === 'object' && 'code' in error) {
+      const code = (error as { code?: unknown }).code;
+      if (code === -32001) {
+        return true;
+      }
+    }
+
+    if (error instanceof Error) {
+      // Ordered match only: "session" must precede the expiry signal so an
+      // unrelated error like "tool X not found in session Y" isn't misclassified.
+      if (/session\b.*\b(not found|expired)/i.test(error.message)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Whether an error indicates the connection is dead and should be removed from the pool.
    */
   private isConnectionLevelError(error: unknown): boolean {
+    if (this.isSessionExpiryError(error)) {
+      return true;
+    }
+
     if (!(error instanceof Error)) {
       return false;
     }
@@ -633,58 +669,76 @@ export class ToolRouter extends EventEmitter {
     service: ServiceDefinition,
     pool: ConnectionPool
   ): Promise<Tool[]> {
-    const connection = await pool.acquire();
-    let connectionHandled = false;
-    try {
-      const timeoutMs = DEFAULT_DISCOVERY_TIMEOUT_MS;
-      const rawTools: unknown[] = await this.queryToolsViaMCP(connection, timeoutMs);
+    // A backend session (SSE/HTTP) can expire after idle. On a session-expiry
+    // failure we invalidate the stale connection and retry so discovery
+    // transparently re-initializes the backend session instead of surfacing an
+    // empty tool list to the client. A connection whose backend session expired
+    // still looks healthy (isConnected stays true for HTTP transports), so
+    // acquire() keeps handing back stale idle connections until each has been
+    // invalidated. Allow up to maxConnections invalidations plus one final
+    // attempt that forces a fresh connection. Non-session connection failures
+    // (backend down, timeout) still fail fast — a fresh connection won't help.
+    const maxAttempts = Math.max(2, pool.maxConnections + 1);
+    for (let attempt = 0; ; attempt++) {
+      const connection = await pool.acquire();
+      let connectionHandled = false;
+      try {
+        const timeoutMs = DEFAULT_DISCOVERY_TIMEOUT_MS;
+        const rawTools: unknown[] = await this.queryToolsViaMCP(connection, timeoutMs);
 
-      const tools: Tool[] = rawTools.map((rawTool: unknown) => {
-        const toolObj = rawTool as {
-          name: string;
-          description?: string;
-          inputSchema?: {
-            type: 'object';
-            properties: Record<string, unknown>;
-            required?: string[];
+        const tools: Tool[] = rawTools.map((rawTool: unknown) => {
+          const toolObj = rawTool as {
+            name: string;
+            description?: string;
+            inputSchema?: {
+              type: 'object';
+              properties: Record<string, unknown>;
+              required?: string[];
+            };
           };
-        };
-        const namespacedName = this.namespaceManager.generateNamespacedName(
-          service.name,
-          toolObj.name
-        );
-        const enabled = this.isToolEnabled(service, toolObj.name);
+          const namespacedName = this.namespaceManager.generateNamespacedName(
+            service.name,
+            toolObj.name
+          );
+          const enabled = this.isToolEnabled(service, toolObj.name);
 
-        return {
-          name: toolObj.name,
-          namespacedName,
-          serviceName: service.name,
-          description: enhanceDescription(toolObj.name, service.name, toolObj.description || ''),
-          inputSchema: toolObj.inputSchema || {
-            type: 'object',
-            properties: {},
-            required: [],
-          },
-          enabled,
-        };
-      });
+          return {
+            name: toolObj.name,
+            namespacedName,
+            serviceName: service.name,
+            description: enhanceDescription(toolObj.name, service.name, toolObj.description || ''),
+            inputSchema: toolObj.inputSchema || {
+              type: 'object',
+              properties: {},
+              required: [],
+            },
+            enabled,
+          };
+        });
 
-      return tools;
-    } catch (error) {
-      if (this.isConnectionLevelError(error)) {
-        await pool.markConnectionFailed(
-          connection,
-          error instanceof Error ? error : new Error(String(error))
-        );
-        connectionHandled = true;
-      } else {
+        return tools;
+      } catch (error) {
+        if (this.isConnectionLevelError(error)) {
+          await pool.markConnectionFailed(
+            connection,
+            error instanceof Error ? error : new Error(String(error))
+          );
+          connectionHandled = true;
+          // Retry only for a stale backend session: a fresh connection
+          // re-establishes it. Any other connection failure (backend down,
+          // timeout) would just fail again on a fresh connection, so fail fast.
+          if (this.isSessionExpiryError(error) && attempt + 1 < maxAttempts) {
+            continue;
+          }
+          throw error;
+        }
         pool.release(connection);
         connectionHandled = true;
-      }
-      throw error;
-    } finally {
-      if (!connectionHandled) {
-        pool.release(connection);
+        throw error;
+      } finally {
+        if (!connectionHandled) {
+          pool.release(connection);
+        }
       }
     }
   }

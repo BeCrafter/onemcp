@@ -355,6 +355,48 @@ describe('HttpTransport', () => {
       await transport.close();
     });
 
+    it('should drain multiple queued responses in order', async () => {
+      // Two sends complete before any receive: both responses are buffered in
+      // messageQueue. The receiver must yield them BOTH in order — a missing
+      // `continue` in doReceive() would leave the second response stranded and
+      // the second next() would hang forever.
+      const notificationResponse = { jsonrpc: '2.0', result: {} };
+      const toolResponse = { jsonrpc: '2.0', id: 42, result: { tools: [] } };
+
+      const makeResponse = (body: unknown) => ({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: {
+          get: vi.fn().mockReturnValue(null),
+        },
+        text: vi.fn().mockResolvedValue(JSON.stringify(body)),
+      });
+
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(makeResponse(notificationResponse) as any)
+        .mockResolvedValueOnce(makeResponse(toolResponse) as any);
+
+      const transport = new HttpTransport({
+        url: 'http://localhost:300/rpc',
+        mode: 'http',
+      });
+
+      await transport.send({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} });
+      await transport.send({ jsonrpc: '2.0', id: 42, method: 'tools/list', params: {} });
+
+      const iterator = transport.receive();
+      const first = await iterator.next();
+      const second = await iterator.next();
+
+      expect(first.done).toBe(false);
+      expect(first.value).toEqual(notificationResponse);
+      expect(second.done).toBe(false);
+      expect(second.value).toEqual(toolResponse);
+
+      await transport.close();
+    });
+
     it('should handle network errors', async () => {
       vi.mocked(fetch).mockRejectedValue(new Error('Network error'));
 
