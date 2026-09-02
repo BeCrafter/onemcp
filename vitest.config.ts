@@ -13,6 +13,7 @@ export default defineConfig({
         'tests/',
         '**/*.test.ts',
         '**/*.config.ts',
+        'scripts/',
         'src/tui/**',
         'src/cli.ts',
         'src/cli-mode.ts',
