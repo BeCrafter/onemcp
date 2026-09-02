@@ -59,11 +59,13 @@ export class SessionManager {
    *
    * @param agentId - Identifier for the AI Agent
    * @param context - Session-specific context
+   * @param id - Optional explicit session id (used to recreate an evicted
+   *   session under the same handle; callers must ensure the id is free)
    * @returns The created session
    */
-  createSession(agentId: string, context: SessionContext = {}): Session {
+  createSession(agentId: string, context: SessionContext = {}, id?: string): Session {
     const session: Session = {
-      id: randomUUID(),
+      id: id ?? randomUUID(),
       agentId,
       createdAt: new Date(),
       lastActivity: new Date(),

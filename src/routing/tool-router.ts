@@ -728,6 +728,9 @@ export class ToolRouter extends EventEmitter {
           // re-establishes it. Any other connection failure (backend down,
           // timeout) would just fail again on a fresh connection, so fail fast.
           if (this.isSessionExpiryError(error) && attempt + 1 < maxAttempts) {
+            log.warn(
+              `[${service.name}] Backend session expired (tools/list), invalidating connection ${connection.id} and retrying`
+            );
             continue;
           }
           throw error;
@@ -962,62 +965,87 @@ export class ToolRouter extends EventEmitter {
     // Validate parameters against tool schema (Requirement 5.2)
     this.validateToolParameters(tool, params, context);
 
-    let connection: Connection;
-    try {
-      connection = await pool.acquire();
-    } catch (error) {
-      throw this.createToolError(
-        ErrorCode.CONNECTION_POOL_EXHAUSTED,
-        `Failed to acquire connection for service: ${serviceName}`,
-        context,
-        { serviceName, toolName },
-        error as Error
-      );
-    }
-
-    let connectionHandled = false;
-    try {
-      const result = await this.executeToolCall(connection, toolName, params, context);
-
-      this.emit('toolCallSuccess', {
-        namespacedName,
-        serviceName,
-        toolName,
-        context,
-      });
-
-      return result;
-    } catch (error) {
-      this.emit('toolCallError', {
-        namespacedName,
-        serviceName,
-        toolName,
-        context,
-        error,
-      });
-
-      if (this.isConnectionLevelError(error)) {
-        await pool.markConnectionFailed(
-          connection,
-          error instanceof Error ? error : new Error(String(error))
+    // A backend session (SSE/HTTP) can expire after idle, failing the call
+    // with a JSON-RPC -32001 error while the transport itself still looks
+    // healthy (isConnected stays true). On such a failure we invalidate the
+    // stale connection and retry so the call transparently re-initializes the
+    // backend session instead of surfacing an error to the client. Allow up to
+    // maxConnections invalidations plus one final attempt that forces a fresh
+    // connection. Non-session connection failures (backend down, timeout) and
+    // tool-level errors still fail fast — a fresh connection won't help.
+    const maxAttempts = Math.max(2, pool.maxConnections + 1);
+    for (let attempt = 0; ; attempt++) {
+      let connection: Connection;
+      try {
+        connection = await pool.acquire();
+      } catch (error) {
+        throw this.createToolError(
+          ErrorCode.CONNECTION_POOL_EXHAUSTED,
+          `Failed to acquire connection for service: ${serviceName}`,
+          context,
+          { serviceName, toolName },
+          error as Error
         );
-        connectionHandled = true;
       }
 
-      if (error instanceof Error && 'code' in error) {
-        throw error;
-      }
+      let connectionHandled = false;
+      try {
+        const result = await this.executeToolCall(connection, toolName, params, context);
 
-      throw this.createToolError(
-        ErrorCode.INTERNAL_ERROR,
-        `Tool execution failed: ${(error as Error).message}`,
-        context,
-        { serviceName, toolName },
-        error as Error
-      );
-    } finally {
-      if (!connectionHandled) {
-        pool.release(connection);
+        this.emit('toolCallSuccess', {
+          namespacedName,
+          serviceName,
+          toolName,
+          context,
+        });
+
+        return result;
+      } catch (error) {
+        if (this.isConnectionLevelError(error)) {
+          await pool.markConnectionFailed(
+            connection,
+            error instanceof Error ? error : new Error(String(error))
+          );
+          connectionHandled = true;
+          // Retry only for a stale backend session: a fresh connection
+          // re-establishes it. Any other connection failure (backend down,
+          // timeout) would just fail again on a fresh connection, so fail fast.
+          if (this.isSessionExpiryError(error) && attempt + 1 < maxAttempts) {
+            log.warn(
+              `[${actualServiceName}] Backend session expired (tools/call ${toolName}), invalidating connection ${connection.id} and retrying`
+            );
+            continue;
+          }
+        } else {
+          // Tool-level failure (bad params, backend-reported tool error): the
+          // connection itself is fine, release it instead of invalidating.
+          pool.release(connection);
+          connectionHandled = true;
+        }
+
+        this.emit('toolCallError', {
+          namespacedName,
+          serviceName,
+          toolName,
+          context,
+          error,
+        });
+
+        if (error instanceof Error && 'code' in error) {
+          throw error;
+        }
+
+        throw this.createToolError(
+          ErrorCode.INTERNAL_ERROR,
+          `Tool execution failed: ${(error as Error).message}`,
+          context,
+          { serviceName, toolName },
+          error as Error
+        );
+      } finally {
+        if (!connectionHandled) {
+          pool.release(connection);
+        }
       }
     }
   }

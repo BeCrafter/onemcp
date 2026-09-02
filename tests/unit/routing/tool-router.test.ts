@@ -2162,8 +2162,281 @@ describe('ToolRouter', () => {
         lastUsed: new Date(),
         createdAt: new Date(),
       };
+      const acquire = vi.fn().mockResolvedValue(mockConnection);
       const mockPool = {
-        acquire: vi.fn().mockResolvedValue(mockConnection),
+        acquire,
+        release: vi.fn(),
+        markConnectionFailed: vi.fn().mockResolvedValue(undefined),
+        maxConnections: 1,
+      } as any;
+      toolRouter.registerConnectionPool('test-service', mockPool);
+
+      const mockTool: Tool = {
+        name: 'test_tool',
+        namespacedName: 'test-service__test_tool',
+        serviceName: 'test-service',
+        description: 'Test tool',
+        inputSchema: { type: 'object', properties: {} },
+        enabled: true,
+      };
+      const findToolSpy = vi.spyOn(toolRouter as any, 'findTool').mockResolvedValue(mockTool);
+
+      const errorSpy = vi.fn();
+      const successSpy = vi.fn();
+      toolRouter.on('toolCallError', errorSpy);
+      toolRouter.on('toolCallSuccess', successSpy);
+
+      const context: RequestContext = {
+        requestId: 'req-1',
+        correlationId: 'corr-1',
+        timestamp: new Date(),
+      };
+
+      await expect(toolRouter.callTool('test-service__test_tool', {}, context)).rejects.toThrow(
+        'Session not found'
+      );
+
+      // Every acquire hands back the same stale connection, so the bounded
+      // retry (max(2, maxConnections + 1) = 2 attempts) invalidates it twice
+      // before surfacing the expiry error to the client.
+      expect(acquire).toHaveBeenCalledTimes(2);
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledTimes(2);
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledWith(mockConnection, expect.any(Error));
+      expect(mockPool.release).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(successSpy).not.toHaveBeenCalled();
+
+      findToolSpy.mockRestore();
+    });
+
+    it('should transparently retry a tool call after the backend session expires', async () => {
+      const service: ServiceDefinition = {
+        name: 'test-service',
+        enabled: true,
+        tags: [],
+        transport: 'http',
+        url: 'http://127.0.0.1:9999/mcp',
+        connectionPool: { maxConnections: 5, idleTimeout: 60000, connectionTimeout: 30000 },
+      };
+      await serviceRegistry.register(service);
+
+      const makeTransport = (expired: boolean) => {
+        let requestId = '';
+        return {
+          send: vi.fn(async (request: { id?: string | number }) => {
+            requestId = String(request.id ?? '');
+          }),
+          receive: vi.fn().mockReturnValue({
+            next: vi.fn().mockImplementation(async () => ({
+              done: false as const,
+              value: expired
+                ? {
+                    jsonrpc: '2.0',
+                    id: requestId,
+                    error: {
+                      code: -32001,
+                      message: 'Session not found or expired. Please send initialize again.',
+                    },
+                  }
+                : {
+                    jsonrpc: '2.0',
+                    id: requestId,
+                    result: { content: [{ type: 'text', text: 'ok' }] },
+                  },
+            })),
+            return: vi.fn().mockResolvedValue({ done: true }),
+          }),
+          close: vi.fn().mockResolvedValue(undefined),
+          getType: vi.fn().mockReturnValue('http'),
+          isConnected: vi.fn().mockReturnValue(true),
+        };
+      };
+
+      const staleTransport = makeTransport(true);
+      const freshTransport = makeTransport(false);
+      const staleConnection = {
+        id: 'conn-stale',
+        transport: staleTransport,
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+      const freshConnection = {
+        id: 'conn-fresh',
+        transport: freshTransport,
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+
+      const acquire = vi
+        .fn()
+        .mockResolvedValueOnce(staleConnection)
+        .mockResolvedValueOnce(freshConnection);
+      const mockPool = {
+        acquire,
+        release: vi.fn(),
+        markConnectionFailed: vi.fn().mockResolvedValue(undefined),
+        maxConnections: 1,
+      } as any;
+      toolRouter.registerConnectionPool('test-service', mockPool);
+
+      const mockTool: Tool = {
+        name: 'test_tool',
+        namespacedName: 'test-service__test_tool',
+        serviceName: 'test-service',
+        description: 'Test tool',
+        inputSchema: { type: 'object', properties: {} },
+        enabled: true,
+      };
+      const findToolSpy = vi.spyOn(toolRouter as any, 'findTool').mockResolvedValue(mockTool);
+
+      const successSpy = vi.fn();
+      const errorSpy = vi.fn();
+      toolRouter.on('toolCallSuccess', successSpy);
+      toolRouter.on('toolCallError', errorSpy);
+
+      const context: RequestContext = {
+        requestId: 'req-1',
+        correlationId: 'corr-1',
+        timestamp: new Date(),
+      };
+
+      const result = (await toolRouter.callTool('test-service__test_tool', {}, context)) as {
+        content: Array<{ text: string }>;
+      };
+
+      // The call recovers on the fresh connection instead of surfacing the error.
+      expect(result.content[0]?.text).toBe('ok');
+      expect(acquire).toHaveBeenCalledTimes(2);
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledTimes(1);
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledWith(
+        staleConnection,
+        expect.any(Error)
+      );
+      expect(mockPool.release).not.toHaveBeenCalledWith(staleConnection);
+      expect(mockPool.release).toHaveBeenCalledWith(freshConnection);
+
+      // The same request is replayed on the new connection (same JSON-RPC id).
+      expect(staleTransport.send).toHaveBeenCalledTimes(1);
+      expect(freshTransport.send).toHaveBeenCalledTimes(1);
+      expect(staleTransport.send.mock.calls[0]?.[0]).toMatchObject({ id: 'req-1' });
+      expect(freshTransport.send.mock.calls[0]?.[0]).toMatchObject({ id: 'req-1' });
+
+      // Transparent recovery: success is reported once, no phantom failure.
+      expect(successSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy).not.toHaveBeenCalled();
+
+      findToolSpy.mockRestore();
+    });
+
+    it('should fail fast (no retry) when a tool call hits a non-session connection error', async () => {
+      const service: ServiceDefinition = {
+        name: 'test-service',
+        enabled: true,
+        tags: [],
+        transport: 'http',
+        url: 'http://127.0.0.1:9999/mcp',
+        connectionPool: { maxConnections: 5, idleTimeout: 60000, connectionTimeout: 30000 },
+      };
+      await serviceRegistry.register(service);
+
+      const mockTransport = {
+        send: vi.fn().mockRejectedValue(new TransportError('Response timeout', 'RESPONSE_TIMEOUT')),
+        receive: vi.fn(),
+        close: vi.fn(),
+        getType: vi.fn().mockReturnValue('http'),
+        isConnected: vi.fn().mockReturnValue(true),
+      };
+      const mockConnection = {
+        id: 'conn-1',
+        transport: mockTransport,
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+
+      const acquire = vi.fn().mockResolvedValue(mockConnection);
+      const mockPool = {
+        acquire,
+        release: vi.fn(),
+        markConnectionFailed: vi.fn().mockResolvedValue(undefined),
+        maxConnections: 1,
+      } as any;
+      toolRouter.registerConnectionPool('test-service', mockPool);
+
+      const mockTool: Tool = {
+        name: 'test_tool',
+        namespacedName: 'test-service__test_tool',
+        serviceName: 'test-service',
+        description: 'Test tool',
+        inputSchema: { type: 'object', properties: {} },
+        enabled: true,
+      };
+      const findToolSpy = vi.spyOn(toolRouter as any, 'findTool').mockResolvedValue(mockTool);
+
+      const errorSpy = vi.fn();
+      toolRouter.on('toolCallError', errorSpy);
+
+      const context: RequestContext = {
+        requestId: 'req-1',
+        correlationId: 'corr-1',
+        timestamp: new Date(),
+      };
+
+      // A backend down / timeout failure cannot be fixed by a fresh connection.
+      await expect(toolRouter.callTool('test-service__test_tool', {}, context)).rejects.toThrow(
+        'Response timeout'
+      );
+      expect(acquire).toHaveBeenCalledTimes(1);
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+
+      findToolSpy.mockRestore();
+    });
+
+    it('should release the connection and fail fast on a tool-level error', async () => {
+      const service: ServiceDefinition = {
+        name: 'test-service',
+        enabled: true,
+        tags: [],
+        transport: 'http',
+        url: 'http://127.0.0.1:9999/mcp',
+        connectionPool: { maxConnections: 5, idleTimeout: 60000, connectionTimeout: 30000 },
+      };
+      await serviceRegistry.register(service);
+
+      let requestId = '';
+      const mockTransport = {
+        send: vi.fn(async (request: { id?: string | number }) => {
+          requestId = String(request.id ?? '');
+        }),
+        receive: vi.fn().mockReturnValue({
+          next: vi.fn().mockImplementation(async () => ({
+            done: false as const,
+            value: {
+              jsonrpc: '2.0',
+              id: requestId,
+              error: { code: -32602, message: 'Invalid tool arguments' },
+            },
+          })),
+          return: vi.fn().mockResolvedValue({ done: true }),
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+        getType: vi.fn().mockReturnValue('http'),
+        isConnected: vi.fn().mockReturnValue(true),
+      };
+      const mockConnection = {
+        id: 'conn-1',
+        transport: mockTransport,
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+
+      const acquire = vi.fn().mockResolvedValue(mockConnection);
+      const mockPool = {
+        acquire,
         release: vi.fn(),
         markConnectionFailed: vi.fn().mockResolvedValue(undefined),
         maxConnections: 1,
@@ -2186,13 +2459,14 @@ describe('ToolRouter', () => {
         timestamp: new Date(),
       };
 
+      // A backend-reported tool error is not a connection problem: the
+      // connection must go back to the pool intact and no retry may happen.
       await expect(toolRouter.callTool('test-service__test_tool', {}, context)).rejects.toThrow(
-        'Session not found'
+        'Invalid tool arguments'
       );
-
-      // The stale session connection must be dropped so the next call reconnects.
-      expect(mockPool.markConnectionFailed).toHaveBeenCalledTimes(1);
-      expect(mockPool.markConnectionFailed).toHaveBeenCalledWith(mockConnection, expect.any(Error));
+      expect(acquire).toHaveBeenCalledTimes(1);
+      expect(mockPool.markConnectionFailed).not.toHaveBeenCalled();
+      expect(mockPool.release).toHaveBeenCalledWith(mockConnection);
 
       findToolSpy.mockRestore();
     });
