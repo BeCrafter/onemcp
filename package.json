@@ -54,10 +54,9 @@
     "eventsource": "^2.0.2",
     "fastify": "^4.25.2",
     "fs-extra": "^11.2.0",
-    "ink": "^4.4.1",
-    "ink-select-input": "^5.0.0",
-    "ink-text-input": "^5.0.1",
-    "node-fetch": "^3.3.2",
+    "ink": "^5.2.1",
+    "ink-select-input": "^6.2.0",
+    "ink-text-input": "^6.0.0",
     "pino": "^8.17.2",
     "pino-pretty": "^10.3.1",
     "react": "^18.2.0"
