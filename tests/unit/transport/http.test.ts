@@ -7,11 +7,11 @@ import { HttpTransport } from '../../../src/transport/http.js';
 import { TransportState } from '../../../src/transport/base.js';
 import type { JsonRpcMessage } from '../../../src/types/jsonrpc.js';
 import EventSource from 'eventsource';
-import fetch from 'node-fetch';
 
-// Mock EventSource and fetch
+// Mock EventSource and the global fetch (Node >= 18 native fetch)
+const fetchMock = vi.fn();
 vi.mock('eventsource');
-vi.mock('node-fetch');
+vi.stubGlobal('fetch', fetchMock);
 
 describe('HttpTransport', () => {
   beforeEach(() => {
@@ -224,7 +224,7 @@ describe('HttpTransport', () => {
         ),
       };
 
-      vi.mocked(fetch).mockResolvedValue(mockResponse as any);
+      fetchMock.mockResolvedValue(mockResponse as any);
 
       const transport = new HttpTransport({
         url: 'http://localhost:3000/rpc',
@@ -240,7 +240,7 @@ describe('HttpTransport', () => {
 
       await transport.send(testMessage);
 
-      expect(fetch).toHaveBeenCalledWith(
+      expect(fetchMock).toHaveBeenCalledWith(
         'http://localhost:3000/rpc',
         expect.objectContaining({
           method: 'POST',
@@ -255,7 +255,7 @@ describe('HttpTransport', () => {
     });
 
     it('should handle HTTP request timeout', async () => {
-      vi.mocked(fetch).mockImplementation(() => {
+      fetchMock.mockImplementation(() => {
         return new Promise((_, reject) => {
           const error = new Error('The operation was aborted');
           error.name = 'AbortError';
@@ -291,7 +291,7 @@ describe('HttpTransport', () => {
         },
       };
 
-      vi.mocked(fetch).mockResolvedValue(mockResponse as any);
+      fetchMock.mockResolvedValue(mockResponse as any);
 
       const transport = new HttpTransport({
         url: 'http://localhost:3000/rpc',
@@ -329,7 +329,7 @@ describe('HttpTransport', () => {
         text: vi.fn().mockResolvedValue(JSON.stringify(responseMessage)),
       };
 
-      vi.mocked(fetch).mockResolvedValue(mockResponse as any);
+      fetchMock.mockResolvedValue(mockResponse as any);
 
       const transport = new HttpTransport({
         url: 'http://localhost:3000/rpc',
@@ -373,7 +373,7 @@ describe('HttpTransport', () => {
         text: vi.fn().mockResolvedValue(JSON.stringify(body)),
       });
 
-      vi.mocked(fetch)
+      fetchMock
         .mockResolvedValueOnce(makeResponse(notificationResponse) as any)
         .mockResolvedValueOnce(makeResponse(toolResponse) as any);
 
@@ -398,7 +398,7 @@ describe('HttpTransport', () => {
     });
 
     it('should handle network errors', async () => {
-      vi.mocked(fetch).mockRejectedValue(new Error('Network error'));
+      fetchMock.mockRejectedValue(new Error('Network error'));
 
       const transport = new HttpTransport({
         url: 'http://localhost:3000/rpc',

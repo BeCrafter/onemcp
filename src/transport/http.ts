@@ -3,7 +3,6 @@
  */
 
 import EventSource from 'eventsource';
-import fetch from 'node-fetch';
 import { BaseTransport, TransportError, TransportState } from './base.js';
 import type { JsonRpcMessage } from '../types/jsonrpc.js';
 import type { TransportType } from '../types/service.js';
