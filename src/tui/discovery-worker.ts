@@ -5,6 +5,7 @@
 
 import EventSource from 'eventsource';
 import { StdioTransport } from '../transport/stdio.js';
+import { isSessionExpiryError } from '../routing/session-error.js';
 import { getPackageVersion } from '../utils/package-version.js';
 import type { ServiceDefinition } from '../types/service.js';
 import type { Tool } from '../types/tool.js';
@@ -533,6 +534,16 @@ async function discoverToolsViaHttp(service: ServiceDefinition, timeout: number)
       }),
     });
 
+    if (!toolsResponse.ok) {
+      // Per the MCP Streamable HTTP spec, a 404 on a request carrying
+      // Mcp-Session-Id means the backend terminated the session — word it so
+      // the session-expiry recovery in fetchServiceTools retries it.
+      if (toolsResponse.status === 404) {
+        throw new Error('tools/list failed: HTTP 404, session not found or expired');
+      }
+      throw new Error(`tools/list failed: HTTP ${toolsResponse.status}`);
+    }
+
     const toolsText = await toolsResponse.text();
     let toolsData:
       | {
@@ -609,11 +620,27 @@ async function discoverToolsViaHttp(service: ServiceDefinition, timeout: number)
 /**
  * Fetch all tools for a service, returning full tool objects.
  * Used by ServiceTools view to display tool details.
+ *
+ * Each attempt opens a one-shot connection (initialize → tools/list → close),
+ * so a session-expiry failure (-32001 / HTTP 404) is recovered by simply
+ * retrying once: the fresh attempt establishes a brand-new backend session
+ * (lazy rebuild), matching the ToolRouter's recovery semantics.
  */
 export async function fetchServiceTools(
   service: ServiceDefinition,
   timeout: number
 ): Promise<Tool[]> {
+  try {
+    return await fetchServiceToolsOnce(service, timeout);
+  } catch (err) {
+    if (isSessionExpiryError(err)) {
+      return await fetchServiceToolsOnce(service, timeout);
+    }
+    throw err;
+  }
+}
+
+async function fetchServiceToolsOnce(service: ServiceDefinition, timeout: number): Promise<Tool[]> {
   if (service.transport === 'stdio') {
     return discoverToolsViaStdio(service, timeout);
   } else if (service.transport === 'sse') {

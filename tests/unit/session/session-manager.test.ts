@@ -66,4 +66,33 @@ describe('SessionManager', () => {
       expect(manager.getSession(busy.id)).toBeDefined();
     });
   });
+
+  describe('session cap', () => {
+    it('evicts oldest idle sessions when the cap is exceeded (safe under handle semantics)', () => {
+      const manager = new SessionManager();
+      for (let i = 0; i <= 10_000; i++) {
+        manager.createSession('agent-1', {}, `s-${i}`);
+      }
+
+      // A buggy/hostile client presenting fresh ids per request cannot grow
+      // the map without bound: the oldest idle sessions are evicted first.
+      expect(manager.getSession('s-0')).toBeUndefined();
+      expect(manager.getSession('s-10000')).toBeDefined();
+      expect((manager as any).sessions.size).toBeLessThanOrEqual(10_001);
+    });
+
+    it('never evicts sessions with in-flight requests first', () => {
+      const manager = new SessionManager();
+      const busy = manager.createSession('agent-1', {}, 'busy-one');
+      manager.incrementActiveRequests(busy.id);
+
+      for (let i = 0; i <= 10_000; i++) {
+        manager.createSession('agent-1', {}, `s-${i}`);
+      }
+
+      // The busy session may still be alive even though it is the oldest.
+      expect(manager.getSession('busy-one')).toBeDefined();
+      manager.decrementActiveRequests('busy-one');
+    });
+  });
 });

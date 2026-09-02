@@ -37,6 +37,9 @@ const TOOLS = [
 ];
 
 const EXIT_AFTER_LIST = process.env.ONEMCP_FIXTURE_EXIT_AFTER_LIST === '1';
+// Exit after responding to the Nth tools/call (deterministic mid-conversation death)
+const EXIT_AFTER_CALLS = parseInt(process.env.ONEMCP_FIXTURE_EXIT_AFTER_CALLS || '', 10);
+let toolsCallCount = 0;
 
 function send(message) {
   process.stdout.write(JSON.stringify(message) + '\n');
@@ -83,6 +86,11 @@ rl.on('line', (line) => {
         id: request.id,
         result: { content: [{ type: 'text', text: 'ok' }] },
       });
+      toolsCallCount += 1;
+      if (Number.isFinite(EXIT_AFTER_CALLS) && toolsCallCount >= EXIT_AFTER_CALLS) {
+        rl.close();
+        setTimeout(() => process.exit(0), 50);
+      }
       break;
     default:
       if (request.id !== undefined && request.id !== null) {

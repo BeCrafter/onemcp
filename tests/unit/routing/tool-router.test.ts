@@ -1839,6 +1839,77 @@ describe('ToolRouter', () => {
     });
   });
 
+  describe('findTool discovery cache', () => {
+    it('serves findTool from a fresh cache without a live backend query', async () => {
+      const service: ServiceDefinition = {
+        name: 'test-service',
+        enabled: true,
+        tags: [],
+        transport: 'http',
+        url: 'http://127.0.0.1:9999/mcp',
+        connectionPool: { maxConnections: 1, idleTimeout: 60000, connectionTimeout: 30000 },
+      };
+      await serviceRegistry.register(service);
+
+      const mockTool = {
+        name: 'real_tool',
+        description: 'Real tool',
+        inputSchema: { type: 'object' as const, properties: {} },
+      };
+      let requestId = '';
+      const mockTransport = {
+        send: vi.fn(async (request: { id?: string | number }) => {
+          requestId = String(request.id ?? '');
+        }),
+        receive: vi.fn().mockReturnValue({
+          next: vi.fn().mockImplementation(async () => ({
+            done: false as const,
+            value: { jsonrpc: '2.0', id: requestId, result: { tools: [mockTool] } },
+          })),
+          return: vi.fn().mockResolvedValue({ done: true }),
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+        getType: vi.fn().mockReturnValue('http'),
+        isConnected: vi.fn().mockReturnValue(true),
+      };
+      const connection = {
+        id: 'conn-1',
+        transport: mockTransport,
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+      const mockPool = {
+        acquire: vi.fn().mockResolvedValue(connection),
+        release: vi.fn(),
+        markConnectionFailed: vi.fn().mockResolvedValue(undefined),
+        maxConnections: 1,
+      } as any;
+      toolRouter.registerConnectionPool('test-service', mockPool);
+
+      // Populate the cache via a real discovery (one live tools/list).
+      await toolRouter.discoverTools();
+      expect(mockTransport.send).toHaveBeenCalledTimes(1);
+
+      const liveQuerySpy = vi.spyOn(toolRouter as any, 'queryServiceTools');
+
+      // Cache hit: findTool must not pay another backend round-trip.
+      const tool = await (toolRouter as any).findTool('test-service', 'real_tool', mockPool);
+      expect(tool?.name).toBe('real_tool');
+      expect(liveQuerySpy).not.toHaveBeenCalled();
+      expect(mockTransport.send).toHaveBeenCalledTimes(1);
+
+      // TTL expiry: findTool falls back to the live query.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.advanceTimersByTime(61_000);
+      const tool2 = await (toolRouter as any).findTool('test-service', 'real_tool', mockPool);
+      expect(tool2?.name).toBe('real_tool');
+      expect(liveQuerySpy).toHaveBeenCalledTimes(1);
+      expect(mockTransport.send).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
+    });
+  });
+
   describe('session expiry recovery', () => {
     it('should re-establish the backend session when discovery hits an expired session', async () => {
       // Register an enabled service
@@ -2467,6 +2538,105 @@ describe('ToolRouter', () => {
       expect(acquire).toHaveBeenCalledTimes(1);
       expect(mockPool.markConnectionFailed).not.toHaveBeenCalled();
       expect(mockPool.release).toHaveBeenCalledWith(mockConnection);
+
+      findToolSpy.mockRestore();
+    });
+
+    it('should transparently retry a tool call on a dead-but-reconnectable transport (stdio crash)', async () => {
+      const service: ServiceDefinition = {
+        name: 'test-service',
+        enabled: true,
+        tags: [],
+        transport: 'stdio',
+        command: 'test',
+        connectionPool: { maxConnections: 5, idleTimeout: 60000, connectionTimeout: 30000 },
+      };
+      await serviceRegistry.register(service);
+
+      const deadTransport = {
+        send: vi
+          .fn()
+          .mockRejectedValue(new TransportError('Process exited with code 0', 'PROCESS_EXITED')),
+        receive: vi.fn(),
+        close: vi.fn(),
+        getType: vi.fn().mockReturnValue('stdio'),
+        isConnected: vi.fn().mockReturnValue(false),
+      };
+      const liveTransport = (() => {
+        let requestId = '';
+        return {
+          send: vi.fn(async (request: { id?: string | number }) => {
+            requestId = String(request.id ?? '');
+          }),
+          receive: vi.fn().mockReturnValue({
+            next: vi.fn().mockImplementation(async () => ({
+              done: false as const,
+              value: {
+                jsonrpc: '2.0',
+                id: requestId,
+                result: { content: [{ type: 'text', text: 'ok' }] },
+              },
+            })),
+            return: vi.fn().mockResolvedValue({ done: true }),
+          }),
+          close: vi.fn().mockResolvedValue(undefined),
+          getType: vi.fn().mockReturnValue('stdio'),
+          isConnected: vi.fn().mockReturnValue(true),
+        };
+      })();
+      const deadConnection = {
+        id: 'conn-dead',
+        transport: deadTransport,
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+      const liveConnection = {
+        id: 'conn-live',
+        transport: liveTransport,
+        state: 'idle' as const,
+        lastUsed: new Date(),
+        createdAt: new Date(),
+      };
+
+      const acquire = vi
+        .fn()
+        .mockResolvedValueOnce(deadConnection)
+        .mockResolvedValueOnce(liveConnection);
+      const mockPool = {
+        acquire,
+        release: vi.fn(),
+        markConnectionFailed: vi.fn().mockResolvedValue(undefined),
+        maxConnections: 1,
+      } as any;
+      toolRouter.registerConnectionPool('test-service', mockPool);
+
+      const mockTool: Tool = {
+        name: 'test_tool',
+        namespacedName: 'test-service__test_tool',
+        serviceName: 'test-service',
+        description: 'Test tool',
+        inputSchema: { type: 'object', properties: {} },
+        enabled: true,
+      };
+      const findToolSpy = vi.spyOn(toolRouter as any, 'findTool').mockResolvedValue(mockTool);
+
+      const context: RequestContext = {
+        requestId: 'req-1',
+        correlationId: 'corr-1',
+        timestamp: new Date(),
+      };
+
+      // A stdio backend crash mid-call is recovered by respawning: the dead
+      // connection is invalidated and the retry succeeds on the fresh one.
+      const result = (await toolRouter.callTool('test-service__test_tool', {}, context)) as {
+        content: Array<{ text: string }>;
+      };
+      expect(result.content[0]?.text).toBe('ok');
+      expect(acquire).toHaveBeenCalledTimes(2);
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledTimes(1);
+      expect(mockPool.markConnectionFailed).toHaveBeenCalledWith(deadConnection, expect.any(Error));
+      expect(mockPool.release).not.toHaveBeenCalledWith(deadConnection);
 
       findToolSpy.mockRestore();
     });
