@@ -57,11 +57,16 @@ function createMockConfigProvider(): ConfigProvider {
 /**
  * Start a minimal Streamable HTTP MCP backend.
  *
- * Each session may serve exactly one non-initialize request before it is
- * reported as expired (`-32001 Session not found or expired`), modelling the
- * idle-timeout behaviour of the real jymcp backend without wall-clock timing.
+ * Each session may serve exactly `requestsPerSession` non-initialize request(s)
+ * before it is reported as expired, modelling the idle-timeout behaviour of the
+ * real jymcp backend without wall-clock timing. `staleMode` selects how the
+ * expiry is reported: a JSON-RPC `-32001` error (jymcp style, HTTP 200) or a
+ * spec-conformant HTTP 404 on the stale Mcp-Session-Id.
  */
-function startMockBackend(): Promise<{
+function startMockBackend(
+  requestsPerSession = 1,
+  staleMode: 'jsonrpc' | 'http404' = 'jsonrpc'
+): Promise<{
   url: string;
   close: () => Promise<void>;
   initializeCount: () => number;
@@ -102,7 +107,7 @@ function startMockBackend(): Promise<{
       if (msg['method'] === 'initialize') {
         initializeCount++;
         const sessionId = `sess-${++sidCounter}`;
-        sessions.set(sessionId, 1);
+        sessions.set(sessionId, requestsPerSession);
         sendJson(
           200,
           {
@@ -129,8 +134,18 @@ function startMockBackend(): Promise<{
         if (msg['method'] === 'tools/list') {
           sendJson(200, { jsonrpc: '2.0', id: msg['id'], result: { tools: TOOLS } });
         } else {
-          sendJson(200, { jsonrpc: '2.0', id: msg['id'], result: {} });
+          sendJson(200, {
+            jsonrpc: '2.0',
+            id: msg['id'],
+            result: { content: [{ type: 'text', text: 'ok' }] },
+          });
         }
+        return;
+      }
+
+      if (staleMode === 'http404') {
+        // Spec-conformant expiry signal: HTTP 404 on the stale Mcp-Session-Id.
+        res.writeHead(404).end('Not Found');
         return;
       }
 
@@ -211,6 +226,144 @@ describe('Backend session expiry recovery (integration)', () => {
       expect(tools2.map((t) => t.name)).toEqual(['alpha', 'beta']);
 
       // Exactly two sessions were created: the original + one re-initialized.
+      expect(backend.initializeCount()).toBe(2);
+    } finally {
+      await pool.closeAll().catch(() => {});
+    }
+  }, 30000);
+
+  it('recovers tools/call after the backend session expires', async () => {
+    // Two requests per session: one for callTool's internal tools/list lookup
+    // (findTool queries the backend live) and one for the actual tools/call.
+    backend = await startMockBackend(2);
+
+    const service: ServiceDefinition = {
+      name: 'mock-http',
+      enabled: true,
+      tags: [],
+      transport: 'http',
+      url: backend.url,
+      connectionPool: { maxConnections: 2, idleTimeout: 60000, connectionTimeout: 10000 },
+    } as ServiceDefinition;
+    const poolConfig: ConnectionPoolConfig = {
+      maxConnections: 2,
+      idleTimeout: 60000,
+      connectionTimeout: 10000,
+    };
+
+    const configProvider = createMockConfigProvider();
+    const serviceRegistry = new ServiceRegistry(configProvider);
+    await serviceRegistry.initialize();
+    await serviceRegistry.register(service);
+
+    const namespaceManager = new NamespaceManager();
+    const healthMonitor = new HealthMonitor(serviceRegistry);
+    const toolRouter = new ToolRouter(serviceRegistry, namespaceManager, healthMonitor);
+
+    const pool = new ConnectionPool(service, poolConfig);
+    pool.on('error', () => {});
+    toolRouter.registerConnectionPool(service.name, pool);
+
+    try {
+      // Discovery uses up the session's one allowed non-initialize request, so
+      // the pooled connection now holds an expired session.
+      const tools = await toolRouter.discoverTools();
+      expect(tools.map((t) => t.name)).toEqual(['alpha', 'beta']);
+
+      // findTool serves from the discovery cache now — drop it so callTool's
+      // internal tools/list lookup goes live and consumes the session's second
+      // request, making the actual tools/call hit the expired session.
+      toolRouter.invalidateServiceCache(service.name);
+
+      // The first tools/call hits the expired session (-32001). The router must
+      // invalidate the stale connection, re-initialize a fresh backend session
+      // and succeed transparently — the caller just sees the tool result.
+      const result = (await toolRouter.callTool(
+        'mock-http__alpha',
+        {},
+        {
+          requestId: 'req-1',
+          correlationId: 'corr-1',
+          timestamp: new Date(),
+        }
+      )) as { content: Array<{ type: string; text: string }> };
+      expect(result.content[0]?.text).toBe('ok');
+
+      // Exactly two sessions were created: the original + one re-initialized.
+      expect(backend.initializeCount()).toBe(2);
+
+      // The rebuilt session stays usable for a subsequent call on the same
+      // pooled connection.
+      const result2 = (await toolRouter.callTool(
+        'mock-http__beta',
+        {},
+        {
+          requestId: 'req-2',
+          correlationId: 'corr-2',
+          timestamp: new Date(),
+        }
+      )) as { content: Array<{ type: string; text: string }> };
+      expect(result2.content[0]?.text).toBe('ok');
+    } finally {
+      await pool.closeAll().catch(() => {});
+    }
+  }, 30000);
+
+  it('recovers tools/call when a spec-conformant backend answers HTTP 404 on the stale session', async () => {
+    // One request per session: discovery consumes session A's only request, so
+    // the pooled connection is stale by the time the tool is called. The stale
+    // session is reported as HTTP 404 (the MCP-spec expiry signal) instead of
+    // a JSON-RPC -32001 error body.
+    backend = await startMockBackend(1, 'http404');
+
+    const service: ServiceDefinition = {
+      name: 'mock-http',
+      enabled: true,
+      tags: [],
+      transport: 'http',
+      url: backend.url,
+      connectionPool: { maxConnections: 2, idleTimeout: 60000, connectionTimeout: 10000 },
+    } as ServiceDefinition;
+    const poolConfig: ConnectionPoolConfig = {
+      maxConnections: 2,
+      idleTimeout: 60000,
+      connectionTimeout: 10000,
+    };
+
+    const configProvider = createMockConfigProvider();
+    const serviceRegistry = new ServiceRegistry(configProvider);
+    await serviceRegistry.initialize();
+    await serviceRegistry.register(service);
+
+    const namespaceManager = new NamespaceManager();
+    const healthMonitor = new HealthMonitor(serviceRegistry);
+    const toolRouter = new ToolRouter(serviceRegistry, namespaceManager, healthMonitor);
+
+    const pool = new ConnectionPool(service, poolConfig);
+    pool.on('error', () => {});
+    toolRouter.registerConnectionPool(service.name, pool);
+
+    try {
+      // Populates the discovery cache (findTool will serve from it, matching
+      // the common client flow) and uses up session A's single request.
+      const tools = await toolRouter.discoverTools();
+      expect(tools.map((t) => t.name)).toEqual(['alpha', 'beta']);
+
+      // The tools/call hits the stale session and receives HTTP 404. The
+      // router must classify it as session expiry, invalidate the connection,
+      // re-initialize and succeed transparently.
+      const result = (await toolRouter.callTool(
+        'mock-http__alpha',
+        {},
+        {
+          requestId: 'req-1',
+          correlationId: 'corr-1',
+          timestamp: new Date(),
+        }
+      )) as { content: Array<{ type: string; text: string }> };
+      expect(result.content[0]?.text).toBe('ok');
+
+      // Exactly two sessions: the original + one re-initialized on the 404.
       expect(backend.initializeCount()).toBe(2);
     } finally {
       await pool.closeAll().catch(() => {});

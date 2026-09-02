@@ -12,7 +12,7 @@
  *            or returns a clear degraded error (not a stale dead-connection response)
  *
  * HttpTransport and ConnectionPool are real; only the network primitives
- * (eventsource, node-fetch) are mocked so the test can drive SSE connectivity
+ * (eventsource, global fetch) are mocked so the test can drive SSE connectivity
  * deterministically. This verifies the real chain:
  *   SSE errors → handleSSEError reconnects → max attempts → handleError
  *     → transport state ERROR + 'error' emitted
@@ -24,14 +24,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import EventSource from 'eventsource';
-import fetch from 'node-fetch';
 import { ConnectionPool } from '../../src/pool/connection-pool.js';
 import { TransportState } from '../../src/transport/base.js';
 import type { ServiceDefinition, ConnectionPoolConfig } from '../../src/types/service.js';
 import type { JsonRpcMessage } from '../../src/types/jsonrpc.js';
 
 vi.mock('eventsource');
-vi.mock('node-fetch');
 
 const POOL_CONFIG: ConnectionPoolConfig = {
   maxConnections: 3,
@@ -108,13 +106,18 @@ describe('Backend death does not permanently break tool discovery', () => {
         return es as unknown as EventSource;
       });
 
-      vi.mocked(fetch).mockResolvedValue({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        headers: { get: () => null },
-        text: () => Promise.resolve(''),
-      } as never);
+      // HttpTransport POSTs via the global fetch (node-fetch was removed from
+      // the deps); stub it so the dummy backend URL never sees real traffic.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          headers: { get: () => null },
+          text: () => Promise.resolve(''),
+        }))
+      );
 
       const service: ServiceDefinition = {
         name: 'mock-sse',
@@ -132,6 +135,7 @@ describe('Backend death does not permanently break tool discovery', () => {
       if (pool) {
         await pool.closeAll();
       }
+      vi.unstubAllGlobals();
       vi.useRealTimers();
       vi.restoreAllMocks();
     });

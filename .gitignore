@@ -8,11 +8,13 @@ pnpm-lock.yaml
 dist/
 build/
 *.tsbuildinfo
+*.tgz
 
 # IDE
 .vscode/
 .idea/
 .kiro/
+.claude/
 *.swp
 *.swo
 *~

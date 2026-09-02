@@ -18,7 +18,7 @@ import { HealthMonitor } from './health/health-monitor.js';
 import { ToolRouter } from './routing/tool-router.js';
 import { ConnectionPool } from './pool/connection-pool.js';
 import { getPackageVersion } from './utils/package-version.js';
-import { SessionManager, type SessionContext } from './session/session-manager.js';
+import { SessionManager, type Session, type SessionContext } from './session/session-manager.js';
 import { MetricsService } from './metrics/service.js';
 import type { ConfigProvider } from './types/config.js';
 import type { RequestContext } from './types/context.js';
@@ -213,63 +213,17 @@ export class ServerModeRunner {
       const suppliedMcpSessionId = typeof request.headers['mcp-session-id'] === 'string';
 
       if (!session && suppliedMcpSessionId) {
-        void reply.code(404).send({
-          jsonrpc: '2.0',
-          id: null,
-          error: {
-            code: -32001,
-            message: 'MCP session not found',
-          },
-        });
-        return;
+        // The client's session was evicted (idle TTL) or lost (server restart).
+        // Treat the session id as a handle, not a living resource: recreate it
+        // under the same id so clients that don't re-initialize on 404 (MCP
+        // Inspector, some Claude Code versions) keep working transparently.
+        log.warn(`Client session ${sessionId} not found, recreating transparently`);
+        session = this.createSessionFromRequest(request, sessionId);
       }
 
       if (!session) {
         // Create new session for this client
-        const agentId = this.getAgentId(request);
-
-        // Parse tag filter from HTTP header (X-MCP-Tags: "tag1,tag2,tag3")
-        let tagFilter: TagFilter | undefined;
-        const tagsHeader = request.headers['x-mcp-tags'];
-        if (tagsHeader && typeof tagsHeader === 'string') {
-          const tags = tagsHeader
-            .split(',')
-            .map((t) => t.trim())
-            .filter((t) => t.length > 0);
-          if (tags.length > 0) {
-            tagFilter = { tags, logic: 'OR' };
-            log.info(`Tag filter from header: ${tags.join(', ')} (OR logic)`);
-          }
-        }
-
-        // Parse smart discovery override from HTTP header
-        // X-MCP-Smart-Discovery: false  → disable smart discovery for this session
-        // X-MCP-Smart-Discovery: true   → enable smart discovery for this session
-        // (absent)                      → use server default (--smart-discovery flag or default: disabled)
-        let sessionSmartDiscovery: boolean | undefined;
-        const smartDiscoveryHeader = request.headers['x-mcp-smart-discovery'];
-        if (typeof smartDiscoveryHeader === 'string') {
-          const val = smartDiscoveryHeader.trim().toLowerCase();
-          if (val === 'false' || val === '0' || val === 'off') {
-            sessionSmartDiscovery = false;
-          } else if (val === 'true' || val === '1' || val === 'on') {
-            sessionSmartDiscovery = true;
-          }
-          if (sessionSmartDiscovery !== undefined) {
-            log.info(
-              `Smart discovery from header: ${sessionSmartDiscovery ? 'enabled' : 'disabled'}`
-            );
-          }
-        }
-
-        const sessionContext: SessionContext = {};
-        if (tagFilter) {
-          sessionContext.tagFilter = tagFilter;
-        }
-        if (sessionSmartDiscovery !== undefined) {
-          sessionContext.smartDiscovery = sessionSmartDiscovery;
-        }
-        session = this.sessionManager.createSession(agentId, sessionContext);
+        session = this.createSessionFromRequest(request);
       }
 
       // Parse request body
@@ -596,6 +550,78 @@ export class ServerModeRunner {
   }
 
   /**
+   * Create a session for a client request, parsing per-session header overrides.
+   *
+   * When sessionId is given (a client-presented handle whose stored session was
+   * evicted), the session is recreated under the same id. The recreated session
+   * is marked initialized unless this request is itself an initialize — a client
+   * re-initializing on a stale handle must be able to complete the handshake.
+   */
+  private createSessionFromRequest(request: FastifyRequest, sessionId?: string): Session {
+    const agentId = this.getAgentId(request);
+
+    // Parse tag filter from HTTP header (X-MCP-Tags: "tag1,tag2,tag3")
+    let tagFilter: TagFilter | undefined;
+    const tagsHeader = request.headers['x-mcp-tags'];
+    if (tagsHeader && typeof tagsHeader === 'string') {
+      const tags = tagsHeader
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+      if (tags.length > 0) {
+        tagFilter = { tags, logic: 'OR' };
+        log.info(`Tag filter from header: ${tags.join(', ')} (OR logic)`);
+      }
+    }
+
+    // Parse smart discovery override from HTTP header
+    // X-MCP-Smart-Discovery: false  → disable smart discovery for this session
+    // X-MCP-Smart-Discovery: true   → enable smart discovery for this session
+    // (absent)                      → use server default (--smart-discovery flag or default: disabled)
+    let sessionSmartDiscovery: boolean | undefined;
+    const smartDiscoveryHeader = request.headers['x-mcp-smart-discovery'];
+    if (typeof smartDiscoveryHeader === 'string') {
+      const val = smartDiscoveryHeader.trim().toLowerCase();
+      if (val === 'false' || val === '0' || val === 'off') {
+        sessionSmartDiscovery = false;
+      } else if (val === 'true' || val === '1' || val === 'on') {
+        sessionSmartDiscovery = true;
+      }
+      if (sessionSmartDiscovery !== undefined) {
+        log.info(`Smart discovery from header: ${sessionSmartDiscovery ? 'enabled' : 'disabled'}`);
+      }
+    }
+
+    const sessionContext: SessionContext = {};
+    if (tagFilter) {
+      sessionContext.tagFilter = tagFilter;
+    }
+    if (sessionSmartDiscovery !== undefined) {
+      sessionContext.smartDiscovery = sessionSmartDiscovery;
+    }
+    if (sessionId) {
+      sessionContext.initialized = !this.isInitializeRequest(request);
+    }
+    return this.sessionManager.createSession(agentId, sessionContext, sessionId);
+  }
+
+  /**
+   * Whether the request body is a JSON-RPC initialize request.
+   */
+  private isInitializeRequest(request: FastifyRequest): boolean {
+    try {
+      const body = request.body;
+      const parsed =
+        typeof body === 'string'
+          ? (JSON.parse(body) as { method?: unknown })
+          : (body as { method?: unknown } | null | undefined);
+      return parsed?.method === 'initialize';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Start the Server mode runner
    *
    * Initializes the system, starts health monitoring, and starts the HTTP server.
@@ -641,7 +667,9 @@ export class ServerModeRunner {
       }
 
       // Start session cleanup
-      void this.sessionManager.startAutoCleanup(60000, 300000); // Cleanup every minute, 5 min timeout
+      // Idle GC only — a stale handle is transparently recreated on use, so
+      // eviction is a memory-hygiene concern, not a correctness one.
+      void this.sessionManager.startAutoCleanup(60000, 1800000); // Cleanup every minute, 30 min timeout
 
       this.unwatchConfig = this.configProvider.watch((newConfig) => {
         log.info('Configuration change detected, reloading...');

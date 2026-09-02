@@ -51,6 +51,13 @@ export interface Session {
  * - Ensures session isolation
  */
 export class SessionManager {
+  /**
+   * Upper bound on live sessions. Session handles are recreated transparently
+   * on use, so a buggy or hostile client presenting fresh ids per request
+   * would otherwise grow this map without bound until the idle TTL cleans it.
+   */
+  private static readonly MAX_SESSIONS = 10_000;
+
   private sessions: Map<string, Session> = new Map();
   private cleanupInterval: NodeJS.Timeout | null = null;
 
@@ -59,11 +66,17 @@ export class SessionManager {
    *
    * @param agentId - Identifier for the AI Agent
    * @param context - Session-specific context
+   * @param id - Optional explicit session id (used to recreate an evicted
+   *   session under the same handle; callers must ensure the id is free)
    * @returns The created session
    */
-  createSession(agentId: string, context: SessionContext = {}): Session {
+  createSession(agentId: string, context: SessionContext = {}, id?: string): Session {
+    if (this.sessions.size >= SessionManager.MAX_SESSIONS && !this.sessions.has(id ?? '')) {
+      this.evictOldestIdleSessions();
+    }
+
     const session: Session = {
-      id: randomUUID(),
+      id: id ?? randomUUID(),
       agentId,
       createdAt: new Date(),
       lastActivity: new Date(),
@@ -73,6 +86,26 @@ export class SessionManager {
 
     this.sessions.set(session.id, session);
     return session;
+  }
+
+  /**
+   * Evict the least-recently-active sessions without in-flight requests,
+   * oldest first, until the map is at most half full. Sessions that are
+   * evicted are transparently recreated on their next request (handle
+   * semantics), so eviction is safe.
+   */
+  private evictOldestIdleSessions(): void {
+    const evictable = [...this.sessions.values()]
+      .filter((s) => s.activeRequests === 0)
+      .sort((a, b) => a.lastActivity.getTime() - b.lastActivity.getTime());
+
+    const target = Math.floor(SessionManager.MAX_SESSIONS / 2);
+    for (const session of evictable) {
+      if (this.sessions.size <= target) {
+        break;
+      }
+      this.sessions.delete(session.id);
+    }
   }
 
   /**

@@ -23,6 +23,7 @@ import type {
 } from '../types/jsonrpc.js';
 import { ErrorCode } from '../types/jsonrpc.js';
 import { TransportError } from '../transport/base.js';
+import { isRecoverableConnectionError, isSessionExpiryError } from './session-error.js';
 import { enhanceDescription } from '../protocol/description-enhancer.js';
 import Ajv from 'ajv';
 import { EventEmitter } from 'events';
@@ -217,21 +218,15 @@ export class ToolRouter extends EventEmitter {
     // For unfiltered queries, check per-service cache (Requirement 2.3)
     if (!tagFilter) {
       const services = this.serviceRegistry.list().filter((s) => s.enabled);
-      const now = Date.now();
       const allCached: Tool[] = [];
       let allHit = services.length > 0;
       for (const service of services) {
-        const entry = this.serviceToolCache.get(service.name);
-        if (!entry) {
+        const cached = this.getFreshServiceCache(service.name);
+        if (!cached) {
           allHit = false;
           break;
         }
-        const ageMs = now - entry.timestamp.getTime();
-        if (CACHE_TTL_MS !== 0 && ageMs >= CACHE_TTL_MS) {
-          allHit = false;
-          break;
-        }
-        allCached.push(...entry.tools);
+        allCached.push(...cached);
       }
       if (allHit) {
         return allCached;
@@ -522,33 +517,11 @@ export class ToolRouter extends EventEmitter {
   /**
    * Whether an error indicates the backend session has expired or is no longer valid.
    *
-   * SSE/HTTP backends often report an expired session as a JSON-RPC *error*
-   * (HTTP 200, code `-32001` or a "session ... not found/expired" message) rather
-   * than dropping the connection. A connection whose backend session is gone must
-   * be invalidated and re-initialized — releasing it back into the pool would keep
-   * reusing the stale session and fail every subsequent tools/list / tools/call.
+   * Delegates to the shared classifier in session-error.ts (also used by the
+   * TUI discovery worker).
    */
   private isSessionExpiryError(error: unknown): boolean {
-    if (error instanceof TransportError && error.code === 'SESSION_EXPIRED') {
-      return true;
-    }
-
-    if (error && typeof error === 'object' && 'code' in error) {
-      const code = (error as { code?: unknown }).code;
-      if (code === -32001) {
-        return true;
-      }
-    }
-
-    if (error instanceof Error) {
-      // Ordered match only: "session" must precede the expiry signal so an
-      // unrelated error like "tool X not found in session Y" isn't misclassified.
-      if (/session\b.*\b(not found|expired)/i.test(error.message)) {
-        return true;
-      }
-    }
-
-    return false;
+    return isSessionExpiryError(error);
   }
 
   /**
@@ -724,10 +697,17 @@ export class ToolRouter extends EventEmitter {
             error instanceof Error ? error : new Error(String(error))
           );
           connectionHandled = true;
-          // Retry only for a stale backend session: a fresh connection
-          // re-establishes it. Any other connection failure (backend down,
-          // timeout) would just fail again on a fresh connection, so fail fast.
-          if (this.isSessionExpiryError(error) && attempt + 1 < maxAttempts) {
+          // Retry when a fresh connection plausibly helps: an expired backend
+          // session (transparently re-initialized) or a dead-but-reconnectable
+          // transport (stdio respawn, SSE reconnect). Anything else (backend
+          // down, timeout) would just fail again on a fresh connection — fail fast.
+          if (
+            (this.isSessionExpiryError(error) || isRecoverableConnectionError(error)) &&
+            attempt + 1 < maxAttempts
+          ) {
+            log.warn(
+              `[${service.name}] Recoverable connection failure (tools/list), invalidating connection ${connection.id} and retrying`
+            );
             continue;
           }
           throw error;
@@ -962,62 +942,91 @@ export class ToolRouter extends EventEmitter {
     // Validate parameters against tool schema (Requirement 5.2)
     this.validateToolParameters(tool, params, context);
 
-    let connection: Connection;
-    try {
-      connection = await pool.acquire();
-    } catch (error) {
-      throw this.createToolError(
-        ErrorCode.CONNECTION_POOL_EXHAUSTED,
-        `Failed to acquire connection for service: ${serviceName}`,
-        context,
-        { serviceName, toolName },
-        error as Error
-      );
-    }
-
-    let connectionHandled = false;
-    try {
-      const result = await this.executeToolCall(connection, toolName, params, context);
-
-      this.emit('toolCallSuccess', {
-        namespacedName,
-        serviceName,
-        toolName,
-        context,
-      });
-
-      return result;
-    } catch (error) {
-      this.emit('toolCallError', {
-        namespacedName,
-        serviceName,
-        toolName,
-        context,
-        error,
-      });
-
-      if (this.isConnectionLevelError(error)) {
-        await pool.markConnectionFailed(
-          connection,
-          error instanceof Error ? error : new Error(String(error))
+    // A backend session (SSE/HTTP) can expire after idle, failing the call
+    // with a JSON-RPC -32001 error while the transport itself still looks
+    // healthy (isConnected stays true). On such a failure we invalidate the
+    // stale connection and retry so the call transparently re-initializes the
+    // backend session instead of surfacing an error to the client. Allow up to
+    // maxConnections invalidations plus one final attempt that forces a fresh
+    // connection. Non-session connection failures (backend down, timeout) and
+    // tool-level errors still fail fast — a fresh connection won't help.
+    const maxAttempts = Math.max(2, pool.maxConnections + 1);
+    for (let attempt = 0; ; attempt++) {
+      let connection: Connection;
+      try {
+        connection = await pool.acquire();
+      } catch (error) {
+        throw this.createToolError(
+          ErrorCode.CONNECTION_POOL_EXHAUSTED,
+          `Failed to acquire connection for service: ${serviceName}`,
+          context,
+          { serviceName, toolName },
+          error as Error
         );
-        connectionHandled = true;
       }
 
-      if (error instanceof Error && 'code' in error) {
-        throw error;
-      }
+      let connectionHandled = false;
+      try {
+        const result = await this.executeToolCall(connection, toolName, params, context);
 
-      throw this.createToolError(
-        ErrorCode.INTERNAL_ERROR,
-        `Tool execution failed: ${(error as Error).message}`,
-        context,
-        { serviceName, toolName },
-        error as Error
-      );
-    } finally {
-      if (!connectionHandled) {
-        pool.release(connection);
+        this.emit('toolCallSuccess', {
+          namespacedName,
+          serviceName,
+          toolName,
+          context,
+        });
+
+        return result;
+      } catch (error) {
+        if (this.isConnectionLevelError(error)) {
+          await pool.markConnectionFailed(
+            connection,
+            error instanceof Error ? error : new Error(String(error))
+          );
+          connectionHandled = true;
+          // Retry when a fresh connection plausibly helps: an expired backend
+          // session (transparently re-initialized) or a dead-but-reconnectable
+          // transport (stdio respawn, SSE reconnect). Anything else (backend
+          // down, timeout) would just fail again on a fresh connection — fail fast.
+          if (
+            (this.isSessionExpiryError(error) || isRecoverableConnectionError(error)) &&
+            attempt + 1 < maxAttempts
+          ) {
+            log.warn(
+              `[${actualServiceName}] Recoverable connection failure (tools/call ${toolName}), invalidating connection ${connection.id} and retrying`
+            );
+            continue;
+          }
+        } else {
+          // Tool-level failure (bad params, backend-reported tool error): the
+          // connection itself is fine, release it instead of invalidating.
+          pool.release(connection);
+          connectionHandled = true;
+        }
+
+        this.emit('toolCallError', {
+          namespacedName,
+          serviceName,
+          toolName,
+          context,
+          error,
+        });
+
+        if (error instanceof Error && 'code' in error) {
+          throw error;
+        }
+
+        throw this.createToolError(
+          ErrorCode.INTERNAL_ERROR,
+          `Tool execution failed: ${(error as Error).message}`,
+          context,
+          { serviceName, toolName },
+          error as Error
+        );
+      } finally {
+        if (!connectionHandled) {
+          pool.release(connection);
+        }
       }
     }
   }
@@ -1044,6 +1053,15 @@ export class ToolRouter extends EventEmitter {
       return null;
     }
 
+    // Serve from the discovery cache when fresh: callTool would otherwise pay
+    // a live tools/list round-trip on every invocation. Misses fall through to
+    // the live query below (the client's tools/list typically pre-populated
+    // the cache; invalidation hooks keep it current on health/config changes).
+    const cached = this.getFreshServiceCache(serviceName);
+    if (cached) {
+      return cached.find((t) => t.name === toolName) ?? null;
+    }
+
     // Query tools from the service
     try {
       const tools = await this.queryServiceTools(service, pool);
@@ -1051,6 +1069,21 @@ export class ToolRouter extends EventEmitter {
     } catch (error) {
       return null;
     }
+  }
+
+  /**
+   * Fresh (non-expired) cached tool list for a single service, if any.
+   */
+  private getFreshServiceCache(serviceName: string): Tool[] | undefined {
+    const entry = this.serviceToolCache.get(serviceName);
+    if (!entry) {
+      return undefined;
+    }
+    const ageMs = Date.now() - entry.timestamp.getTime();
+    if (CACHE_TTL_MS !== 0 && ageMs >= CACHE_TTL_MS) {
+      return undefined;
+    }
+    return entry.tools;
   }
 
   /**

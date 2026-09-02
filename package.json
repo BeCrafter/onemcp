@@ -20,7 +20,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "npm run clean && tsup",
     "dev": "tsup --watch",
     "test": "vitest --run",
     "test:watch": "vitest",
@@ -31,6 +31,8 @@
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
     "typecheck": "tsc --noEmit",
+    "deploy:local": "npm run build && node scripts/deploy-local.mjs",
+    "verify:local": "node scripts/e2e-local.mjs",
     "clean": "node -e \"require('fs').rmSync('dist', {recursive:true, force:true})\"",
     "prepublishOnly": "npm run clean && npm run build",
     "prepare": "husky"
