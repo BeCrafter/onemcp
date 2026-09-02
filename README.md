@@ -20,6 +20,7 @@ OneMCP 是一个基于 Node.js 的智能路由中间件，用于聚合和管理�
 - 🌐 **多协议支持** - 支持 stdio、SSE 和 Streamable HTTP 三种传输协议
 - 👥 **多会话隔离** - 支持多个 AI Agent 并发连接，确保会话间完全隔离
 - 💚 **健康监控** - 自动检测服务健康状态，实现工具的自动加载/卸载
+- 🔁 **会话过期自愈** - 后端会话过期（JSON-RPC `-32001` 或规范型 HTTP 404）与连接死亡（stdio 进程退出、SSE 断流）自动失效重建并重放请求，客户端零感知；Server 模式下客户端会话句柄失效同样透明重建
 - 🎨 **交互式 TUI** - 提供友好的终端界面进行配置管理
 - 🔧 **可扩展架构** - 支持自定义配置提供者和存储适配器
 - 📊 **审计日志** - 详细记录所有请求和操作，便于追踪和调试
@@ -497,6 +498,7 @@ Server 模式支持以下自定义 HTTP 请求头，用于每个客户端连接�
 
 | 请求头 | 说明 | 示例值 |
 |--------|------|--------|
+| `Mcp-Session-Id` | MCP 会话标识（`initialize` 响应返回，后续请求携带）。会话闲置 30 分钟后回收；**携带已失效的 id 请求会被透明重建（同一 id），客户端无需重新握手**；主动携带该 id 调用 `initialize` 则按规范重新握手 | `9c021dad-...` |
 | `X-MCP-Tags` | 按标签过滤服务和工具（逗号分隔，OR 逻辑） | `production,api` |
 | `X-MCP-Smart-Discovery` | 控制智能工具发现开关 | `true` / `false` |
 
@@ -600,6 +602,7 @@ npm run dev
 ### 构建
 
 ```bash
+# 清理 dist/ 后全新构建（保证产物不含历史残留）
 npm run build
 ```
 
@@ -608,6 +611,37 @@ npm run build
 ```bash
 npm run clean
 ```
+
+### 本地部署与端到端验证
+
+一键把当前代码打包成真实 npm 包（tarball）、全局安装（完整替代旧的全局 `onemcp` 命令）、重启本地 daemon 并做就绪冒烟：
+
+```bash
+npm run deploy:local [-- --port 5625 --log-level INFO]
+```
+
+针对**已安装产物**的端到端回归。脚本自身完成"编译 → npm pack → 全局真实安装（tarball + 安装形态校验）"，然后以随机端口 + 独立临时配置的独立实例（不影响正在运行的 daemon，注册 HTTP×2 + SSE + stdio×2 共 5 个 mock 后端）覆盖正常与故障恢复两类共 10 个场景，每条断言独立报告、退出码可供 CI 使用：
+
+```bash
+npm run verify:local
+```
+
+正常操作场景：
+
+- **N1 HTTP 正常链路与连接复用**：tools/list + 连续 3 次 tools/call 全部成功，零过期零重建（连接复用生效），后端请求计数精确匹配
+- **N2 stdio 正常链路**：spawn → initialize → 连续 tools/call
+- **N3 SSE 正常链路**：legacy SSE 两阶段握手 + tools/call
+- **N4 标签过滤**：X-MCP-Tags 头在会话创建时生效，tools/list 只返回匹配服务的工具
+- **N5 ping + 会话终止**：DELETE /mcp 返回 200；终止后同句柄调用透明重建
+- **N6 诊断端点**：/diagnostics 暴露各服务连接池状态
+
+故障恢复场景（对应历史问题，防回归）：
+
+- **F1 后端会话过期（HTTP，jymcp 型 -32001）**：tools/call 透明重建，客户端零感知
+- **F2 后端规范型会话过期（HTTP 404）**：同上，验证 MCP 规范的过期信号
+- **F3 stdio 后端进程崩溃**：进程运行中退出，调用路径自动 respawn 并重放请求
+- **F4 前端会话句柄失效**：重启 onemcp 实例后客户端携带旧 `Mcp-Session-Id` 重放，会话句柄透明重建
+- TUI：交互式界面（需 PTY）不在本脚本内；其恢复逻辑由 `tests/integration/discovery-worker-session-expiry.test.ts` 覆盖
 
 ### 运行测试
 
