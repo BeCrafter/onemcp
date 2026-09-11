@@ -16,7 +16,11 @@ import { ServiceTools } from './components/ServiceTools.js';
 import { Header } from './components/Header.js';
 import { StatusBar, type StatusMessage } from './components/StatusBar.js';
 import { HelpDialog } from './components/HelpDialog.js';
-import { ToolDiscoveryManager, type DiscoveryStatus, type DiscoveryResult } from './tool-discovery-manager.js';
+import {
+  ToolDiscoveryManager,
+  type DiscoveryStatus,
+  type DiscoveryResult,
+} from './tool-discovery-manager.js';
 import type { SystemConfig, ConfigProvider } from '../types/config.js';
 import type { ServiceDefinition } from '../types/service.js';
 
@@ -45,13 +49,15 @@ type ViewState = 'list' | 'add' | 'edit' | 'tools' | 'help';
 export const TuiAppOptimized: React.FC<TuiAppProps> = ({
   configDir,
   config: propConfig,
-  configProvider: propConfigProvider
+  configProvider: propConfigProvider,
 }) => {
   const { stdout } = useStdout();
   const [state, setState] = useState<AppState>('loading');
   const [view, setView] = useState<ViewState>('list');
   const [config, setConfig] = useState<SystemConfig | null>(propConfig || null);
-  const [configProvider, setConfigProvider] = useState<ConfigProvider | null>(propConfigProvider || null);
+  const [configProvider, setConfigProvider] = useState<ConfigProvider | null>(
+    propConfigProvider || null
+  );
   const [services, setServices] = useState<ServiceDefinition[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +69,9 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   // In-memory discovery state (never persisted to disk)
-  const [discoveryStatuses, setDiscoveryStatuses] = useState<Map<string, DiscoveryStatus>>(new Map());
+  const [discoveryStatuses, setDiscoveryStatuses] = useState<Map<string, DiscoveryStatus>>(
+    new Map()
+  );
   const [toolCountCache, setToolCountCache] = useState<Map<string, number>>(new Map());
 
   // Singleton ToolDiscoveryManager (stable across renders)
@@ -84,10 +92,10 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
   const globalToolStats = React.useMemo(() => {
     let total = 0;
     let enabled = 0;
-    services.forEach(s => {
+    services.forEach((s) => {
       const count = toolCountCache.get(s.name) ?? 0;
       total += count;
-      const disabled = Object.values(s.toolStates ?? {}).filter(v => v === false).length;
+      const disabled = Object.values(s.toolStates ?? {}).filter((v) => v === false).length;
       enabled += Math.max(0, count - disabled);
     });
     return { enabled, total };
@@ -98,12 +106,12 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
     const manager = discoveryManagerRef.current;
 
     const onDiscovered = (result: DiscoveryResult) => {
-      setDiscoveryStatuses(prev => new Map(prev).set(result.serviceName, 'completed'));
-      setToolCountCache(prev => new Map(prev).set(result.serviceName, result.toolCount ?? 0));
+      setDiscoveryStatuses((prev) => new Map(prev).set(result.serviceName, 'completed'));
+      setToolCountCache((prev) => new Map(prev).set(result.serviceName, result.toolCount ?? 0));
     };
 
     const onError = (result: DiscoveryResult) => {
-      setDiscoveryStatuses(prev => new Map(prev).set(result.serviceName, 'failed'));
+      setDiscoveryStatuses((prev) => new Map(prev).set(result.serviceName, 'failed'));
     };
 
     manager.on('discovered', onDiscovered);
@@ -135,7 +143,9 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
           const validation = provider.validate(loadedConfig);
           if (!validation.valid) {
-            const errorMessages = validation.errors.map(e => `${e.field}: ${e.message}`).join(', ');
+            const errorMessages = validation.errors
+              .map((e) => `${e.field}: ${e.message}`)
+              .join(', ');
             throw new Error(`Configuration validation failed: ${errorMessages}`);
           }
 
@@ -149,7 +159,10 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
         // Set up configuration watch to handle external changes
         unwatch = provider.watch((newConfig) => {
-          const updatedServices = Object.entries(newConfig.mcpServers).map(([name, def]) => ({ ...def, name }));
+          const updatedServices = Object.entries(newConfig.mcpServers).map(([name, def]) => ({
+            ...def,
+            name,
+          }));
           setServices(updatedServices);
 
           if (serviceRegistry) {
@@ -170,10 +183,10 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
         setLastRefresh(new Date());
 
         // Trigger auto-discovery for all enabled services (fast-fail, no retries)
-        const enabledServices = serviceList.filter(s => s.enabled);
+        const enabledServices = serviceList.filter((s) => s.enabled);
         if (enabledServices.length > 0) {
           const initialStatuses = new Map<string, DiscoveryStatus>();
-          enabledServices.forEach(s => initialStatuses.set(s.name, 'pending'));
+          enabledServices.forEach((s) => initialStatuses.set(s.name, 'pending'));
           setDiscoveryStatuses(initialStatuses);
 
           const visibleIndices = Array.from(
@@ -195,7 +208,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
         unwatch();
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configDir, propConfig, propConfigProvider]);
 
   // Reload services
@@ -251,7 +264,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
       if (isRename && editingService) {
         // Rename: remove old entry, start fresh discovery for new name
-        setDiscoveryStatuses(prev => {
+        setDiscoveryStatuses((prev) => {
           const next = new Map(prev);
           next.delete(editingService.name);
           if (service.enabled) next.set(service.name, 'pending');
@@ -263,7 +276,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
         }
       } else if ((isNew || !hasCachedTools) && service.enabled) {
         // New service or no cached tool count yet: trigger discovery
-        setDiscoveryStatuses(prev => new Map(prev).set(service.name, 'pending'));
+        setDiscoveryStatuses((prev) => new Map(prev).set(service.name, 'pending'));
         const list = updatedList ?? services;
         void discoveryManagerRef.current.refreshZeroToolServices(list);
       }
@@ -320,10 +333,8 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       setEditingService(updatedService);
 
       // Update services list to reflect the change immediately
-      setServices(prevServices =>
-        prevServices.map(s =>
-          s.name === editingService.name ? updatedService : s
-        )
+      setServices((prevServices) =>
+        prevServices.map((s) => (s.name === editingService.name ? updatedService : s))
       );
 
       setStatusMessage({
@@ -360,10 +371,8 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       }
 
       setEditingService(updatedService);
-      setServices(prevServices =>
-        prevServices.map(s =>
-          s.name === editingService.name ? updatedService : s
-        )
+      setServices((prevServices) =>
+        prevServices.map((s) => (s.name === editingService.name ? updatedService : s))
       );
 
       setStatusMessage({
@@ -383,8 +392,8 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
   // Handle tools discovered (from ServiceTools view) — update in-memory cache only, no persistence
   const handleToolsDiscovered = (toolCount: number) => {
     if (!editingService) return;
-    setToolCountCache(prev => new Map(prev).set(editingService.name, toolCount));
-    setDiscoveryStatuses(prev => new Map(prev).set(editingService.name, 'completed'));
+    setToolCountCache((prev) => new Map(prev).set(editingService.name, toolCount));
+    setDiscoveryStatuses((prev) => new Map(prev).set(editingService.name, 'completed'));
   };
 
   // Handle service toggle
@@ -392,13 +401,11 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
     if (!config || !configProvider) return;
 
     try {
-      const updatedServices = services.map(s =>
-        s.name === serviceName ? { ...s, enabled } : s
-      );
+      const updatedServices = services.map((s) => (s.name === serviceName ? { ...s, enabled } : s));
       const newConfig = { ...config, services: updatedServices };
       await configProvider.save(newConfig);
 
-      const target = updatedServices.find(s => s.name === serviceName);
+      const target = updatedServices.find((s) => s.name === serviceName);
       if (serviceRegistry && target !== undefined) {
         await serviceRegistry.register(target);
       }
@@ -428,13 +435,13 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
         await serviceRegistry.unregister(serviceName);
       } else {
         // Fallback: update config directly
-        const updatedServices = services.filter(s => s.name !== serviceName);
+        const updatedServices = services.filter((s) => s.name !== serviceName);
         const newConfig = { ...config, services: updatedServices };
         await configProvider.save(newConfig);
       }
 
       // Update local state
-      const updatedServices = services.filter(s => s.name !== serviceName);
+      const updatedServices = services.filter((s) => s.name !== serviceName);
       setServices(updatedServices);
       if (selectedIndex >= updatedServices.length && updatedServices.length > 0) {
         setSelectedIndex(updatedServices.length - 1);
@@ -493,9 +500,9 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
     // List view navigation
     if (view === 'list') {
       if (key.upArrow) {
-        setSelectedIndex(prev => Math.max(0, prev - 1));
+        setSelectedIndex((prev) => Math.max(0, prev - 1));
       } else if (key.downArrow) {
-        setSelectedIndex(prev => Math.min(services.length - 1, prev + 1));
+        setSelectedIndex((prev) => Math.min(services.length - 1, prev + 1));
       } else if (key.return) {
         if (services[selectedIndex]) {
           setEditingService(services[selectedIndex]);
@@ -524,7 +531,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
           const service = services[selectedIndex];
           void handleDeleteService(service.name);
         }
-      } else if (input === 'r') {
+      } else if (input === 'r' && !key.ctrl) {
         // Reload config then re-discover zero-tool services
         void (async () => {
           const refreshed = await reloadServices();
@@ -563,7 +570,9 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       <Box flexDirection="column" padding={1}>
         <Header title="MCP Router System" subtitle="Error" />
         <Box borderStyle="double" borderColor="red" padding={1} flexDirection="column">
-          <Text bold color="red">❌ Error loading configuration</Text>
+          <Text bold color="red">
+            ❌ Error loading configuration
+          </Text>
           <Text color="red">{error}</Text>
         </Box>
         <Box marginTop={1}>
@@ -581,7 +590,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
     return <HelpDialog onClose={() => setView('list')} />;
   }
 
-  const enabledServices = services.filter(s => s.enabled).length;
+  const enabledServices = services.filter((s) => s.enabled).length;
   const formMode = useUnifiedForm ? 'Unified' : 'Traditional';
 
   // Render main application
@@ -599,10 +608,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
         showHelp={view === 'list'}
       />
 
-      <StatusBar
-        message={statusMessage}
-        onClear={() => setStatusMessage(null)}
-      />
+      <StatusBar message={statusMessage} onClear={() => setStatusMessage(null)} />
 
       <Box flexDirection="column" flexGrow={1}>
         {view === 'list' && (
@@ -619,8 +625,8 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
           />
         )}
 
-        {(view === 'add' || view === 'edit') && (
-          useUnifiedForm ? (
+        {(view === 'add' || view === 'edit') &&
+          (useUnifiedForm ? (
             <ServiceFormUnified
               service={editingService}
               onSubmit={handleServiceSubmit}
@@ -632,15 +638,14 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
               onSubmit={handleServiceSubmit}
               onCancel={handleServiceCancel}
             />
-          )
-        )}
+          ))}
 
         {view === 'tools' && editingService && (
           <ServiceTools
             service={editingService}
             onBack={() => {
               setView('list');
-              setRefreshKey(k => k + 1);
+              setRefreshKey((k) => k + 1);
             }}
             onToggleTool={handleToggleTool}
             onBatchToggleTools={handleBatchToggleTools}
@@ -654,8 +659,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       {view === 'list' && (
         <Box marginTop={1}>
           <Text dimColor>
-            Last refresh: {lastRefresh.toLocaleTimeString()} •
-            Config: {configDir}
+            Last refresh: {lastRefresh.toLocaleTimeString()} • Config: {configDir}
           </Text>
         </Box>
       )}

@@ -1,6 +1,6 @@
 /**
  * TUI Help Dialog Component
- * 
+ *
  * Displays comprehensive help information
  */
 
@@ -21,66 +21,172 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
   return (
     <Box flexDirection="column" padding={1}>
       <Box borderStyle="double" borderColor="cyan" paddingX={2} marginBottom={1}>
-        <Text bold color="cyan">Help - Keyboard Shortcuts</Text>
+        <Text bold color="cyan">
+          Help - Keyboard Shortcuts
+        </Text>
       </Box>
 
       <Box flexDirection="column" borderStyle="single" paddingX={1} marginBottom={1}>
-        <Text bold color="yellow">Service List View</Text>
+        <Text bold color="yellow">
+          Service List View
+        </Text>
         <Box flexDirection="column" marginLeft={2}>
-          <Text><Text color="cyan">↑/↓</Text> - Navigate services</Text>
-          <Text><Text color="cyan">Enter</Text> - Edit selected service</Text>
-          <Text><Text color="cyan">a</Text> - Add new service</Text>
-          <Text><Text color="cyan">e</Text> - Edit selected service</Text>
-          <Text><Text color="cyan">d</Text> - Delete selected service</Text>
-          <Text><Text color="cyan">Space/t</Text> - Toggle service enabled/disabled</Text>
-          <Text><Text color="cyan">v</Text> - View service tools</Text>
-          <Text><Text color="cyan">r</Text> - Refresh service list</Text>
-          <Text><Text color="cyan">y</Text> - Toggle form mode (unified/traditional)</Text>
-          <Text><Text color="cyan">?</Text> - Show this help</Text>
-          <Text><Text color="cyan">q</Text> - Quit application</Text>
+          <Text>
+            <Text color="cyan">↑/↓</Text> - Navigate services
+          </Text>
+          <Text>
+            <Text color="cyan">Enter</Text> - Edit selected service
+          </Text>
+          <Text>
+            <Text color="cyan">a</Text> - Add new service
+          </Text>
+          <Text>
+            <Text color="cyan">e</Text> - Edit selected service
+          </Text>
+          <Text>
+            <Text color="cyan">d</Text> - Delete selected service
+          </Text>
+          <Text>
+            <Text color="cyan">Space/t</Text> - Toggle service enabled/disabled
+          </Text>
+          <Text>
+            <Text color="cyan">v</Text> - View service tools
+          </Text>
+          <Text>
+            <Text color="cyan">r</Text> - Refresh service list
+          </Text>
+          <Text>
+            <Text color="cyan">y</Text> - Toggle form mode (unified/traditional)
+          </Text>
+          <Text>
+            <Text color="cyan">?</Text> - Show this help
+          </Text>
+          <Text>
+            <Text color="cyan">q</Text> - Quit application
+          </Text>
         </Box>
       </Box>
 
       <Box flexDirection="column" borderStyle="single" paddingX={1} marginBottom={1}>
-        <Text bold color="yellow">Service Form (Unified)</Text>
+        <Text bold color="yellow">
+          Service Form (Unified)
+        </Text>
         <Box flexDirection="column" marginLeft={2}>
-          <Text><Text color="cyan">Tab</Text> - Next field</Text>
-          <Text><Text color="cyan">Shift+Tab</Text> - Previous field</Text>
-          <Text><Text color="cyan">Enter</Text> - Confirm field and move to next</Text>
-          <Text><Text color="cyan">Ctrl+A</Text> - Toggle advanced options</Text>
-          <Text><Text color="cyan">Ctrl+S</Text> - Save service</Text>
-          <Text><Text color="cyan">Esc</Text> - Cancel and return</Text>
+          <Text>
+            <Text color="cyan">Tab</Text> - Next field
+          </Text>
+          <Text>
+            <Text color="cyan">Shift+Tab</Text> - Previous field
+          </Text>
+          <Text>
+            <Text color="cyan">Enter</Text> - Confirm field and move to next
+          </Text>
+          <Text>
+            <Text color="cyan">Ctrl+A</Text> - Toggle advanced options
+          </Text>
+          <Text>
+            <Text color="cyan">Ctrl+S</Text> - Save service
+          </Text>
+          <Text>
+            <Text color="cyan">Esc</Text> - Cancel and return
+          </Text>
         </Box>
       </Box>
 
       <Box flexDirection="column" borderStyle="single" paddingX={1} marginBottom={1}>
-        <Text bold color="yellow">Service Form (Traditional)</Text>
+        <Text bold color="yellow">
+          Service Form (Traditional)
+        </Text>
         <Box flexDirection="column" marginLeft={2}>
-          <Text><Text color="cyan">Enter</Text> - Next step</Text>
-          <Text><Text color="cyan">↑/↓</Text> - Select option (for dropdowns)</Text>
-          <Text><Text color="cyan">p</Text> - Preview configuration (at confirm step)</Text>
-          <Text><Text color="cyan">Esc</Text> - Cancel and return</Text>
+          <Text>
+            <Text color="cyan">Enter</Text> - Next step
+          </Text>
+          <Text>
+            <Text color="cyan">↑/↓</Text> - Select option (for dropdowns)
+          </Text>
+          <Text>
+            <Text color="cyan">p</Text> - Preview configuration (at confirm step)
+          </Text>
+          <Text>
+            <Text color="cyan">Esc</Text> - Cancel and return
+          </Text>
         </Box>
       </Box>
 
       <Box flexDirection="column" borderStyle="single" paddingX={1} marginBottom={1}>
-        <Text bold color="yellow">Tools View</Text>
+        <Text bold color="yellow">
+          Tools View
+        </Text>
         <Box flexDirection="column" marginLeft={2}>
-          <Text><Text color="cyan">↑/↓</Text> - Navigate tools</Text>
-          <Text><Text color="cyan">←/→</Text> - Scroll description</Text>
-          <Text><Text color="cyan">Space/t</Text> - Toggle tool enabled/disabled</Text>
-          <Text><Text color="cyan">a</Text> - Enable all tools</Text>
-          <Text><Text color="cyan">Shift+A</Text> - Disable all tools</Text>
-          <Text><Text color="cyan">Esc</Text> - Back to service list</Text>
+          <Text>
+            <Text color="cyan">↑/↓</Text> - Navigate tools
+          </Text>
+          <Text>
+            <Text color="cyan">Space/t</Text> - Toggle tool enabled/disabled
+          </Text>
+          <Text>
+            <Text color="cyan">a</Text> - Enable all tools
+          </Text>
+          <Text>
+            <Text color="cyan">Shift+A</Text> - Disable all tools
+          </Text>
+          <Text>
+            <Text color="cyan">/</Text> - Search tools
+          </Text>
+          <Text>
+            <Text color="cyan">Tab</Text> - Switch region (list → params → result)
+          </Text>
+          <Text>
+            <Text color="cyan">↑/↓</Text> - In a region: move the param / result cursor
+          </Text>
+          <Text>
+            <Text color="cyan">←/→</Text> - Page the panel (also PgUp/PgDn, Ctrl+U/D)
+          </Text>
+          <Text>
+            <Text color="cyan">Ctrl+R</Text> - Run the selected tool
+          </Text>
+          <Text>
+            <Text color="cyan">Ctrl+E</Text> - Expand / collapse the full tool description
+          </Text>
+          <Text>
+            <Text color="cyan">Ctrl+J</Text> - Toggle form / raw JSON arguments
+          </Text>
+          <Text>
+            <Text color="cyan">Ctrl+P</Text> - Toggle formatted / raw output
+          </Text>
+          <Text>
+            <Text color="cyan">Ctrl+Y</Text> - Copy the result (or the selected lines)
+          </Text>
+          <Text>
+            <Text color="cyan">v</Text> - Select result lines from the cursor (↑/↓ extend)
+          </Text>
+          <Text>
+            <Text color="cyan">f</Text> - Full-width view (hides the tool list, so mouse-drag picks
+            up only the result)
+          </Text>
+          <Text>
+            <Text color="cyan">Ctrl+O</Text> - Save full output to a temp file
+          </Text>
+          <Text>
+            <Text color="cyan">Esc</Text> - Leave region / back to service list
+          </Text>
         </Box>
       </Box>
 
       <Box flexDirection="column" borderStyle="single" paddingX={1} marginBottom={1}>
-        <Text bold color="yellow">Client Tag Filtering</Text>
+        <Text bold color="yellow">
+          Client Tag Filtering
+        </Text>
         <Box flexDirection="column" marginLeft={2}>
-          <Text><Text color="cyan">tagFilter</Text> - Clients specify tags in initialize request params</Text>
-          <Text><Text color="cyan">tags</Text> - Array of tags to match (e.g., ["production", "api"])</Text>
-          <Text><Text color="cyan">logic</Text> - "AND" (all tags required) or "OR" (any tag matches)</Text>
+          <Text>
+            <Text color="cyan">tagFilter</Text> - Clients specify tags in initialize request params
+          </Text>
+          <Text>
+            <Text color="cyan">tags</Text> - Array of tags to match (e.g., ["production", "api"])
+          </Text>
+          <Text>
+            <Text color="cyan">logic</Text> - "AND" (all tags required) or "OR" (any tag matches)
+          </Text>
           <Text dimColor>Services without tags are always available to all clients</Text>
           <Text dimColor>Works for both stdio and HTTP modes via JSON-RPC initialize</Text>
         </Box>

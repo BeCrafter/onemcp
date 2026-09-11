@@ -28,6 +28,12 @@ const { fetchServiceToolsMock } = vi.hoisted(() => {
 vi.mock('../../src/tui/discovery-worker.js', () => ({
   __esModule: true,
   fetchServiceTools: fetchServiceToolsMock,
+  // ServiceTools also imports the call API; tests here never invoke it but
+  // the named exports must exist for the module import to succeed.
+  callServiceTool: vi.fn(),
+  ToolCallError: class ToolCallError extends Error {},
+  DiscoveryError: class DiscoveryError extends Error {},
+  DiscoveryErrorType: { TIMEOUT: 'timeout', CONNECTION_FAILED: 'connection_failed' },
   default: fetchServiceToolsMock,
 }));
 
@@ -266,7 +272,7 @@ describe('ServiceTools scroll indicator (real components, optimized chrome)', ()
       const ellipsisCol = row.indexOf('…');
       expect(ellipsisCol).toBeGreaterThan(0);
       expect(ellipsisCol).toBeLessThan(LEFT_PANEL_WIDTH);
-      const descCol = row.indexOf('Description');
+      const descCol = row.indexOf('DESCRIPTION');
       if (descCol > -1) {
         expect(ellipsisCol).toBeLessThan(descCol);
       }
