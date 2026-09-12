@@ -9,6 +9,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { isEditableChunk } from '../input-text.js';
 
 export interface JsonTextAreaProps {
   value: string;
@@ -91,10 +92,15 @@ export const JsonTextArea: React.FC<JsonTextAreaProps> = ({ value, onChange, hei
       return;
     }
 
-    // Printable character
-    if (input && input.length === 1 && input >= ' ' && input !== '\n') {
-      onChange(value.slice(0, cursor) + input + value.slice(cursor));
-      setCursor(cursor + input.length);
+    // Printable text: one keystroke, or a pasted chunk — which may legitimately
+    // span several lines, so newlines are kept (only other control bytes are
+    // dropped). Filtering on `length === 1` would silently discard a paste.
+    if (input.length > 0) {
+      const chunk = input.replace(/\r\n?/g, '\n');
+      if (isEditableChunk(chunk)) {
+        onChange(value.slice(0, cursor) + chunk + value.slice(cursor));
+        setCursor(cursor + chunk.length);
+      }
     }
   });
 

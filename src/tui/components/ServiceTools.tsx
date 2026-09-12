@@ -29,6 +29,7 @@ import {
   truncateDisplay,
 } from '../text-layout.js';
 import { copyToClipboard } from '../clipboard.js';
+import { safeStringify } from '../../utils/safe-json.js';
 import {
   bestEffortArgs,
   buildParamRows,
@@ -45,6 +46,7 @@ import type { ServiceDefinition } from '../../types/service.js';
 import type { Tool } from '../../types/tool.js';
 import type { ToolParam } from '../tool-param-schema.js';
 import { SingleLineInput } from './SingleLineInput.js';
+import { isPrintableChunk } from '../input-text.js';
 import { JsonTextArea } from './JsonTextArea.js';
 
 export interface ServiceToolsProps {
@@ -134,12 +136,14 @@ const isCtrlJ = (input: string, key: { ctrl: boolean }): boolean =>
 
 const sanitizeFileName = (name: string): string => name.replace(/[^A-Za-z0-9._-]/g, '_');
 
-function safeStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2) ?? String(value);
-  } catch {
-    return String(value);
-  }
+/**
+ * Seed for the raw-JSON arguments editor. With nothing to project the buffer
+ * starts EMPTY rather than as a `{}` stub — a stub is never replaced when the
+ * cursor is at offset 0, so typing produced `{}{"text":"hi"}` and an obscure
+ * parse error.
+ */
+function seedJsonText(args: Record<string, unknown>): string {
+  return Object.keys(args).length > 0 ? JSON.stringify(args, null, 2) : '';
 }
 
 /** Classify a call failure into the run-view error copy. */
@@ -207,7 +211,7 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
   const [fieldIndex, setFieldIndex] = useState(0);
   const [panelScroll, setPanelScroll] = useState(0);
   const [formValues, setFormValuesState] = useState<Record<string, string>>({});
-  const [jsonText, setJsonTextState] = useState<string>(() => JSON.stringify({}, null, 2));
+  const [jsonText, setJsonTextState] = useState<string>('');
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [extraCount, setExtraCount] = useState(0);
@@ -313,6 +317,12 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
 
   // Reset per-tool editor/run state when the selected tool changes, but carry
   // the typed arguments over per tool so switching back restores them.
+  //
+  // Deliberately keyed on the tool NAME only: a tools/list refresh produces new
+  // object identities, so depending on `params` (or the schema) would re-run
+  // this reset on every refetch and wipe the arguments being typed. The
+  // trade-off is that a same-named tool whose schema changed mid-session keeps
+  // stale form values until the tool is re-selected.
   useEffect(() => {
     const previous = prevToolNameRef.current;
     if (previous !== undefined && previous !== currentTool?.name) {
@@ -330,8 +340,9 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
     setFieldIndex(0);
     setPanelScroll(0);
     setDescExpanded(false);
-    setFormValues(restored?.values ?? seedFormValues(params));
-    setJsonText(restored?.jsonText ?? JSON.stringify({}, null, 2));
+    const seededValues = restored?.values ?? seedFormValues(params);
+    setFormValues(seededValues);
+    setJsonText(restored?.jsonText ?? seedJsonText(bestEffortArgs(params, seededValues)));
     setJsonError(null);
     setFieldErrors({});
     setExtraCount(restored === undefined ? 0 : Object.keys(restored.extra).length);
@@ -492,11 +503,7 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
     }
     if (focus !== 'json') {
       setJsonText(
-        JSON.stringify(
-          { ...bestEffortArgs(params, formValuesRef.current), ...extraArgsRef.current },
-          null,
-          2
-        )
+        seedJsonText({ ...bestEffortArgs(params, formValuesRef.current), ...extraArgsRef.current })
       );
       setJsonError(null);
       setFocus('json');
@@ -504,7 +511,8 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
     }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(jsonTextRef.current);
+      const raw = jsonTextRef.current.trim();
+      parsed = raw === '' ? {} : JSON.parse(raw);
     } catch (err) {
       setJsonError(err instanceof Error ? err.message : 'Invalid JSON — fix before switching');
       return;
@@ -618,6 +626,13 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
       const file = join(dir, `${sanitizeFileName(currentTool?.name ?? 'tool')}.json`);
       writeFileSync(file, outcome.raw, 'utf8');
       setDumpPath(file);
+      // The panel line is width-truncated, so hand the full path to the
+      // clipboard as well — otherwise the saved file can't be located.
+      setCopyNotice(
+        copyToClipboard(file)
+          ? '✓ Full path copied to the clipboard'
+          : '✓ Output saved — clipboard unavailable, use the path above'
+      );
     } catch {
       setDumpPath(null);
     }
@@ -687,8 +702,9 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
         setSearchQuery((prev) => prev.slice(0, -1));
         return;
       }
-      // Printable character (including space) → append to query
-      if (input && input.length === 1 && input >= ' ' && input !== '/' && !key.ctrl) {
+      // Printable text (a keystroke or a whole pasted chunk) → append to query.
+      // A lone '/' still only opens the search box.
+      if (isPrintableChunk(input) && !(input.length === 1 && input === '/')) {
         setSearchQuery((prev) => prev + input);
         return;
       }
@@ -973,13 +989,32 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
       body = resultText;
     }
     // Every line is kept — rendering is already bounded by the viewport slice,
-    // so capping here would only make output unreachable.
+    // so capping here would only make output unreachable. The CHARACTER cap
+    // above (RESULT_MAX_CHARS) does hide the tail, so say so instead of letting
+    // the output look complete; Ctrl+O still writes the full result.
     const lines = wrapText(body, RESULT_INNER);
+    const sourceLength =
+      resultView === 'raw' ? (outcome?.raw.length ?? 0) : (outcome?.formatted.length ?? 0);
+    if (sourceLength > RESULT_MAX_CHARS) {
+      lines.push(
+        `… truncated at ${RESULT_MAX_CHARS.toLocaleString()} characters — Ctrl+O saves the full result`
+      );
+    }
     if (dumpPath !== null) {
-      lines.push(`Saved full output: ${truncateDisplay(dumpPath, RESULT_INNER - 20)}`);
+      const shown = dumpPath.replace(tmpdir(), '…');
+      lines.push(`Saved full output: ${truncateDisplay(shown, RESULT_INNER - 19)}`);
     }
     return lines;
-  }, [runStatus, errorMessage, resultText, dumpPath, RESULT_INNER, currentTool?.namespacedName]);
+  }, [
+    runStatus,
+    errorMessage,
+    resultText,
+    resultView,
+    outcome,
+    dumpPath,
+    RESULT_INNER,
+    currentTool?.namespacedName,
+  ]);
 
   /** The result section: section header, then a framed block of output rows. */
   const resultRows: DetailRow[] = useMemo(() => {
@@ -1121,19 +1156,23 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
       // the actual text — never the `│` frame or the row's trailing padding,
       // which would otherwise turn a blank result line into a solid bar.
       const line = resultLines[row.resultIndex] ?? '';
-      const fitted = truncateDisplay(line, RESULT_INNER);
-      const padding = ' '.repeat(Math.max(0, RESULT_INNER - displayWidth(fitted)));
+      // The cursor marker sits INSIDE the frame and eats one content cell, so
+      // the box keeps both of its borders (a marker drawn over the left frame
+      // made the box look broken) and the right border stays aligned.
+      const cursorHere = focus === 'result' && row.resultIndex === resultCursor;
+      const marker = cursorHere ? '▸' : '';
+      const budget = RESULT_INNER - marker.length;
+      const fitted = truncateDisplay(line, budget);
+      const padding = ' '.repeat(Math.max(0, budget - displayWidth(fitted)));
       const highlighted =
         range !== null &&
         row.resultIndex >= range.from &&
         row.resultIndex <= range.to &&
         fitted.trim() !== '';
-      // The cursor replaces the left frame cell (`▸` is single-width, so the
-      // box stays aligned) — visible only while the region has focus.
-      const cursorHere = focus === 'result' && row.resultIndex === resultCursor;
       return (
         <Text key={key} wrap="truncate">
-          {cursorHere ? '▸' : '│'}
+          {'│'}
+          {marker}
           <Text {...(highlighted ? { backgroundColor: 'blue' as const } : {})}>{fitted}</Text>
           {padding}
           {'│'}

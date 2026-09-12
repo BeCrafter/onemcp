@@ -44,7 +44,7 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
             <Text color="cyan">e</Text> - Edit selected service
           </Text>
           <Text>
-            <Text color="cyan">d</Text> - Delete selected service
+            <Text color="cyan">d</Text> - Delete selected service (asks to confirm)
           </Text>
           <Text>
             <Text color="cyan">Space/t</Text> - Toggle service enabled/disabled
@@ -74,6 +74,9 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
         <Box flexDirection="column" marginLeft={2}>
           <Text>
             <Text color="cyan">Tab</Text> - Next field
+          </Text>
+          <Text>
+            <Text color="cyan">↑/↓</Text> - Previous / next field
           </Text>
           <Text>
             <Text color="cyan">Shift+Tab</Text> - Previous field

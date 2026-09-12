@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, Text, useInput, useStdout } from 'ink';
+import { Box, Text, useApp, useInput, useStdout } from 'ink';
 import { FileConfigProvider } from '../config/file-provider.js';
 import { FileStorageAdapter } from '../storage/file.js';
 import { ServiceRegistry } from '../registry/service-registry.js';
@@ -43,6 +43,11 @@ type AppState = 'loading' | 'ready' | 'error';
  */
 type ViewState = 'list' | 'add' | 'edit' | 'tools' | 'help';
 
+/** Destructive actions that require an explicit y/n answer. */
+type PendingConfirm =
+  | { kind: 'delete'; serviceName: string }
+  | { kind: 'overwrite'; service: ServiceDefinition; existingName: string };
+
 /**
  * Main TUI Application Component (Optimized)
  */
@@ -52,6 +57,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
   configProvider: propConfigProvider,
 }) => {
   const { stdout } = useStdout();
+  const { exit } = useApp();
   const [state, setState] = useState<AppState>('loading');
   const [view, setView] = useState<ViewState>('list');
   const [config, setConfig] = useState<SystemConfig | null>(propConfig || null);
@@ -67,6 +73,11 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
   const [refreshKey, setRefreshKey] = useState(0);
   const [useUnifiedForm, setUseUnifiedForm] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  /**
+   * Pending destructive action. Config writes go straight to disk, so deleting
+   * or overwriting a service asks first instead of acting on a stray keystroke.
+   */
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
 
   // In-memory discovery state (never persisted to disk)
   const [discoveryStatuses, setDiscoveryStatuses] = useState<Map<string, DiscoveryStatus>>(
@@ -81,6 +92,27 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
   const terminalHeight = stdout?.rows || 24;
 
+  /**
+   * Quitting must happen in two steps: `exit()` unmounts (which puts the tty
+   * back out of raw mode), then process.exit() actually terminates — unmounting
+   * alone leaves the process alive because the connection pools, health timers
+   * and stdio children keep the event loop busy.
+   */
+  const exitApp = (): void => {
+    exit();
+    setTimeout(() => process.exit(0), 0);
+  };
+
+  /**
+   * Writes the app itself performs also fire the config watcher. Remember when
+   * that happens so its "updated from external changes" notice isn't shown for
+   * a change the user just made here.
+   */
+  const selfWriteUntilRef = useRef(0);
+  const markSelfWrite = (): void => {
+    selfWriteUntilRef.current = Date.now() + 1500;
+  };
+
   // Vertical space consumed by chrome above the content area:
   // Header (double border title 3 rows + stats 1 row + margin 1 = 5).
   // StatusBar adds a round-bordered box (border 2 + 1 line + margin 1 = 4) while a message is visible.
@@ -88,18 +120,13 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
   const STATUS_BAR_LINES = statusMessage ? 4 : 0;
   const contentHeight = Math.max(8, terminalHeight - OUTER_CHROME_LINES - STATUS_BAR_LINES);
 
-  // Calculate global tool statistics from in-memory cache
-  const globalToolStats = React.useMemo(() => {
-    let total = 0;
-    let enabled = 0;
-    services.forEach((s) => {
-      const count = toolCountCache.get(s.name) ?? 0;
-      total += count;
-      const disabled = Object.values(s.toolStates ?? {}).filter((v) => v === false).length;
-      enabled += Math.max(0, count - disabled);
-    });
-    return { enabled, total };
-  }, [services, toolCountCache]);
+  // The confirmation dialog is rendered inside the same column, so the content
+  // below it gets the remainder — otherwise the frame grows past the terminal
+  // and ink's output starts landing on the wrong rows.
+  const CONFIRM_DIALOG_LINES = pendingConfirm !== null ? 4 : 0;
+  const panelHeight = Math.max(6, contentHeight - CONFIRM_DIALOG_LINES);
+  // The service list also shares its column with the "Last refresh" line.
+  const listHeight = Math.max(6, panelHeight - 2);
 
   // Register discovery event listeners
   useEffect(() => {
@@ -155,7 +182,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
         const registry = new ServiceRegistry(provider);
         await registry.initialize();
 
-        const serviceList = await registry.list();
+        const serviceList = registry.list();
 
         // Set up configuration watch to handle external changes
         unwatch = provider.watch((newConfig) => {
@@ -169,11 +196,13 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
             void registry.initialize();
           }
 
-          setStatusMessage({
-            type: 'info',
-            message: 'Configuration updated from external changes',
-            duration: 3000,
-          });
+          if (Date.now() >= selfWriteUntilRef.current) {
+            setStatusMessage({
+              type: 'info',
+              message: 'Configuration updated from external changes',
+              duration: 3000,
+            });
+          }
         });
 
         setServiceRegistry(registry);
@@ -208,14 +237,15 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
         unwatch();
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Intentionally keyed on the inputs that identify the config source: the
+    // registry is created inside, so depending on it would re-run forever.
   }, [configDir, propConfig, propConfigProvider]);
 
   // Reload services
-  const reloadServices = async () => {
+  const reloadServices = (): ServiceDefinition[] | undefined => {
     if (serviceRegistry) {
       try {
-        const serviceList = await serviceRegistry.list();
+        const serviceList = serviceRegistry.list();
         setServices(serviceList);
         setLastRefresh(new Date());
 
@@ -243,10 +273,28 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
   };
 
   // Handle service form submission
-  const handleServiceSubmit = async (service: ServiceDefinition) => {
+  const handleServiceSubmit = (service: ServiceDefinition): void => {
+    if (!serviceRegistry) return;
+
+    // Registering by name replaces whatever was there — including tags, args
+    // and tool states the form never showed. Ask before discarding them.
+    const collides = services.some(
+      (s) => s.name === service.name && s.name !== editingService?.name
+    );
+    if (collides) {
+      setPendingConfirm({ kind: 'overwrite', service, existingName: service.name });
+      return;
+    }
+
+    void submitService(service);
+  };
+
+  /** Persist a service (add / edit / rename) and refresh discovery state. */
+  const submitService = async (service: ServiceDefinition): Promise<void> => {
     if (!serviceRegistry) return;
 
     try {
+      markSelfWrite();
       // Check if this is a rename operation (editing service with name change)
       if (editingService && editingService.name !== service.name) {
         // Delete the old service first
@@ -255,7 +303,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
       // Register the new/updated service
       await serviceRegistry.register(service);
-      const updatedList = await reloadServices();
+      const updatedList = reloadServices();
 
       // Handle discovery state for the saved service
       const isRename = editingService && editingService.name !== service.name;
@@ -284,6 +332,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
       setView('list');
       setEditingService(undefined);
+      setPendingConfirm(null);
       setStatusMessage({
         type: 'success',
         message: `Service '${service.name}' ${editingService ? 'updated' : 'created'} successfully`,
@@ -314,6 +363,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
     if (!config || !configProvider || !editingService) return;
 
     try {
+      markSelfWrite();
       const toolStates = editingService.toolStates || {};
       const newToolStates = { ...toolStates, [toolName]: enabled };
 
@@ -355,6 +405,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
     if (!config || !configProvider || !editingService) return;
 
     try {
+      markSelfWrite();
       const currentToolStates = editingService.toolStates || {};
       const newToolStates = { ...currentToolStates, ...toolStates };
 
@@ -401,6 +452,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
     if (!config || !configProvider) return;
 
     try {
+      markSelfWrite();
       const updatedServices = services.map((s) => (s.name === serviceName ? { ...s, enabled } : s));
       const newConfig = { ...config, services: updatedServices };
       await configProvider.save(newConfig);
@@ -430,6 +482,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
     if (!config || !configProvider) return;
 
     try {
+      markSelfWrite();
       // Unregister from service registry first
       if (serviceRegistry) {
         await serviceRegistry.unregister(serviceName);
@@ -462,7 +515,34 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
   // Handle keyboard input
   useInput((input, key) => {
+    // Ctrl+C is the documented exit shortcut and must work in every state —
+    // including while the config is still loading. ink only unmounts on it, so
+    // the process would otherwise keep running on its background handles.
+    if (key.ctrl && input === 'c') {
+      exitApp();
+      return;
+    }
+
     if (state !== 'ready') return;
+
+    // A pending confirmation owns the keyboard until it is answered. Only an
+    // explicit 'y' destroys anything — a stray Enter must not (the dialog says
+    // exactly that).
+    if (pendingConfirm !== null) {
+      if (input === 'y') {
+        const pending = pendingConfirm;
+        setPendingConfirm(null);
+        if (pending.kind === 'delete') {
+          void handleDeleteService(pending.serviceName);
+        } else {
+          void submitService(pending.service);
+        }
+      } else if (input === 'n' || key.escape) {
+        setPendingConfirm(null);
+        setStatusMessage({ type: 'info', message: 'Cancelled', duration: 1500 });
+      }
+      return;
+    }
 
     // Global help shortcut
     if (input === '?' && view !== 'help') {
@@ -480,7 +560,8 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
     // Global quit
     if (input === 'q' && view === 'list') {
-      process.exit(0);
+      exitApp();
+      return;
     }
 
     // Tools view: ServiceTools handles its own input (search Esc layering,
@@ -527,17 +608,14 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
           void handleToggleService(service.name, !service.enabled);
         }
       } else if (input === 'd') {
-        if (services[selectedIndex]) {
-          const service = services[selectedIndex];
-          void handleDeleteService(service.name);
+        const target = services[selectedIndex];
+        if (target) {
+          setPendingConfirm({ kind: 'delete', serviceName: target.name });
         }
       } else if (input === 'r' && !key.ctrl) {
         // Reload config then re-discover zero-tool services
-        void (async () => {
-          const refreshed = await reloadServices();
-          const list = refreshed ?? services;
-          void discoveryManagerRef.current.refreshZeroToolServices(list);
-        })();
+        const refreshed = reloadServices();
+        void discoveryManagerRef.current.refreshZeroToolServices(refreshed ?? services);
       } else if (input === 'y') {
         setUseUnifiedForm(!useUnifiedForm);
         setStatusMessage({
@@ -610,6 +688,29 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
       <StatusBar message={statusMessage} onClear={() => setStatusMessage(null)} />
 
+      {pendingConfirm !== null && (
+        <Box borderStyle="single" borderColor="yellow" paddingX={1} flexDirection="column">
+          <Text bold color="yellow">
+            {pendingConfirm.kind === 'delete'
+              ? `Delete service '${pendingConfirm.serviceName}'?`
+              : `Service '${pendingConfirm.existingName}' already exists — overwrite it?`}
+          </Text>
+          <Text color="gray">
+            {pendingConfirm.kind === 'delete'
+              ? 'Removes it from the configuration file.'
+              : 'Its tags, args, env and tool states will be replaced.'}{' '}
+            <Text color="green" bold>
+              y
+            </Text>{' '}
+            confirm ·{' '}
+            <Text color="red" bold>
+              n
+            </Text>
+            /Esc cancel
+          </Text>
+        </Box>
+      )}
+
       <Box flexDirection="column" flexGrow={1}>
         {view === 'list' && (
           <ServiceList
@@ -617,9 +718,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
             services={services}
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
-            showDetails={true}
-            globalToolStats={globalToolStats}
-            terminalHeight={terminalHeight}
+            terminalHeight={listHeight}
             discoveryStatus={discoveryStatuses}
             toolCounts={toolCountCache}
           />
@@ -631,6 +730,7 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
               service={editingService}
               onSubmit={handleServiceSubmit}
               onCancel={handleServiceCancel}
+              terminalHeight={panelHeight}
             />
           ) : (
             <ServiceForm
@@ -647,19 +747,19 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
               setView('list');
               setRefreshKey((k) => k + 1);
             }}
-            onToggleTool={handleToggleTool}
-            onBatchToggleTools={handleBatchToggleTools}
+            onToggleTool={(name, enabled) => void handleToggleTool(name, enabled)}
+            onBatchToggleTools={(states) => void handleBatchToggleTools(states)}
             toolStates={editingService.toolStates || {}}
             onToolsDiscovered={handleToolsDiscovered}
-            terminalHeight={contentHeight}
+            terminalHeight={panelHeight}
           />
         )}
       </Box>
 
-      {view === 'list' && (
+      {view === 'list' && pendingConfirm === null && (
         <Box marginTop={1}>
-          <Text dimColor>
-            Last refresh: {lastRefresh.toLocaleTimeString()} • Config: {configDir}
+          <Text color="gray">
+            Last refresh: {lastRefresh.toLocaleTimeString()} • Config: {configDir ?? 'unknown'}
           </Text>
         </Box>
       )}

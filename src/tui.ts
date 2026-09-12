@@ -27,9 +27,23 @@ const USE_OPTIMIZED_UI = process.env['ONEMCP_USE_LEGACY_UI'] !== 'true';
 /**
  * Run the TUI application with a config and configProvider
  */
-export async function runApp(config: SystemConfig, configProvider: ConfigProvider): Promise<void> {
+export async function runApp(
+  config: SystemConfig,
+  configProvider: ConfigProvider,
+  configDir?: string
+): Promise<void> {
   const AppComponent = USE_OPTIMIZED_UI ? TuiAppOptimized : TuiApp;
-  const { waitUntilExit } = render(React.createElement(AppComponent, { config, configProvider }));
+  const { waitUntilExit } = render(
+    React.createElement(
+      AppComponent,
+      configDir === undefined ? { config, configProvider } : { config, configProvider, configDir }
+    ),
+    // Ink's built-in Ctrl+C handling only UNMOUNTS, and it swallows the key from
+    // every useInput subscriber when enabled. With pools, health timers and
+    // stdio children alive, unmounting leaves the process running forever — so
+    // the app handles Ctrl+C itself and exits for real.
+    { exitOnCtrlC: false }
+  );
   await waitUntilExit();
 }
 
@@ -192,7 +206,7 @@ async function main(): Promise<void> {
   configureLogger(config);
   setStderrEnabled(false);
 
-  await runApp(config, configProvider);
+  await runApp(config, configProvider, configDir);
 }
 
 const isTuiDirectCall = process.argv[1]?.includes('tui');

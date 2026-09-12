@@ -1,6 +1,6 @@
 /**
  * TUI Header Component
- * 
+ *
  * Displays application title, status, and key information
  */
 
@@ -31,7 +31,9 @@ export const Header: React.FC<HeaderProps> = ({
         justifyContent="space-between"
       >
         <Box>
-          <Text bold color="cyan">{title}</Text>
+          <Text bold color="cyan">
+            {title}
+          </Text>
           {subtitle && (
             <>
               <Text dimColor> • </Text>
@@ -39,9 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
             </>
           )}
         </Box>
-        {showHelp && (
-          <Text dimColor>Press ? for help</Text>
-        )}
+        {showHelp && <Text dimColor>Press ? for help</Text>}
       </Box>
 
       {/* Stats bar */}

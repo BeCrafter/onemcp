@@ -1,6 +1,6 @@
 /**
  * TUI Status Bar Component
- * 
+ *
  * Displays status messages and notifications
  */
 
@@ -20,19 +20,27 @@ export interface StatusBarProps {
 
 const getStatusIcon = (type: StatusMessage['type']): string => {
   switch (type) {
-    case 'success': return '✓';
-    case 'error': return '✗';
-    case 'warning': return '⚠';
-    case 'info': return 'ℹ';
+    case 'success':
+      return '✓';
+    case 'error':
+      return '✗';
+    case 'warning':
+      return '⚠';
+    case 'info':
+      return 'ℹ';
   }
 };
 
 const getStatusColor = (type: StatusMessage['type']): string => {
   switch (type) {
-    case 'success': return 'green';
-    case 'error': return 'red';
-    case 'warning': return 'yellow';
-    case 'info': return 'blue';
+    case 'success':
+      return 'green';
+    case 'error':
+      return 'red';
+    case 'warning':
+      return 'yellow';
+    case 'info':
+      return 'blue';
   }
 };
 
@@ -41,11 +49,11 @@ export const StatusBar: React.FC<StatusBarProps> = ({ message, onClear }) => {
 
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
-    
+
     if (message) {
       setVisible(true);
       const duration = message.duration || 3000;
-      
+
       if (duration > 0) {
         timer = setTimeout(() => {
           setVisible(false);
@@ -55,7 +63,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({ message, onClear }) => {
     } else {
       setVisible(false);
     }
-    
+
     return () => {
       if (timer) {
         clearTimeout(timer);
@@ -71,12 +79,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({ message, onClear }) => {
   const icon = getStatusIcon(message.type);
 
   return (
-    <Box
-      borderStyle="round"
-      borderColor={color}
-      paddingX={1}
-      marginBottom={1}
-    >
+    <Box borderStyle="round" borderColor={color} paddingX={1} marginBottom={1}>
       <Text color={color}>
         {icon} {message.message}
       </Text>

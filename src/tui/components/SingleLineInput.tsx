@@ -14,6 +14,8 @@
 
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { isPrintableChunk } from '../input-text.js';
+import { displayWidth } from '../text-layout.js';
 
 export interface SingleLineInputProps {
   value: string;
@@ -33,7 +35,15 @@ export const SingleLineInput: React.FC<SingleLineInputProps> = ({
   const clampedCursor = Math.min(cursor, value.length);
 
   useInput((input, key) => {
-    if (key.ctrl || key.escape || key.tab || key.return || key.upArrow || key.downArrow) {
+    if (
+      key.ctrl ||
+      key.meta ||
+      key.escape ||
+      key.tab ||
+      key.return ||
+      key.upArrow ||
+      key.downArrow
+    ) {
       return;
     }
 
@@ -53,8 +63,10 @@ export const SingleLineInput: React.FC<SingleLineInputProps> = ({
       return;
     }
 
-    // Printable character
-    if (input && input.length === 1 && input >= ' ' && input !== '\n') {
+    // Printable text: one keystroke, or a whole pasted/batched chunk. Ink
+    // delivers a paste as a single multi-character `input`, so filtering on
+    // `length === 1` would silently drop it.
+    if (isPrintableChunk(input)) {
       onChange(value.slice(0, clampedCursor) + input + value.slice(clampedCursor));
       setCursor(clampedCursor + input.length);
     }
@@ -63,19 +75,54 @@ export const SingleLineInput: React.FC<SingleLineInputProps> = ({
   const showPlaceholder = value === '' && placeholder !== undefined && placeholder !== '';
 
   // Cursor-following window so the input always occupies exactly one row.
+  //
+  // Measured in display CELLS (a CJK character is 2), never in UTF-16 units:
+  // slicing `value` by code units produced rows wider than the box for wide
+  // characters (the cursor could also drift out of the visible window).
   const windowed =
     width === undefined
       ? null
       : (() => {
           const w = Math.max(4, width);
-          const winStart = Math.max(0, Math.min(clampedCursor - (w - 2), value.length));
+          const beforeRaw = value.slice(0, clampedCursor);
+          const atRaw = value.slice(clampedCursor, clampedCursor + 1);
+          const afterRaw = value.slice(clampedCursor + 1);
+          // The cursor needs at least one cell; keep a little room for the two
+          // clip indicators (the box truncates anyway, so being 1-2 cells
+          // conservative is harmless, wrapping is not).
+          let budget = Math.max(1, w - Math.max(1, displayWidth(atRaw)) - 2);
+
+          let before = '';
+          for (let i = beforeRaw.length - 1; i >= 0; i -= 1) {
+            const ch = beforeRaw[i];
+            if (ch === undefined) {
+              break;
+            }
+            const cellWidth = displayWidth(ch);
+            if (cellWidth > budget) {
+              break;
+            }
+            budget -= cellWidth;
+            before = ch + before;
+          }
+          const clippedLeft = before.length < beforeRaw.length;
+
+          let after = '';
+          for (const ch of afterRaw) {
+            const cellWidth = displayWidth(ch);
+            if (cellWidth > budget) {
+              break;
+            }
+            budget -= cellWidth;
+            after += ch;
+          }
+
           return {
-            start: winStart,
-            before: value.slice(winStart, clampedCursor),
-            at: value.slice(clampedCursor, clampedCursor + 1),
-            after: value.slice(clampedCursor + 1, winStart + w - 1),
-            clippedLeft: winStart > 0,
-            clippedRight: winStart + w - 1 < value.length,
+            before,
+            at: atRaw,
+            after,
+            clippedLeft,
+            clippedRight: after.length < afterRaw.length,
           };
         })();
 

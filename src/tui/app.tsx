@@ -48,12 +48,18 @@ interface StatusMessage {
 /**
  * Main TUI Application Component
  */
-export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, configProvider: propConfigProvider }) => {
+export const TuiApp: React.FC<TuiAppProps> = ({
+  configDir,
+  config: propConfig,
+  configProvider: propConfigProvider,
+}) => {
   const { stdout } = useStdout();
   const [state, setState] = useState<AppState>('loading');
   const [view, setView] = useState<ViewState>('list');
   const [config, setConfig] = useState<SystemConfig | null>(propConfig || null);
-  const [configProvider, setConfigProvider] = useState<ConfigProvider | null>(propConfigProvider || null);
+  const [configProvider, setConfigProvider] = useState<ConfigProvider | null>(
+    propConfigProvider || null
+  );
   const [services, setServices] = useState<ServiceDefinition[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -72,28 +78,10 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
   const STATUS_MESSAGE_LINES = statusMessage ? 6 : 0;
   const contentHeight = Math.max(8, terminalHeight - OUTER_CHROME_LINES - STATUS_MESSAGE_LINES);
 
-  // Calculate global tool statistics
-  const globalToolStats = React.useMemo(() => {
-    let totalTools = 0;
-    let enabledTools = 0;
-
-    services.forEach(service => {
-      if (service.enabled && service.toolStates) {
-        const toolCount = Object.keys(service.toolStates).length;
-        totalTools += toolCount;
-        const disabledCount = Object.values(service.toolStates)
-          .filter(v => v === false).length;
-        enabledTools += Math.max(0, toolCount - disabledCount);
-      }
-    });
-
-    return { enabled: enabledTools, total: totalTools };
-  }, [services]);
-
   // Load configuration on mount
   useEffect(() => {
     let unwatch: (() => void) | null = null;
-    
+
     const loadConfig = async () => {
       try {
         let loadedConfig = config;
@@ -107,36 +95,41 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
             configDir: dir,
           });
           loadedConfig = await provider.load();
-          
+
           const validation = provider.validate(loadedConfig);
           if (!validation.valid) {
-            const errorMessages = validation.errors.map(e => `${e.field}: ${e.message}`).join(', ');
+            const errorMessages = validation.errors
+              .map((e) => `${e.field}: ${e.message}`)
+              .join(', ');
             throw new Error(`Configuration validation failed: ${errorMessages}`);
           }
-          
+
           setConfigProvider(provider);
         }
 
         const registry = new ServiceRegistry(provider);
         await registry.initialize();
-        
-        const serviceList = await registry.list();
-        
+
+        const serviceList = registry.list();
+
         unwatch = provider.watch((newConfig) => {
-          const updatedServices = Object.entries(newConfig.mcpServers).map(([name, def]) => ({ ...def, name }));
+          const updatedServices = Object.entries(newConfig.mcpServers).map(([name, def]) => ({
+            ...def,
+            name,
+          }));
           setServices(updatedServices);
-          
+
           if (serviceRegistry) {
             serviceRegistry.initialize().catch(console.error);
           }
-          
+
           setStatusMessage({
             type: 'info',
             message: 'Configuration updated from external changes',
             duration: 3000,
           });
         });
-        
+
         setServiceRegistry(registry);
         if (!config) setConfig(loadedConfig);
         setServices(serviceList);
@@ -147,8 +140,8 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
       }
     };
 
-    loadConfig();
-    
+    void loadConfig();
+
     return () => {
       if (unwatch) {
         unwatch();
@@ -157,9 +150,9 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
   }, [configDir, propConfig, propConfigProvider]);
 
   // Reload services when registry changes
-  const reloadServices = async () => {
+  const reloadServices = (): void => {
     if (serviceRegistry) {
-      const serviceList = await serviceRegistry.list();
+      const serviceList = serviceRegistry.list();
       setServices(serviceList);
       // Reset selection if out of bounds
       if (selectedIndex >= serviceList.length && serviceList.length > 0) {
@@ -178,10 +171,10 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
         // Delete the old service first
         await serviceRegistry.unregister(editingService.name);
       }
-      
+
       // Register the new/updated service
       await serviceRegistry.register(service);
-      await reloadServices();
+      reloadServices();
       setView('list');
       setEditingService(undefined);
       setStatusMessage({
@@ -211,9 +204,9 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
     try {
       const toolStates = editingService.toolStates || {};
       const newToolStates = { ...toolStates, [toolName]: enabled };
-      
+
       const updatedService = { ...editingService, toolStates: newToolStates };
-      
+
       if (serviceRegistry) {
         await serviceRegistry.register(updatedService);
       } else {
@@ -228,12 +221,10 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
       setEditingService(updatedService);
 
       // Update services list to reflect the change immediately
-      setServices(prevServices =>
-        prevServices.map(s => 
-          s.name === editingService.name ? updatedService : s
-        )
+      setServices((prevServices) =>
+        prevServices.map((s) => (s.name === editingService.name ? updatedService : s))
       );
-      
+
       setStatusMessage({
         type: 'success',
         message: `Tool '${toolName}' ${enabled ? 'enabled' : 'disabled'}`,
@@ -253,9 +244,9 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
     try {
       const currentToolStates = editingService.toolStates || {};
       const newToolStates = { ...currentToolStates, ...toolStates };
-      
+
       const updatedService = { ...editingService, toolStates: newToolStates };
-      
+
       if (serviceRegistry) {
         await serviceRegistry.register(updatedService);
       } else {
@@ -267,22 +258,20 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
       }
 
       setEditingService(updatedService);
-      setServices(prevServices =>
-        prevServices.map(s =>
-          s.name === editingService.name ? updatedService : s
-        )
+      setServices((prevServices) =>
+        prevServices.map((s) => (s.name === editingService.name ? updatedService : s))
       );
-      
+
       setStatusMessage({
         type: 'success',
         message: `Updated ${Object.keys(toolStates).length} tool(s)`,
-        duration: 3000
+        duration: 3000,
       });
     } catch (err) {
       setStatusMessage({
         type: 'error',
         message: `Failed to update tools: ${err instanceof Error ? err.message : String(err)}`,
-        duration: 5000
+        duration: 5000,
       });
     }
   };
@@ -296,27 +285,28 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
     if (!config || !configProvider) return;
 
     try {
-      const updatedServices = services.map(s => 
-        s.name === serviceName ? { ...s, enabled } : s
-      );
+      const updatedServices = services.map((s) => (s.name === serviceName ? { ...s, enabled } : s));
       const newConfig = { ...config, services: updatedServices };
       await configProvider.save(newConfig);
-      
+
       if (serviceRegistry) {
-        await serviceRegistry.register(updatedServices.find(s => s.name === serviceName)!);
+        const target = updatedServices.find((s) => s.name === serviceName);
+        if (target !== undefined) {
+          await serviceRegistry.register(target);
+        }
       }
-      
+
       setServices(updatedServices);
       setStatusMessage({
         type: 'success',
         message: `Service '${serviceName}' ${enabled ? 'enabled' : 'disabled'}`,
-        duration: 3000
+        duration: 3000,
       });
     } catch (err) {
       setStatusMessage({
         type: 'error',
         message: `Failed to toggle service: ${err instanceof Error ? err.message : String(err)}`,
-        duration: 5000
+        duration: 5000,
       });
     }
   };
@@ -330,13 +320,13 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
         await serviceRegistry.unregister(serviceName);
       } else {
         // Fallback: update config directly
-        const updatedServices = services.filter(s => s.name !== serviceName);
+        const updatedServices = services.filter((s) => s.name !== serviceName);
         const newConfig = { ...config, services: updatedServices };
         await configProvider.save(newConfig);
       }
-      
+
       // Update local state
-      const updatedServices = services.filter(s => s.name !== serviceName);
+      const updatedServices = services.filter((s) => s.name !== serviceName);
       setServices(updatedServices);
       if (selectedIndex >= updatedServices.length && updatedServices.length > 0) {
         setSelectedIndex(updatedServices.length - 1);
@@ -344,13 +334,13 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
       setStatusMessage({
         type: 'success',
         message: `Service '${serviceName}' deleted`,
-        duration: 3000
+        duration: 3000,
       });
     } catch (err) {
       setStatusMessage({
         type: 'error',
         message: `Failed to delete service: ${err instanceof Error ? err.message : String(err)}`,
-        duration: 5000
+        duration: 5000,
       });
     }
   };
@@ -363,12 +353,12 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
     if (input === 'q' && view === 'list') {
       process.exit(0);
     }
-    
+
     if (input === '?') {
       setStatusMessage({
         type: 'info',
         message: 'Help: ?=help, q=quit, ↑↓=navigate, Enter=edit, Space=toggle, T=tools, D=delete',
-        duration: 5000
+        duration: 5000,
       });
       return;
     }
@@ -381,23 +371,18 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
     // List view navigation
     if (view === 'list') {
       if (key.upArrow) {
-        setSelectedIndex(prev => Math.max(0, prev - 1));
+        setSelectedIndex((prev) => Math.max(0, prev - 1));
       } else if (key.downArrow) {
-        setSelectedIndex(prev => Math.min(services.length - 1, prev + 1));
+        setSelectedIndex((prev) => Math.min(services.length - 1, prev + 1));
       } else if (input === ' ') {
         if (services[selectedIndex]) {
           const service = services[selectedIndex];
-          handleToggleService(service.name, !service.enabled);
-        }
-      } else if (input === 't' || input === 'T') {
-        if (services[selectedIndex]) {
-          setEditingService(services[selectedIndex]);
-          setView('tools');
+          void handleToggleService(service.name, !service.enabled);
         }
       } else if (input === 'd' || input === 'D') {
         if (services[selectedIndex]) {
           const service = services[selectedIndex];
-          handleDeleteService(service.name);
+          void handleDeleteService(service.name);
         }
       } else if (key.return) {
         if (services[selectedIndex]) {
@@ -420,44 +405,39 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
           setEditingService(services[selectedIndex]);
           setView('tools');
         }
-      } else if (input === ' ' || input === 't') {
+      } else if (input === ' ' || input === 't' || input === 'T') {
         if (services[selectedIndex]) {
           const service = services[selectedIndex];
-          handleToggleService(service.name, !service.enabled);
-        }
-      } else if (input === 'd') {
-        if (services[selectedIndex]) {
-          const service = services[selectedIndex];
-          handleDeleteService(service.name);
+          void handleToggleService(service.name, !service.enabled);
         }
       } else if (input === 'y') {
         // Toggle form mode
         setUseUnifiedForm(!useUnifiedForm);
       }
     }
-    
+
     if (view === 'add' || view === 'edit') {
       // Allow help shortcut from forms
       if (input === '?') {
         setStatusMessage({
           type: 'info',
           message: 'Help: ?=help, q=quit, ↑↓=navigate, Enter=edit, Space=toggle, T=tools, D=delete',
-          duration: 5000
+          duration: 5000,
         });
         return;
       }
-      
+
       // Allow quit shortcut from forms
       if (input === 'q') {
         process.exit(0);
       }
-      
+
       // Allow refresh shortcut from forms
       if (input === 'r') {
-        reloadServices();
+        void reloadServices();
         return;
       }
-      
+
       // Forms handle other input
       return;
     }
@@ -477,7 +457,9 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
   if (state === 'error') {
     return (
       <Box flexDirection="column" padding={1}>
-        <Text color="red" bold>Error loading configuration</Text>
+        <Text color="red" bold>
+          Error loading configuration
+        </Text>
         <Text color="red">{error}</Text>
         <Box marginTop={1}>
           <Text dimColor>Configuration directory: {configDir}</Text>
@@ -493,25 +475,48 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
   return (
     <Box flexDirection="column" height={terminalHeight}>
       <Box borderStyle="round" borderColor="cyan" padding={1} marginBottom={1}>
-        <Text bold color="cyan">MCP Router System - Configuration Manager</Text>
+        <Text bold color="cyan">
+          MCP Router System - Configuration Manager
+        </Text>
       </Box>
-      
+
       <Box flexDirection="column" marginBottom={1}>
-        <Text>Configuration directory: <Text color="green">{configDir}</Text></Text>
-        <Text>Services: <Text color="yellow">{services.length}</Text></Text>
-        <Text>Mode: <Text color="blue">{config?.mode || 'unknown'}</Text></Text>
+        <Text>
+          Configuration directory: <Text color="green">{configDir}</Text>
+        </Text>
+        <Text>
+          Services: <Text color="yellow">{services.length}</Text>
+        </Text>
+        <Text>
+          Mode: <Text color="blue">{config?.mode || 'unknown'}</Text>
+        </Text>
       </Box>
 
       {/* Status message */}
       {statusMessage && (
         <Box
           borderStyle="single"
-          borderColor={statusMessage.type === 'error' ? 'red' : statusMessage.type === 'success' ? 'green' : 'blue'}
+          borderColor={
+            statusMessage.type === 'error'
+              ? 'red'
+              : statusMessage.type === 'success'
+                ? 'green'
+                : 'blue'
+          }
           padding={1}
           marginBottom={1}
         >
-          <Text color={statusMessage.type === 'error' ? 'red' : statusMessage.type === 'success' ? 'green' : 'blue'}>
-            {statusMessage.type === 'error' ? '✗' : statusMessage.type === 'success' ? '✓' : 'ℹ'} {statusMessage.message}
+          <Text
+            color={
+              statusMessage.type === 'error'
+                ? 'red'
+                : statusMessage.type === 'success'
+                  ? 'green'
+                  : 'blue'
+            }
+          >
+            {statusMessage.type === 'error' ? '✗' : statusMessage.type === 'success' ? '✓' : 'ℹ'}{' '}
+            {statusMessage.message}
           </Text>
         </Box>
       )}
@@ -523,36 +528,35 @@ export const TuiApp: React.FC<TuiAppProps> = ({ configDir, config: propConfig, c
             services={services}
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
-            globalToolStats={globalToolStats}
-            terminalHeight={terminalHeight}
+            terminalHeight={contentHeight}
           />
         )}
 
-        {(view === 'add' || view === 'edit') && (
-          useUnifiedForm ? (
+        {(view === 'add' || view === 'edit') &&
+          (useUnifiedForm ? (
             <ServiceFormUnified
               service={editingService}
-              onSubmit={handleServiceSubmit}
+              onSubmit={(svc) => void handleServiceSubmit(svc)}
               onCancel={handleServiceCancel}
+              terminalHeight={contentHeight}
             />
           ) : (
             <ServiceForm
               service={editingService}
-              onSubmit={handleServiceSubmit}
+              onSubmit={(svc) => void handleServiceSubmit(svc)}
               onCancel={handleServiceCancel}
             />
-          )
-        )}
+          ))}
 
         {view === 'tools' && editingService && (
           <ServiceTools
             service={editingService}
             onBack={() => {
               setView('list');
-              setRefreshKey(k => k + 1);
+              setRefreshKey((k) => k + 1);
             }}
-            onToggleTool={handleToggleTool}
-            onBatchToggleTools={handleBatchToggleTools}
+            onToggleTool={(name, enabled) => void handleToggleTool(name, enabled)}
+            onBatchToggleTools={(states) => void handleBatchToggleTools(states)}
             toolStates={editingService.toolStates || {}}
             onToolsDiscovered={handleToolsDiscovered}
             terminalHeight={contentHeight}

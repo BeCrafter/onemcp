@@ -5,7 +5,8 @@
 
 import EventSource from 'eventsource';
 import { StdioTransport } from '../transport/stdio.js';
-import { isSessionExpiryError } from '../routing/session-error.js';
+import { isRecoverableConnectionError, isSessionExpiryError } from '../routing/session-error.js';
+import { safeStringify } from '../utils/safe-json.js';
 import { getPackageVersion } from '../utils/package-version.js';
 import { isRecord } from './tool-param-schema.js';
 import type { JsonRpcMessage } from '../types/jsonrpc.js';
@@ -39,6 +40,21 @@ export class DiscoveryError extends Error {
     if (errorCause !== undefined) {
       this.errorCause = errorCause;
     }
+  }
+}
+
+/**
+ * Raised when a one-shot session ended before answering a request.
+ *
+ * That is the worker-level shape of "the connection died while we were using
+ * it" (stdio child exit, SSE drop) — the transport's own error never reaches the
+ * caller because the receive stream simply ends. Typed rather than inferred from
+ * the message so the retry predicate can classify it reliably.
+ */
+export class SessionClosedError extends Error {
+  constructor(method: string) {
+    super(`No response for ${method} request`);
+    this.name = 'SessionClosedError';
   }
 }
 
@@ -283,7 +299,7 @@ async function stdioSession<T>(
       const iter = boundTransport.receive();
       const res = await iter.next();
       if (res.value === undefined || res.value === null) {
-        throw new Error(`No response for ${String(msg['method'])} request`);
+        throw new SessionClosedError(String(msg['method']));
       }
       return res.value as Record<string, unknown>;
     };
@@ -552,6 +568,36 @@ async function sseSession<T>(
 /**
  * Discover tools via stdio transport
  */
+/**
+ * Map a discovery failure onto the DiscoveryError the UI reports.
+ *
+ * The three transports fail identically from the caller's point of view, so the
+ * classification lives here instead of in three copies of the same catch body.
+ */
+function toDiscoveryFailure(
+  err: unknown,
+  service: ServiceDefinition,
+  timeout: number
+): DiscoveryError {
+  if (err instanceof DiscoveryError) {
+    return err;
+  }
+  if (isTimeoutError(err)) {
+    return new DiscoveryError(
+      DiscoveryErrorType.TIMEOUT,
+      service.name,
+      `Discovery timeout after ${timeout}ms`,
+      err instanceof Error ? err : undefined
+    );
+  }
+  return new DiscoveryError(
+    DiscoveryErrorType.CONNECTION_FAILED,
+    service.name,
+    err instanceof Error ? err.message : String(err),
+    err instanceof Error ? err : undefined
+  );
+}
+
 async function discoverToolsViaStdio(service: ServiceDefinition, timeout: number): Promise<Tool[]> {
   if (service.command === undefined || service.command === null) {
     return [];
@@ -560,20 +606,7 @@ async function discoverToolsViaStdio(service: ServiceDefinition, timeout: number
   try {
     return await stdioSession(service, timeout, (send) => discoverToolsList(send, service));
   } catch (err) {
-    if (isTimeoutError(err)) {
-      throw new DiscoveryError(
-        DiscoveryErrorType.TIMEOUT,
-        service.name,
-        `Discovery timeout after ${timeout}ms`,
-        err instanceof Error ? err : undefined
-      );
-    }
-    throw new DiscoveryError(
-      DiscoveryErrorType.CONNECTION_FAILED,
-      service.name,
-      err instanceof Error ? err.message : String(err),
-      err instanceof Error ? err : undefined
-    );
+    throw toDiscoveryFailure(err, service, timeout);
   }
 }
 
@@ -590,23 +623,7 @@ async function discoverToolsViaSse(service: ServiceDefinition, timeout: number):
       discoverToolsList(send, service)
     );
   } catch (err) {
-    if (err instanceof DiscoveryError) {
-      throw err;
-    }
-    if (isTimeoutError(err)) {
-      throw new DiscoveryError(
-        DiscoveryErrorType.TIMEOUT,
-        service.name,
-        `Discovery timeout after ${timeout}ms`,
-        err instanceof Error ? err : undefined
-      );
-    }
-    throw new DiscoveryError(
-      DiscoveryErrorType.CONNECTION_FAILED,
-      service.name,
-      err instanceof Error ? err.message : String(err),
-      err instanceof Error ? err : undefined
-    );
+    throw toDiscoveryFailure(err, service, timeout);
   }
 }
 
@@ -625,20 +642,7 @@ async function discoverToolsViaHttp(service: ServiceDefinition, timeout: number)
   try {
     return await httpSession(service, timeout, (send) => discoverToolsList(send, service));
   } catch (err) {
-    if (isTimeoutError(err)) {
-      throw new DiscoveryError(
-        DiscoveryErrorType.TIMEOUT,
-        service.name,
-        `Discovery timeout after ${timeout}ms`,
-        err instanceof Error ? err : undefined
-      );
-    }
-    throw new DiscoveryError(
-      DiscoveryErrorType.CONNECTION_FAILED,
-      service.name,
-      err instanceof Error ? err.message : String(err),
-      err instanceof Error ? err : undefined
-    );
+    throw toDiscoveryFailure(err, service, timeout);
   }
 }
 
@@ -681,14 +685,6 @@ export class ToolCallError extends Error {
 }
 
 /** Safely pretty-print a value, degrading on circular refs / BigInt. */
-function safeJsonStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2) ?? String(value);
-  } catch {
-    return String(value);
-  }
-}
-
 /**
  * Re-format tool output as pretty JSON when it parses as JSON; otherwise
  * return the text verbatim. Only strings starting with { or [ are considered
@@ -735,7 +731,7 @@ export function normalizeToolResult(result: unknown): ToolCallOutcome {
   }
 
   if (textParts.length === 0 && isRecord(result) && result['structuredContent'] !== undefined) {
-    textParts.push(safeJsonStringify(result['structuredContent']));
+    textParts.push(safeStringify(result['structuredContent']));
   }
 
   const joinedText = textParts.length > 0 ? textParts.join('\n') : '(empty result)';
@@ -744,7 +740,7 @@ export function normalizeToolResult(result: unknown): ToolCallOutcome {
     text: joinedText,
     formatted: formatToolOutput(joinedText),
     nonTextTypes,
-    raw: safeJsonStringify(result),
+    raw: safeStringify(result),
   };
 }
 
@@ -897,15 +893,41 @@ async function callServiceToolOnce(
 /**
  * Whether a call failure may be transparently retried on a fresh connection.
  *
- * A backend that refused to execute the tool (validation error, unknown tool,
- * ...) must NOT be replayed — isSessionExpiryError's message regex could
- * misread such an error, so a ToolCallError only retries on a genuine -32001.
+ * Same two families the ToolRouter retries: an expired backend session
+ * (re-initialized on a fresh connection) and a dead-but-reconnectable
+ * transport (stdio respawn, SSE reconnect) — see routing/session-error.ts.
+ * A backend that REFUSED to execute the tool (validation error, unknown tool,
+ * ...) must not be replayed, so a ToolCallError only retries on a genuine
+ * -32001; every other ToolCallError is final.
  */
 function isRetryableToolCallFailure(err: unknown): boolean {
   if (err instanceof ToolCallError) {
     return err.code === -32001;
   }
-  return isSessionExpiryError(err);
+  return isRetryableConnectionFailure(err);
+}
+
+/**
+ * Session expiry or a dead-but-reconnectable transport — as the router
+ * classifies them. Transport failures arrive here wrapped in a DiscoveryError
+ * (which keeps the original as `errorCause`), so the wrapper is inspected too;
+ * without that, a stdio child dying mid-call would never be retried.
+ */
+function isRetryableConnectionFailure(err: unknown): boolean {
+  if (isRecoverableFailure(err)) {
+    return true;
+  }
+  const cause = err instanceof DiscoveryError ? err.errorCause : undefined;
+  return cause !== undefined && cause !== err && isRecoverableFailure(cause);
+}
+
+/** One of the three shapes a dead/renewable connection takes at this layer. */
+function isRecoverableFailure(err: unknown): boolean {
+  return (
+    err instanceof SessionClosedError ||
+    isSessionExpiryError(err) ||
+    isRecoverableConnectionError(err)
+  );
 }
 
 /**
@@ -938,9 +960,10 @@ export async function callServiceTool(
  * Used by ServiceTools view to display tool details.
  *
  * Each attempt opens a one-shot connection (initialize → tools/list → close),
- * so a session-expiry failure (-32001 / HTTP 404) is recovered by simply
- * retrying once: the fresh attempt establishes a brand-new backend session
- * (lazy rebuild), matching the ToolRouter's recovery semantics.
+ * so a recoverable failure is handled by simply retrying once: the fresh
+ * attempt establishes a brand-new backend session (lazy rebuild) and respawns
+ * a dead stdio child — the same two families the ToolRouter retries
+ * (session expiry, dead-but-reconnectable transport).
  */
 export async function fetchServiceTools(
   service: ServiceDefinition,
@@ -949,7 +972,7 @@ export async function fetchServiceTools(
   try {
     return await fetchServiceToolsOnce(service, timeout);
   } catch (err) {
-    if (isSessionExpiryError(err)) {
+    if (isRetryableConnectionFailure(err)) {
       return await fetchServiceToolsOnce(service, timeout);
     }
     throw err;

@@ -1,16 +1,16 @@
 /**
  * Unified Service Form Component
- * 
+ *
  * Single-page progressive form for adding and editing services.
  * Shows all fields on one page with progressive disclosure for optional fields.
  * Provides inline validation and real-time preview.
  * Handles terminal height constraints for small terminals.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
-import TextInput from 'ink-text-input';
 import SelectInput from 'ink-select-input';
+import { SingleLineInput } from './SingleLineInput.js';
 import type { ServiceDefinition, TransportType } from '../../types/service.js';
 import { fieldHelp, fieldPlaceholder } from './service-field-config.js';
 
@@ -21,6 +21,11 @@ export interface ServiceFormUnifiedProps {
   onSubmit: (service: ServiceDefinition) => void;
   /** Callback when form is cancelled */
   onCancel: () => void;
+  /**
+   * Vertical space the host actually leaves for this form (terminal height minus
+   * the host's own header/footer). Falls back to the raw terminal height.
+   */
+  terminalHeight?: number | undefined;
 }
 
 /**
@@ -52,7 +57,7 @@ interface FieldConfig {
   help: string;
   required: boolean;
   type: 'text' | 'select';
-  dependsOn?: { field: FormField; value: any };
+  dependsOn?: { field: FormField; value: string };
 }
 
 /**
@@ -214,50 +219,60 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
 /**
  * Validate single field
  */
-function validateField(field: FormField, value: any, transport: TransportType): string | null {
+function validateField(
+  field: FormField,
+  value: string | boolean,
+  transport: TransportType
+): string | null {
+  // Only text fields carry text; the Enabled select passes a boolean.
+  const text = typeof value === 'string' ? value : '';
+  const trimmed = text.trim();
+
   switch (field) {
     case 'name':
-      if (!value.trim()) {
+      if (!trimmed) {
         return 'Service name is required';
       }
-      if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
+      if (!/^[a-zA-Z0-9_-]+$/.test(text)) {
         return 'Only letters, numbers, hyphens, and underscores allowed';
       }
       return null;
 
     case 'command':
-      if (transport === 'stdio' && !value.trim()) {
+      if (transport === 'stdio' && !trimmed) {
         return 'Command is required for stdio transport';
       }
       return null;
 
     case 'url':
-      if (transport !== 'stdio' && !value.trim()) {
+      if (transport !== 'stdio' && !trimmed) {
         return 'URL is required for HTTP/SSE transport';
       }
-      if (value.trim() && !/^https?:\/\/.+/.test(value)) {
+      if (trimmed && !/^https?:\/\/.+/.test(text)) {
         return 'URL must start with http:// or https://';
       }
       return null;
 
-    case 'maxConnections':
-      if (value.trim()) {
-        const num = parseInt(value, 10);
+    case 'maxConnections': {
+      if (trimmed) {
+        const num = parseInt(text, 10);
         if (isNaN(num) || num < 1 || num > 100) {
           return 'Must be between 1 and 100';
         }
       }
       return null;
+    }
 
     case 'idleTimeout':
-    case 'connectionTimeout':
-      if (value.trim()) {
-        const num = parseInt(value, 10);
+    case 'connectionTimeout': {
+      if (trimmed) {
+        const num = parseInt(text, 10);
         if (isNaN(num) || num < 1000) {
           return 'Must be at least 1000ms';
         }
       }
       return null;
+    }
 
     default:
       return null;
@@ -272,7 +287,10 @@ export function formDataToService(data: FormData): ServiceDefinition {
     name: data.name.trim(),
     transport: data.transport,
     enabled: data.enabled,
-    tags: data.tags.split(',').map(t => t.trim()).filter(t => t.length > 0),
+    tags: data.tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0),
     connectionPool: {
       maxConnections: parseInt(data.maxConnections || '5', 10),
       idleTimeout: parseInt(data.idleTimeout || '60000', 10),
@@ -282,14 +300,20 @@ export function formDataToService(data: FormData): ServiceDefinition {
 
   if (data.transport === 'stdio') {
     service.command = data.command.trim();
-    
+
     if (data.args.trim()) {
-      service.args = data.args.split(',').map(a => a.trim()).filter(a => a.length > 0);
+      service.args = data.args
+        .split(',')
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0);
     }
-    
+
     if (data.env.trim()) {
       service.env = {};
-      const envPairs = data.env.split(',').map(e => e.trim()).filter(e => e.length > 0);
+      const envPairs = data.env
+        .split(',')
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0);
       for (const pair of envPairs) {
         const [key, ...valueParts] = pair.split('=');
         if (key && valueParts.length > 0) {
@@ -299,10 +323,13 @@ export function formDataToService(data: FormData): ServiceDefinition {
     }
   } else {
     service.url = data.url.trim();
-    
+
     if (data.headers.trim()) {
       service.headers = {};
-      const headerPairs = data.headers.split(',').map(h => h.trim()).filter(h => h.length > 0);
+      const headerPairs = data.headers
+        .split(',')
+        .map((h) => h.trim())
+        .filter((h) => h.length > 0);
       for (const pair of headerPairs) {
         const [key, ...valueParts] = pair.split(':');
         if (key && valueParts.length > 0) {
@@ -314,8 +341,8 @@ export function formDataToService(data: FormData): ServiceDefinition {
 
   const phrases = data.triggerHintsPhrases
     .split(',')
-    .map(p => p.trim())
-    .filter(p => p.length > 0);
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
   const hints: NonNullable<ServiceDefinition['triggerHints']> = {};
   if (data.triggerHintsStart.trim()) hints.onSessionStart = data.triggerHintsStart.trim();
   if (data.triggerHintsEnd.trim()) hints.onSessionEnd = data.triggerHintsEnd.trim();
@@ -328,16 +355,30 @@ export function formDataToService(data: FormData): ServiceDefinition {
 }
 
 /**
+ * Collapsed-field value. Booleans read Yes/No (the raw `true` leaked the
+ * internal representation), and empty values read as a grey placeholder.
+ */
+const formatFieldValue = (field: FormField, data: FormData): React.ReactNode => {
+  const value = data[field as keyof FormData];
+  if (typeof value === 'boolean') {
+    return value ? 'Yes' : 'No';
+  }
+  const text = value?.toString() ?? '';
+  return text.length > 0 ? text : <Text color="gray">(empty)</Text>;
+};
+
+/**
  * Unified Service Form Component
  */
 export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   service,
   onSubmit,
   onCancel,
+  terminalHeight: terminalHeightProp,
 }) => {
   const { stdout } = useStdout();
-  const terminalHeight = stdout?.rows || 24;
-  
+  const terminalHeight = terminalHeightProp ?? (stdout?.rows || 24);
+
   // Initialize form data
   const [formData, setFormData] = useState<FormData>(() => {
     if (service) {
@@ -347,8 +388,19 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
         command: service.command || '',
         url: service.url || '',
         args: service.args?.join(', ') || '',
-        env: service.env ? Object.entries(service.env).map(([k, v]) => `${k}=${v}`).join(', ') : '',
-        headers: service.transport === 'stdio' ? '' : (service.headers ? Object.entries(service.headers).map(([k, v]) => `${k}: ${v}`).join(', ') : ''),
+        env: service.env
+          ? Object.entries(service.env)
+              .map(([k, v]) => `${k}=${v}`)
+              .join(', ')
+          : '',
+        headers:
+          service.transport === 'stdio'
+            ? ''
+            : service.headers
+              ? Object.entries(service.headers)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join(', ')
+              : '',
         tags: service.tags.join(', '),
         enabled: service.enabled,
         maxConnections: service.connectionPool.maxConnections.toString(),
@@ -383,12 +435,11 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Map<FormField, string>>(new Map());
   const [touched, setTouched] = useState<Set<FormField>>(new Set());
-  const [scrollOffset, setScrollOffset] = useState(0);
-  const isCtrlAActive = useRef(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Get field configurations based on transport type
   const fieldConfigs = getFieldConfigs(formData.transport);
-  const requiredFields = fieldConfigs.filter(c => c.required).map(c => c.field);
+  const requiredFields = fieldConfigs.filter((c) => c.required).map((c) => c.field);
   const connectionPoolFields: FormField[] = ['maxConnections', 'idleTimeout', 'connectionTimeout'];
   const advancedOnlyFields: FormField[] = [
     ...connectionPoolFields,
@@ -397,40 +448,80 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
     'triggerHintsPhrases',
   ];
 
-  // Calculate visible fields based on terminal height
   const HEADER_LINES = 4;
   const FOOTER_LINES = 3;
   const AVAILABLE_LINES = Math.max(1, terminalHeight - HEADER_LINES - FOOTER_LINES);
-  
+
   // Default to compact mode - current field expanded, others collapsed
   const isCompactMode = true;
-  const COLLAPSED_FIELD_LINES = 1;
-  const visibleFieldCount = Math.min(
-    fieldConfigs.length,
-    Math.max(3, Math.floor(AVAILABLE_LINES / COLLAPSED_FIELD_LINES))
-  );
+
+  /**
+   * Lines a field actually occupies. Counting rows instead of assuming one line
+   * per field is what keeps the form inside the viewport: a select renders one
+   * row per option, so the old `SERVICE_ITEM_LINES`-style math under-counted and
+   * pushed the whole frame past the terminal, which corrupts the screen.
+   */
+  const fieldHeight = (config: FieldConfig): number => {
+    if (config.type !== 'select') {
+      return 2; // label + value/editor row
+    }
+    const optionRows = config.field === 'transport' ? 3 : 2; // stdio/sse/http | Yes/No
+    return optionRows + 1; // label + options
+  };
+
+  // Chrome the form draws itself: title box(3) + fields box borders(2) +
+  // field-help box(3) + navigation box(3) + advanced hint + scroll indicators(2).
+  const FORM_CHROME_LINES = 3 + 2 + 3 + 3 + (showAdvanced ? 1 : 2) + 2;
+  const FIELD_BUDGET = Math.max(3, AVAILABLE_LINES - FORM_CHROME_LINES);
+
+  /**
+   * Fields to render: the window always contains the current field and expands
+   * outward while the line budget allows, so the focused field can never be
+   * scrolled off-screen.
+   */
+  const { visibleConfigs, hasMoreAbove, hasMoreBelow } = useMemo(() => {
+    const heights = fieldConfigs.map(fieldHeight);
+    const currentIdx = Math.max(
+      0,
+      fieldConfigs.findIndex((c) => c.field === currentField)
+    );
+    let used = heights[currentIdx] ?? 1;
+    let start = currentIdx;
+    let end = currentIdx + 1;
+    for (;;) {
+      let grew = false;
+      if (end < fieldConfigs.length && used + (heights[end] ?? 1) <= FIELD_BUDGET) {
+        used += heights[end] ?? 1;
+        end += 1;
+        grew = true;
+      }
+      if (start > 0 && used + (heights[start - 1] ?? 1) <= FIELD_BUDGET) {
+        used += heights[start - 1] ?? 1;
+        start -= 1;
+        grew = true;
+      }
+      if (!grew) {
+        break;
+      }
+    }
+    return {
+      visibleConfigs: fieldConfigs.slice(start, end),
+      hasMoreAbove: start > 0,
+      hasMoreBelow: end < fieldConfigs.length,
+    };
+  }, [fieldConfigs, currentField, FIELD_BUDGET, showAdvanced]);
 
   // Get current field config for help text
-  const currentFieldConfig = fieldConfigs.find(c => c.field === currentField);
+  const currentFieldConfig = fieldConfigs.find((c) => c.field === currentField);
   const currentFieldHelp = currentFieldConfig?.help || '';
-
-  // Ensure scroll shows current field
-  useEffect(() => {
-    const currentIdx = fieldConfigs.findIndex(c => c.field === currentField);
-    if (currentIdx < scrollOffset) {
-      setScrollOffset(currentIdx);
-    } else if (currentIdx >= scrollOffset + visibleFieldCount) {
-      setScrollOffset(Math.max(0, currentIdx - visibleFieldCount + 1));
-    }
-  }, [currentField, fieldConfigs]);
 
   // Validate current field when it changes
   useEffect(() => {
     if (touched.has(currentField)) {
       const value = formData[currentField as keyof FormData];
       const error = validateField(currentField, value, formData.transport);
-      
-      setFieldErrors(prev => {
+
+      setFieldErrors((prev) => {
         const next = new Map(prev);
         if (error) {
           next.set(currentField, error);
@@ -445,7 +536,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   // Check if form is valid
   const isFormValid = (): boolean => {
     const errors: ValidationError[] = [];
-    
+
     for (const config of fieldConfigs) {
       if (config.required) {
         const value = formData[config.field as keyof FormData];
@@ -461,18 +552,18 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
 
   const isFieldVisible = (config: FieldConfig): boolean => {
     const isAdvanced = advancedOnlyFields.includes(config.field);
-    return (config.required || !isAdvanced) || (showAdvanced && isAdvanced);
+    return config.required || !isAdvanced || (showAdvanced && isAdvanced);
   };
 
   // Handle field navigation
   const goToNextField = (overrideTransport?: TransportType) => {
     const transportForFields = overrideTransport ?? formData.transport;
     const configsForTransport = getFieldConfigs(transportForFields);
-    const currentIndex = configsForTransport.findIndex(c => c.field === currentField);
+    const currentIndex = configsForTransport.findIndex((c) => c.field === currentField);
     if (currentIndex < configsForTransport.length - 1) {
       // Mark current field as touched
-      setTouched(prev => new Set(prev).add(currentField));
-      
+      setTouched((prev) => new Set(prev).add(currentField));
+
       // Find next visible field
       for (let i = currentIndex + 1; i < configsForTransport.length; i++) {
         const nextConfig = configsForTransport[i];
@@ -485,7 +576,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   };
 
   const goToPrevField = () => {
-    const currentIndex = fieldConfigs.findIndex(c => c.field === currentField);
+    const currentIndex = fieldConfigs.findIndex((c) => c.field === currentField);
     if (currentIndex > 0) {
       // Find previous visible field
       for (let i = currentIndex - 1; i >= 0; i--) {
@@ -502,22 +593,26 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   const handleSubmit = () => {
     // Mark all required fields as touched
     const allTouched = new Set(touched);
-    requiredFields.forEach(f => allTouched.add(f));
+    requiredFields.forEach((f) => allTouched.add(f));
     setTouched(allTouched);
 
     if (!isFormValid()) {
-      // Jump to first error field
+      // Focus the first offending field AND say so — a silent no-op looks like
+      // a broken save button when the field is already focused.
       for (const config of fieldConfigs) {
         const value = formData[config.field as keyof FormData];
         const error = validateField(config.field, value, formData.transport);
         if (error) {
           setCurrentField(config.field);
+          setSubmitError(`${config.label}: ${error}`);
           return;
         }
       }
+      setSubmitError('Some fields are invalid.');
       return;
     }
 
+    setSubmitError(null);
     const serviceDefinition = formDataToService(formData);
     onSubmit(serviceDefinition);
   };
@@ -529,27 +624,25 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
       return;
     }
 
-    // Scroll up/down when form is in scroll mode
+    // Field navigation — the render window follows the focused field, so
+    // arrows move between fields instead of scrolling a fixed viewport.
     if (key.upArrow) {
-      setScrollOffset(prev => Math.max(0, prev - 1));
+      goToPrevField();
       return;
     }
     if (key.downArrow) {
-      setScrollOffset(prev => Math.min(fieldConfigs.length - visibleFieldCount, prev + 1));
+      goToNextField();
       return;
     }
 
     // Toggle advanced options (Ctrl+A) - for optional fields like tags, env, args
     if (input === 'a' && key.ctrl) {
-      isCtrlAActive.current = true;
       setShowAdvanced(!showAdvanced);
-      setTimeout(() => {
-        isCtrlAActive.current = false;
-      }, 2);
       return;
     }
 
-    // Submit form (Ctrl+S)
+    // Submit form (Ctrl+S). The chord itself never reaches the text editor
+    // (SingleLineInput ignores ctrl chords), so no stray 's' is inserted.
     if (input === 's' && key.ctrl) {
       handleSubmit();
       return;
@@ -562,6 +655,13 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
       } else {
         goToNextField();
       }
+      return;
+    }
+
+    // Confirm a field and move on (Enter). Selects handle Enter themselves.
+    if (key.return && currentField !== 'transport' && currentField !== 'enabled') {
+      setTouched((prev) => new Set(prev).add(currentField));
+      goToNextField();
       return;
     }
 
@@ -584,11 +684,11 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
     return (
       <SelectInput
         items={items}
-        initialIndex={items.findIndex(i => i.value === formData.transport)}
+        initialIndex={items.findIndex((i) => i.value === formData.transport)}
         onSelect={(item) => {
           const newTransport = item.value as TransportType;
           setFormData({ ...formData, transport: newTransport });
-          setTouched(prev => new Set(prev).add('transport'));
+          setTouched((prev) => new Set(prev).add('transport'));
           goToNextField(newTransport);
         }}
       />
@@ -608,28 +708,22 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
         initialIndex={formData.enabled ? 0 : 1}
         onSelect={(item) => {
           setFormData({ ...formData, enabled: item.value as boolean });
-          setTouched(prev => new Set(prev).add('enabled'));
+          setTouched((prev) => new Set(prev).add('enabled'));
         }}
       />
     );
   };
 
-  // Render text input
+  // Render text input. SingleLineInput ignores control chords outright (so
+  // Ctrl+S/Ctrl+A can never be typed into the field) and accepts pasted chunks.
   const renderTextInput = (field: FormField) => {
     const placeholder = fieldPlaceholder[field];
     return (
-      <TextInput
+      <SingleLineInput
         value={formData[field as keyof FormData] as string}
         onChange={(value) => {
-          // Ignore changes when Ctrl+A is being processed
-          if (isCtrlAActive.current) {
-            return;
-          }
           setFormData({ ...formData, [field]: value });
-        }}
-        onSubmit={() => {
-          setTouched(prev => new Set(prev).add(field));
-          goToNextField();
+          setSubmitError(null);
         }}
         {...(placeholder ? { placeholder } : {})}
       />
@@ -641,7 +735,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
     const error = fieldErrors.get(config.field);
     const hasError = touched.has(config.field) && error;
     const isAdvanced = advancedOnlyFields.includes(config.field);
-    const isVisible = (config.required || !isAdvanced) || (showAdvanced && isAdvanced);
+    const isVisible = config.required || !isAdvanced || (showAdvanced && isAdvanced);
 
     if (!isVisible) {
       return null;
@@ -659,7 +753,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
             {config.required && <Text color="red">*</Text>}
           </Text>
         </Box>
-        
+
         {/* Help text only shown in non-compact mode (it's in dedicated area in compact mode) */}
         {showHelp && (
           <Box marginLeft={2}>
@@ -670,16 +764,17 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
         <Box marginLeft={2} marginTop={isCompactMode ? 0 : 0}>
           {isCurrent ? (
             <>
-              {config.type === 'select' ? (
-                config.field === 'transport' ? renderTransportSelector() :
-                config.field === 'enabled' ? renderEnabledSelector() : null
-              ) : (
-                renderTextInput(config.field)
-              )}
+              {config.type === 'select'
+                ? config.field === 'transport'
+                  ? renderTransportSelector()
+                  : config.field === 'enabled'
+                    ? renderEnabledSelector()
+                    : null
+                : renderTextInput(config.field)}
             </>
           ) : (
             <Text color={hasError ? 'red' : 'green'}>
-              {formData[config.field as keyof FormData]?.toString() || <Text dimColor>(empty)</Text>}
+              {formatFieldValue(config.field, formData)}
             </Text>
           )}
         </Box>
@@ -701,32 +796,36 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   const fieldMarginBottom = isCompactMode ? (isUltraCompactMode ? 0 : 0) : 1;
   const helpPaddingX = isCompactMode ? 0 : 1;
 
-  // Calculate visible fields based on scroll
-  const visibleConfigs = fieldConfigs.slice(scrollOffset, scrollOffset + visibleFieldCount);
-  const hasMoreAbove = scrollOffset > 0;
-  const hasMoreBelow = scrollOffset + visibleFieldCount < fieldConfigs.length;
-
   return (
     <Box flexDirection="column" padding={formPadding}>
       {/* Header */}
-      <Box borderStyle="round" borderColor="cyan" padding={formPadding} marginBottom={formMarginBottom}>
+      <Box
+        borderStyle="round"
+        borderColor="cyan"
+        padding={formPadding}
+        marginBottom={formMarginBottom}
+      >
         <Text bold color="cyan">
+          {' '}
           {service ? 'Edit Service' : 'Add New Service'}
         </Text>
       </Box>
 
       {/* Form fields */}
-      <Box flexDirection="column" borderStyle="single" padding={fieldPadding} marginBottom={fieldMarginBottom}>
+      <Box
+        flexDirection="column"
+        borderStyle="single"
+        padding={fieldPadding}
+        marginBottom={fieldMarginBottom}
+      >
         {/* Scroll indicator */}
         {hasMoreAbove && (
           <Box justifyContent="center">
             <Text dimColor>▲ more above</Text>
           </Box>
         )}
-        
-        {visibleConfigs.map(config => 
-          renderField(config, config.field === currentField)
-        )}
+
+        {visibleConfigs.map((config) => renderField(config, config.field === currentField))}
 
         {/* Scroll indicator */}
         {hasMoreBelow && (
@@ -738,28 +837,46 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
         {/* Advanced options toggle */}
         {!showAdvanced && (
           <Box marginTop={1}>
-            <Text dimColor>
-              Press Ctrl+A to show connection pool settings
-            </Text>
+            <Text dimColor>Press Ctrl+A to show connection pool settings</Text>
           </Box>
         )}
       </Box>
 
       {/* Field help info - prominent display */}
       {currentFieldHelp && (
-        <Box borderStyle="round" borderColor="yellow" paddingX={1} paddingY={0} marginBottom={formMarginBottom}>
+        <Box
+          borderStyle="round"
+          borderColor="yellow"
+          paddingX={1}
+          paddingY={0}
+          marginBottom={formMarginBottom}
+        >
           <Text>
             <Text color="yellow">💡 </Text>
-            <Text bold color="yellow">{currentFieldConfig?.label}: </Text>
+            <Text bold color="yellow">
+              {currentFieldConfig?.label}:{' '}
+            </Text>
             <Text color="white">{currentFieldHelp}</Text>
           </Text>
         </Box>
       )}
 
+      {/* Submission error — visible feedback when Ctrl+S is refused */}
+      {submitError !== null && (
+        <Box borderStyle="single" borderColor="red" paddingX={1}>
+          <Text color="red">✗ {submitError}</Text>
+        </Box>
+      )}
+
       {/* Navigation help */}
-      <Box borderStyle="single" borderColor="gray" paddingX={helpPaddingX} marginTop={formMarginBottom}>
+      <Box
+        borderStyle="single"
+        borderColor="gray"
+        paddingX={helpPaddingX}
+        marginTop={formMarginBottom}
+      >
         <Text dimColor>
-          ↑/↓: Scroll | Tab/Enter: Next | Ctrl+A: Advanced | Ctrl+S: Save | Esc: Cancel
+          ↑/↓/Tab: Field | Enter: Next | Ctrl+A: Advanced | Ctrl+S: Save | Esc: Cancel
         </Text>
       </Box>
     </Box>

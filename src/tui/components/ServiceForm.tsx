@@ -1,6 +1,6 @@
 /**
  * Service Form Component
- * 
+ *
  * Interactive form for adding and editing services.
  * Provides step-by-step configuration with validation and helpful error messages.
  * Shows/hides fields based on transport type selection.
@@ -96,15 +96,36 @@ function getFieldOrder(transport: TransportType, quickMode: boolean): FormField[
 
   if (transport === 'stdio') {
     return [
-      'name', 'transport', 'command', 'args', 'env', 'tags',
-      'enabled', 'maxConnections', 'idleTimeout', 'connectionTimeout',
-      'triggerHintsStart', 'triggerHintsEnd', 'triggerHintsPhrases', 'confirm',
+      'name',
+      'transport',
+      'command',
+      'args',
+      'env',
+      'tags',
+      'enabled',
+      'maxConnections',
+      'idleTimeout',
+      'connectionTimeout',
+      'triggerHintsStart',
+      'triggerHintsEnd',
+      'triggerHintsPhrases',
+      'confirm',
     ];
   } else {
     return [
-      'name', 'transport', 'url', 'headers', 'tags',
-      'enabled', 'maxConnections', 'idleTimeout', 'connectionTimeout',
-      'triggerHintsStart', 'triggerHintsEnd', 'triggerHintsPhrases', 'confirm',
+      'name',
+      'transport',
+      'url',
+      'headers',
+      'tags',
+      'enabled',
+      'maxConnections',
+      'idleTimeout',
+      'connectionTimeout',
+      'triggerHintsStart',
+      'triggerHintsEnd',
+      'triggerHintsPhrases',
+      'confirm',
     ];
   }
 }
@@ -152,7 +173,10 @@ function validateFormData(data: FormData): ValidationError[] {
   if (!data.name.trim()) {
     errors.push({ field: 'name', message: 'Service name is required' });
   } else if (!/^[a-zA-Z0-9_-]+$/.test(data.name)) {
-    errors.push({ field: 'name', message: 'Service name can only contain letters, numbers, hyphens, and underscores' });
+    errors.push({
+      field: 'name',
+      message: 'Service name can only contain letters, numbers, hyphens, and underscores',
+    });
   }
 
   // Validate transport-specific fields
@@ -181,7 +205,10 @@ function validateFormData(data: FormData): ValidationError[] {
 
   const connTimeout = parseInt(data.connectionTimeout, 10);
   if (isNaN(connTimeout) || connTimeout < 1000) {
-    errors.push({ field: 'connectionTimeout', message: 'Connection timeout must be at least 1000ms' });
+    errors.push({
+      field: 'connectionTimeout',
+      message: 'Connection timeout must be at least 1000ms',
+    });
   }
 
   return errors;
@@ -195,7 +222,10 @@ export function formDataToService(data: FormData): ServiceDefinition {
     name: data.name.trim(),
     transport: data.transport,
     enabled: data.enabled,
-    tags: data.tags.split(',').map(t => t.trim()).filter(t => t.length > 0),
+    tags: data.tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0),
     connectionPool: {
       maxConnections: parseInt(data.maxConnections, 10),
       idleTimeout: parseInt(data.idleTimeout, 10),
@@ -207,12 +237,18 @@ export function formDataToService(data: FormData): ServiceDefinition {
     service.command = data.command.trim();
 
     if (data.args.trim()) {
-      service.args = data.args.split(',').map(a => a.trim()).filter(a => a.length > 0);
+      service.args = data.args
+        .split(',')
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0);
     }
 
     if (data.env.trim()) {
       service.env = {};
-      const envPairs = data.env.split(',').map(e => e.trim()).filter(e => e.length > 0);
+      const envPairs = data.env
+        .split(',')
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0);
       for (const pair of envPairs) {
         const [key, ...valueParts] = pair.split('=');
         if (key && valueParts.length > 0) {
@@ -225,7 +261,10 @@ export function formDataToService(data: FormData): ServiceDefinition {
 
     if (data.headers.trim()) {
       service.headers = {};
-      const headerPairs = data.headers.split(',').map(h => h.trim()).filter(h => h.length > 0);
+      const headerPairs = data.headers
+        .split(',')
+        .map((h) => h.trim())
+        .filter((h) => h.length > 0);
       for (const pair of headerPairs) {
         const [key, ...valueParts] = pair.split(':');
         if (key && valueParts.length > 0) {
@@ -237,8 +276,8 @@ export function formDataToService(data: FormData): ServiceDefinition {
 
   const phrases = data.triggerHintsPhrases
     .split(',')
-    .map(p => p.trim())
-    .filter(p => p.length > 0);
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
   const hints: NonNullable<ServiceDefinition['triggerHints']> = {};
   if (data.triggerHintsStart.trim()) hints.onSessionStart = data.triggerHintsStart.trim();
   if (data.triggerHintsEnd.trim()) hints.onSessionEnd = data.triggerHintsEnd.trim();
@@ -253,14 +292,10 @@ export function formDataToService(data: FormData): ServiceDefinition {
 /**
  * Service Form Component
  */
-export const ServiceForm: React.FC<ServiceFormProps> = ({
-  service,
-  onSubmit,
-  onCancel,
-}) => {
+export const ServiceForm: React.FC<ServiceFormProps> = ({ service, onSubmit, onCancel }) => {
   const { stdout } = useStdout();
   const terminalHeight = stdout?.rows || 24;
-  
+
   // Initialize form data from existing service or defaults
   const [formData, setFormData] = useState<FormData>(() => {
     if (service) {
@@ -270,8 +305,16 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
         command: service.command || '',
         url: service.url || '',
         args: service.args?.join(', ') || '',
-        env: service.env ? Object.entries(service.env).map(([k, v]) => `${k}=${v}`).join(', ') : '',
-        headers: service.headers ? Object.entries(service.headers).map(([k, v]) => `${k}: ${v}`).join(', ') : '',
+        env: service.env
+          ? Object.entries(service.env)
+              .map(([k, v]) => `${k}=${v}`)
+              .join(', ')
+          : '',
+        headers: service.headers
+          ? Object.entries(service.headers)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join(', ')
+          : '',
         tags: service.tags.join(', '),
         enabled: service.enabled,
         maxConnections: service.connectionPool.maxConnections.toString(),
@@ -381,7 +424,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
     return (
       <SelectInput
         items={items}
-        initialIndex={items.findIndex(i => i.value === formData.transport)}
+        initialIndex={items.findIndex((i) => i.value === formData.transport)}
         onSelect={(item) => {
           const newTransport = item.value as TransportType;
           setFormData({ ...formData, transport: newTransport });
@@ -484,7 +527,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
   };
 
   // Get current field error
-  const currentError = errors.find(e => e.field === currentField);
+  const currentError = errors.find((e) => e.field === currentField);
 
   // Render preview
   if (showPreview) {
@@ -492,40 +535,68 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
     return (
       <Box flexDirection="column" padding={1}>
         <Box borderStyle="round" borderColor="cyan" padding={1} marginBottom={1}>
-          <Text bold color="cyan">Configuration Preview</Text>
+          <Text bold color="cyan">
+            Configuration Preview
+          </Text>
         </Box>
 
         <Box flexDirection="column" borderStyle="single" padding={1} marginBottom={1}>
-          <Text><Text bold>Name:</Text> {previewService.name}</Text>
-          <Text><Text bold>Transport:</Text> {previewService.transport}</Text>
-          <Text><Text bold>Enabled:</Text> {previewService.enabled ? 'Yes' : 'No'}</Text>
-          
+          <Text>
+            <Text bold>Name:</Text> {previewService.name}
+          </Text>
+          <Text>
+            <Text bold>Transport:</Text> {previewService.transport}
+          </Text>
+          <Text>
+            <Text bold>Enabled:</Text> {previewService.enabled ? 'Yes' : 'No'}
+          </Text>
+
           {previewService.command && (
-            <Text><Text bold>Command:</Text> {previewService.command}</Text>
+            <Text>
+              <Text bold>Command:</Text> {previewService.command}
+            </Text>
           )}
-          
+
           {previewService.args && previewService.args.length > 0 && (
-            <Text><Text bold>Args:</Text> {previewService.args.join(', ')}</Text>
+            <Text>
+              <Text bold>Args:</Text> {previewService.args.join(', ')}
+            </Text>
           )}
-          
+
           {previewService.url && (
-            <Text><Text bold>URL:</Text> {previewService.url}</Text>
+            <Text>
+              <Text bold>URL:</Text> {previewService.url}
+            </Text>
           )}
 
           {previewService.headers && Object.keys(previewService.headers).length > 0 && (
-            <Text><Text bold>Headers:</Text> {Object.entries(previewService.headers).map(([k, v]) => `${k}: ${v}`).join(', ')}</Text>
+            <Text>
+              <Text bold>Headers:</Text>{' '}
+              {Object.entries(previewService.headers)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join(', ')}
+            </Text>
           )}
 
           {previewService.env && Object.keys(previewService.env).length > 0 && (
-            <Text><Text bold>Environment:</Text> {Object.entries(previewService.env).map(([k, v]) => `${k}=${v}`).join(', ')}</Text>
+            <Text>
+              <Text bold>Environment:</Text>{' '}
+              {Object.entries(previewService.env)
+                .map(([k, v]) => `${k}=${v}`)
+                .join(', ')}
+            </Text>
           )}
-          
-          <Text><Text bold>Tags:</Text> {previewService.tags.join(', ') || 'none'}</Text>
-          
-          <Text><Text bold>Connection Pool:</Text></Text>
-          <Text>  Max Connections: {previewService.connectionPool.maxConnections}</Text>
-          <Text>  Idle Timeout: {previewService.connectionPool.idleTimeout}ms</Text>
-          <Text>  Connection Timeout: {previewService.connectionPool.connectionTimeout}ms</Text>
+
+          <Text>
+            <Text bold>Tags:</Text> {previewService.tags.join(', ') || 'none'}
+          </Text>
+
+          <Text>
+            <Text bold>Connection Pool:</Text>
+          </Text>
+          <Text> Max Connections: {previewService.connectionPool.maxConnections}</Text>
+          <Text> Idle Timeout: {previewService.connectionPool.idleTimeout}ms</Text>
+          <Text> Connection Timeout: {previewService.connectionPool.connectionTimeout}ms</Text>
         </Box>
 
         <Box borderStyle="single" borderColor="gray" paddingX={1}>
@@ -548,7 +619,12 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
 
   return (
     <Box flexDirection="column" padding={formPadding}>
-      <Box borderStyle="round" borderColor="cyan" padding={formPadding} marginBottom={formMarginBottom}>
+      <Box
+        borderStyle="round"
+        borderColor="cyan"
+        padding={formPadding}
+        marginBottom={formMarginBottom}
+      >
         <Text bold color="cyan">
           {service ? 'Edit Service' : 'Add New Service'}
         </Text>
@@ -564,25 +640,43 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
       )}
 
       {/* Current field */}
-      <Box flexDirection="column" borderStyle="single" padding={fieldPadding} marginBottom={fieldMarginBottom}>
-        <Text bold color="yellow">{getFieldLabel(currentField)}</Text>
+      <Box
+        flexDirection="column"
+        borderStyle="single"
+        padding={fieldPadding}
+        marginBottom={fieldMarginBottom}
+      >
+        <Text bold color="yellow">
+          {getFieldLabel(currentField)}
+        </Text>
         <Text dimColor>{getFieldHelp(currentField)}</Text>
-        <Box marginTop={1}>
-          {renderField()}
-        </Box>
+        <Box marginTop={1}>{renderField()}</Box>
       </Box>
 
       {/* Validation errors */}
       {currentError && (
-        <Box borderStyle="single" borderColor="red" padding={fieldPadding} marginBottom={fieldMarginBottom}>
+        <Box
+          borderStyle="single"
+          borderColor="red"
+          padding={fieldPadding}
+          marginBottom={fieldMarginBottom}
+        >
           <Text color="red">✗ {currentError.message}</Text>
         </Box>
       )}
 
       {/* All validation errors - limited in compact mode */}
-      {(showAllErrors && errors.length > 0) && (
-        <Box flexDirection="column" borderStyle="single" borderColor="red" padding={fieldPadding} marginBottom={fieldMarginBottom}>
-          <Text bold color="red">Validation Errors:</Text>
+      {showAllErrors && errors.length > 0 && (
+        <Box
+          flexDirection="column"
+          borderStyle="single"
+          borderColor="red"
+          padding={fieldPadding}
+          marginBottom={fieldMarginBottom}
+        >
+          <Text bold color="red">
+            Validation Errors:
+          </Text>
           {errors.map((error, index) => (
             <Text key={index} color="red">
               • {getFieldLabel(error.field)}: {error.message}
@@ -594,7 +688,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
       {/* Navigation help */}
       <Box borderStyle="single" borderColor="gray" paddingX={helpPaddingX}>
         <Text dimColor>
-          {currentField === 'confirm' 
+          {currentField === 'confirm'
             ? '↑/↓: Select | Enter: Confirm | p: Preview | Esc: Cancel'
             : 'Enter: Next field | Esc: Cancel'}
         </Text>
