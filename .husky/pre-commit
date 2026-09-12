@@ -6,7 +6,34 @@ export NVM_DIR="$HOME/.nvm"
 
 echo "Running pre-commit checks..."
 
+# `lint:fix` rewrites files in the WORKING TREE, but a commit records the INDEX.
+# A fix that lands after `git add` is therefore left out of the commit while
+# `format:check` (which inspects the working tree) still passes — CI then fails
+# on the very file you thought you fixed. Stop and ask for a re-stage instead.
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -n "$staged" ]; then
+  before=$(git diff --name-only -- $staged | sort)
+else
+  before=""
+fi
+
 npm run lint:fix || { echo "❌ Lint failed. Fix the issues and try again."; exit 1; }
+
+if [ -n "$staged" ]; then
+  after=$(git diff --name-only -- $staged | sort)
+  if [ "$before" != "$after" ]; then
+    echo "❌ lint:fix 修改了已暂存文件，但改动只落在工作区（提交会漏掉它）。"
+    echo "   受影响文件："
+    for f in $after; do
+      case " $before " in
+        *" $f "*) ;;
+        *) echo "     $f" ;;
+      esac
+    done
+    echo "   请重新 git add 后再提交。"
+    exit 1
+  fi
+fi
 
 npm run format:check || { echo "❌ Format check failed. Run 'npm run format' and try again."; exit 1; }
 
