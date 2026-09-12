@@ -11,7 +11,14 @@ import { Box, useStdout, render } from 'ink';
 import { ServiceTools } from '../../src/tui/components/ServiceTools.js';
 import { Header } from '../../src/tui/components/Header.js';
 import type { ServiceDefinition } from '../../src/types/service.js';
-import { Terminal, createStdin, sleep, waitFor, typeKeys } from './helpers/ansi-terminal.js';
+import {
+  Terminal,
+  createStdin,
+  sleep,
+  waitFor,
+  typeKeys,
+  pressKey,
+} from './helpers/ansi-terminal.js';
 
 // Hoisted so the mock factory can reference it and tests can assert that the
 // mock (not a real connection attempt) drove the render.
@@ -283,6 +290,49 @@ describe('ServiceTools scroll indicator (real components, optimized chrome)', ()
     const selectedRow = text.split('\n').find((l) => l.includes('▶') && l.includes('tool_040'));
     expect(selectedRow).toBeDefined();
     expect(selectedRow!.includes('✗')).toBe(true);
+
+    instance.unmount();
+  });
+
+  it('scrolls an expanded description with ↑/↓, falls through to the next tool at the end', async () => {
+    const longDesc = Array.from(
+      { length: 80 },
+      (_, i) => `desc-line-${String(i).padStart(2, '0')}`
+    ).join('\n');
+    fetchServiceToolsMock.mockImplementation(() =>
+      Promise.resolve([
+        { name: 'alpha', description: longDesc, inputSchema: { type: 'object', properties: {} } },
+        {
+          name: 'bravo',
+          description: 'bravo short description',
+          inputSchema: { type: 'object', properties: {} },
+        },
+      ])
+    );
+
+    const { instance, term, stdin } = renderApp(24, 80);
+    await waitFor(() => term.text().includes('desc-line-00'));
+
+    // 展开：立刻回到描述开头（展开是为了从头读）
+    await pressKey(stdin, '\x05'); // Ctrl+E
+    await waitFor(() => !term.text().includes('Ctrl+E expands'));
+    expect(term.text()).toContain('desc-line-00');
+
+    // 展开期间 ↑/↓ 逐行滚动，而不再切换工具（关键判别：选中项必须没变）
+    await pressKey(stdin, '\x1b[B'); // ↓
+    await waitFor(() => !term.text().includes('desc-line-00'));
+    expect(term.text()).not.toContain('bravo short description');
+
+    // 折叠后再展开，仍回到顶部
+    await pressKey(stdin, '\x05'); // Ctrl+E → 收起
+    await pressKey(stdin, '\x05'); // Ctrl+E → 再展开
+    await waitFor(() => term.text().includes('desc-line-00'));
+
+    // 一直按到低：滚到尽头后继续 ↓ 才把选中项交给下一个工具
+    for (let i = 0; i < 120 && !term.text().includes('bravo short description'); i += 1) {
+      await pressKey(stdin, '\x1b[B');
+    }
+    await waitFor(() => term.text().includes('bravo short description'));
 
     instance.unmount();
   });

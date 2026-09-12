@@ -95,15 +95,15 @@ const DESCRIPTION_INDENT = '  ';
  * align with content — a lone dim glyph at the panel's left edge reads as a
  * rendering artifact rather than a control.
  */
-const scrollHint = (offset: number, max: number): string => {
-  const arrows: string[] = [];
+const scrollHint = (offset: number, max: number, pair: 'vertical' | 'horizontal'): string => {
+  const marks: string[] = [];
   if (offset > 0) {
-    arrows.push('↑');
+    marks.push(pair === 'vertical' ? '↑' : '←');
   }
   if (offset < max) {
-    arrows.push('↓');
+    marks.push(pair === 'vertical' ? '↓' : '→');
   }
-  return arrows.length > 0 ? `   ${arrows.join('|')} more` : ' ';
+  return marks.length > 0 ? `   ${marks.join('|')} more` : ' ';
 };
 
 /** Map a segment tone to ink Text props (colors are a pure enhancement; the
@@ -404,6 +404,14 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
     setFieldIndex(next);
   };
 
+  /** Scroll the panel by a single line, clamped to the scrollable range. */
+  const scrollPanel = (direction: 1 | -1): void => {
+    setPanelScroll((prev) => {
+      const clamped = Math.min(prev, maxPanelScroll);
+      return Math.max(0, Math.min(maxPanelScroll, clamped + direction));
+    });
+  };
+
   /** Page the panel by one viewport, clamped to the scrollable range. */
   const pagePanel = (direction: 1 | -1): void => {
     setPanelScroll((prev) => {
@@ -649,7 +657,13 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
       return;
     }
     if (input === 'e' && key.ctrl) {
-      setDescExpanded((prev) => !prev);
+      const expanding = !descExpanded;
+      setDescExpanded(expanding);
+      if (expanding) {
+        // Expanded in order to READ it: put the beginning of the description on
+        // screen, and let ↑/↓ scroll from there.
+        setPanelScroll(0);
+      }
       return;
     }
     if (input === 'p' && key.ctrl && runStatus === 'done' && outcome !== null) {
@@ -820,9 +834,17 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
       return;
     }
     if (key.upArrow) {
-      setSelectedIndex((prev) => Math.max(0, prev - 1));
+      if (arrowKeysScrollPanel && Math.min(panelScroll, maxPanelScroll) > 0) {
+        scrollPanel(-1);
+      } else {
+        setSelectedIndex((prev) => Math.max(0, prev - 1));
+      }
     } else if (key.downArrow) {
-      setSelectedIndex((prev) => Math.max(0, Math.min(filteredTools.length - 1, prev + 1)));
+      if (arrowKeysScrollPanel && Math.min(panelScroll, maxPanelScroll) < maxPanelScroll) {
+        scrollPanel(1);
+      } else {
+        setSelectedIndex((prev) => Math.max(0, Math.min(filteredTools.length - 1, prev + 1)));
+      }
     } else if (key.leftArrow) {
       pagePanel(-1);
     } else if (key.rightArrow) {
@@ -1046,6 +1068,19 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
 
   const FLOW_VISIBLE = Math.max(1, PANEL_LINES - 1); // reserve the indicator row
   const maxPanelScroll = Math.max(0, flowRows.length - FLOW_VISIBLE);
+
+  /**
+   * With a description expanded (and actually overflowing) the arrow keys scroll
+   * the panel instead of moving the tool selection: the user pressed Ctrl+E to
+   * read, and the panel's own `↑|↓ more` hint promises exactly that. Reaching
+   * either end lets the next press fall through to tool navigation, and picking
+   * another tool collapses the description (per-tool reset), so this never
+   * becomes a sticky mode.
+   */
+  const arrowKeysScrollPanel = focus === 'list' && descExpanded && maxPanelScroll > 0;
+  /** Which arrow pair the panel's scroll hint should name for the current focus. */
+  const scrollHintPair: 'vertical' | 'horizontal' =
+    focus === 'list' && !arrowKeysScrollPanel ? 'horizontal' : 'vertical';
   // Clamp at render time — PANEL_LINES shrinks while a status message is
   // visible, so an effect-based clamp would leave a blank panel for ~2s.
   const clampedPanelScroll = Math.min(panelScroll, maxPanelScroll);
@@ -1388,7 +1423,9 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
                     .map((row, i) =>
                       renderDetailRow(row, `row-${clampedPanelScroll + i}-${row.type}`)
                     )}
-                  <Text dimColor>{scrollHint(clampedPanelScroll, maxPanelScroll)}</Text>
+                  <Text dimColor>
+                    {scrollHint(clampedPanelScroll, maxPanelScroll, scrollHintPair)}
+                  </Text>
                 </>
               )}
             </Box>
@@ -1414,7 +1451,9 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
                   } • f Full width`
                 : focus === 'json'
                   ? 'Edit raw JSON arguments'
-                  : '↑/↓ Navigate • Space Toggle • a/A All on/off • / Search'}
+                  : arrowKeysScrollPanel
+                    ? '↑/↓ Scroll description • Space Toggle • / Search'
+                    : '↑/↓ Navigate • Space Toggle • a/A All on/off • / Search'}
         </Text>
         <Text dimColor wrap="truncate">
           {'  '}
@@ -1427,9 +1466,11 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
                   ? selectAnchor !== null
                     ? 'Ctrl+Y Copy selection • Esc Cancel'
                     : 'Ctrl+Y Copy result • Ctrl+P Raw • Ctrl+O Save'
-                  : `←/→ Page • Tab Region • Ctrl+R Run • f Full width • Ctrl+E ${
-                      descExpanded ? 'Collapse' : 'Expand'
-                    } desc`)}
+                  : arrowKeysScrollPanel
+                    ? '↑/↓ Scroll • ←/→ Page • Ctrl+E Collapse • Esc Done'
+                    : `←/→ Page • Tab Region • Ctrl+R Run • f Full width • Ctrl+E ${
+                        descExpanded ? 'Collapse' : 'Expand'
+                      } desc`)}
         </Text>
       </Box>
     </Box>

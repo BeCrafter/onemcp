@@ -38,7 +38,15 @@ const TOOLS = [
   },
   {
     name: 'big_output',
-    description: 'Returns a large text payload for paging and copy checks.',
+    // Deliberately long: the TUI expands it with Ctrl+E and then scrolls it with
+    // the arrow keys (scenario T14), which needs more lines than the panel shows.
+    description: [
+      'Returns a large text payload for paging and copy checks.',
+      ...Array.from(
+        { length: 24 },
+        (_, i) => `desc-line-${String(i).padStart(2, '0')} — filler line for the description-scroll scenario`
+      ),
+    ].join('\n'),
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {

@@ -27,6 +27,7 @@
  *   T11 CJK：中文服务名占一行 + 中文参数值运行后原样回显
  *   T12 配置路径与自身写盘提示：footer 显示真实 configDir；保存后提示是成功而非"外部变更"
  *   T13 存档：Ctrl+O 生成临时文件并给出路径
+ *   T14 长描述滚动：Ctrl+E 展开后 ↑/↓ 逐行滚动（不再切换工具），滚到尽头才切换到下一个工具
  *
  * 用法：
  *   npm run verify:tui [-- --keep] [--verbose]
@@ -586,6 +587,52 @@ async function t13SaveOutput() {
   );
 }
 
+/**
+ * T14 — 长描述：Ctrl+E 展开后 ↑/↓ 逐行滚动描述，滚到尽头才切换到下一个工具。
+ *
+ * 这条对应一个真实交互缺陷：展开长描述后按 ↓ 原本会直接跳到下一个工具，
+ * 面板 gutter 里的 `↑|↓ more` 提示因此不可兑现。
+ */
+async function t14DescriptionScroll() {
+  process.stdout.write('\n[T14] 长描述展开滚动（Ctrl+E → ↑/↓）\n');
+  const configDir = makeConfigDir({ mock: stdioService('mock') });
+
+  await startSession({ configDir, cols: 100, rows: 34 });
+  await sendText('v');
+  await waitFor(() => capture().includes('PARAMETERS'));
+  await sendKey('Down');
+  await sendKey('Down'); // → big_output（描述有意很长）
+  await waitFor(() => /▶\s+✓\s+big_output/.test(capture()));
+
+  await sendKey('C-e'); // 展开
+  check('展开后回到描述开头', await waitFor(() => capture().includes('desc-line-00'), 4000));
+  check('footer 提示改为 ↑/↓ Scroll', capture().includes('↑/↓ Scroll'));
+
+  // 两个注意点：①描述每行会按面板宽度折成 2 个终端行，判据用"描述首个终端行移出视口"
+  // 而不是某个 desc-line-NN 消失；②同一读取块内的连续按键可能被合并成一次，
+  // 所以这里多按几次而不假设"按 N 次 = 滚 N 行"。
+  for (let i = 0; i < 8; i += 1) {
+    await sendKey('Down');
+  }
+  const scrolled = await waitFor(
+    () => !capture().includes('Returns a large text payload for paging and copy'),
+    4000
+  );
+  const stillThere = capture().includes('Returns a large text payload for paging and copy');
+  const selected = /▶\s+✓\s+(\S+)/.exec(capture())?.[1] ?? '?';
+  check(
+    '↓ 逐行滚动描述（选中项不变）',
+    scrolled && /▶\s+✓\s+big_output/.test(capture()),
+    `首句仍在=${stillThere} 当前选中=${selected}`
+  );
+
+  // 一直按到低：滚到尽头后继续 ↓ 才把选中项交给下一个工具（fail）
+  for (let i = 0; i < 60 && !/▶\s+✓\s+fail/.test(capture()); i += 1) {
+    await sendKey('Down');
+  }
+  check('滚到尽头后继续 ↓ 才切换工具', /▶\s+✓\s+fail/.test(capture()));
+}
+
 // --------------------------------------------------------------------- main
 
 function assertFreshBuild() {
@@ -634,6 +681,7 @@ async function main() {
     t11Cjk,
     t12ConfigPathAndSelfWriteNotice,
     t13SaveOutput,
+    t14DescriptionScroll,
   ];
 
   for (const scenario of scenarios) {

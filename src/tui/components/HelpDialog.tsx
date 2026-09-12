@@ -140,7 +140,7 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
             <Text color="cyan">Tab</Text> - Switch region (list → params → result)
           </Text>
           <Text>
-            <Text color="cyan">↑/↓</Text> - In a region: move the param / result cursor
+            <Text color="cyan">↑/↓</Text> - Navigate tools; with a description expanded, scroll it
           </Text>
           <Text>
             <Text color="cyan">←/→</Text> - Page the panel (also PgUp/PgDn, Ctrl+U/D)
@@ -149,7 +149,8 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
             <Text color="cyan">Ctrl+R</Text> - Run the selected tool
           </Text>
           <Text>
-            <Text color="cyan">Ctrl+E</Text> - Expand / collapse the full tool description
+            <Text color="cyan">Ctrl+E</Text> - Expand / collapse the tool description (then ↑/↓
+            scroll it)
           </Text>
           <Text>
             <Text color="cyan">Ctrl+J</Text> - Toggle form / raw JSON arguments
