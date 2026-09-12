@@ -34,6 +34,34 @@ jobs:
           path: dist/
           retention-days: 1
 
+  # ── TUI end-to-end (needs a real terminal: tmux drives a private pty) ──
+  tui-e2e:
+    name: TUI E2E
+    needs: build
+    # Runs headless: scripts/tui-e2e.mjs strips CI / CONTINUOUS_INTEGRATION / CI_*
+    # from the tmux session env, because Ink (is-in-ci) paints only the FINAL
+    # frame in CI mode — without that, every scenario would watch a blank pane.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: ./.github/actions/setup
+
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+
+      - name: Build
+        run: npm run build
+
+      - name: Run TUI end-to-end scenarios
+        run: npm run verify:tui
+        env:
+          # CI runners are slower to re-render between keystrokes than a local
+          # machine; scripts/tui-e2e.mjs reads this settle delay.
+          TUI_E2E_KEY_DELAY: '250'
+
   # ── Cross-platform unit & property tests ─────────────────────────────
   test:
     name: Test (${{ matrix.os }}, Node ${{ matrix.node }})

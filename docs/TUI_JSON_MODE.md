@@ -1,5 +1,12 @@
 # TUI JSON Mode
 
+> **状态（2026-09-12）**：本文档描述的「独立 JSON 配置视图」（`ServiceJsonEditor`，批量导入服务）
+> **已不再挂载** —— TUI 的视图只有 list / add / edit / tools / help，没有任何入口渲染该组件，
+> 因此该组件与其只被自身引用的测试已删除。当前可用的 JSON 编辑是**工具详情页的 Ctrl+J**
+> （表单参数 ↔ 原始 JSON 互转，见 `ServiceTools` + `JsonTextArea`）。
+> 下文保留为历史设计记录。
+
+
 ## Overview
 
 The TUI JSON mode provides an alternative way to configure services using JSON instead of the step-by-step form interface. This mode is designed for advanced users who prefer to work with JSON directly and supports bulk import of multiple services.
