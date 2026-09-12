@@ -114,7 +114,8 @@ TUI 交互场景统一维护在 **`scripts/tui-e2e.mjs`**（`npm run verify:tui`
 - **T11** CJK：中文标签在列表里每服务一行；中文参数值运行后原样回显
 - **T12** 配置路径与自身写盘提示：footer 显示真实 configDir；保存后提示是成功而非「外部变更」
 - **T13** 结果存档：Ctrl+O 生成临时文件、给出路径并复制完整路径
-- **T14** 长描述滚动：Ctrl+E 展开后 ↑/↓ 逐行滚动描述（不再切换工具），滚到尽头后继续 ↓ 才切换到下一个工具
+- **T14** 长描述滚动：Ctrl+E 展开后焦点进入描述区，↑/↓ 逐行滚动（选中项不变）；Esc 回到工具列表后 ↑/↓ 立刻切换工具（无需先折叠描述）
+- **T15** 区域焦点与提示：标题字形恒定（无焦点箭头），焦点靠颜色 —— `-e` 抓屏断言聚焦区标题文字与竖线同色、且与未聚焦区不同；底部提示只讲当前区域；运行后结果区加入循环；瞬时通知不顶掉提示行
 
 ---
 
@@ -163,6 +164,8 @@ TUI 交互场景统一维护在 **`scripts/tui-e2e.mjs`**（`npm run verify:tui`
 **Discovery Cache Reuse**: `findTool` serves tool lookups from the per-service discovery cache (60s TTL, same cache as `discoverTools`); misses fall back to a live backend query. Cache invalidation hooks: service register/unregister, health events, `setToolState`, config hot-reload.
 
 **Configuration Hot-Reload**: Config file changes are detected and services are reloaded without restarting the entire system.
+
+**TUI Region Focus**: Focus is carried by colour, and the colour must change the WHOLE heading — bar, label and rule together go cyan+bold, idle headings keep the grey bar and plain label. Changing only the bar cell is invisible: the "focused" colour was the terminal default, i.e. exactly the colour of the always-default label beside it. Keep heading rows glyph-identical across focus states (no marker arrows), and keep the panel title (`Tools for: …`) as the tool list's cue (cyan focused / grey idle). Neither test harness sees colour, so focus is asserted through `capture-pane -e` SGR comparison in T15 plus the per-region footer label. Each region also owns its bottom hints (`Quick Actions — <Region>`); a hint that names another region's key, or a key that cannot work in the current state, is a bug. The footer budget is 3 lines, so a transient notice (copy/save feedback) takes the heading slot instead of adding a line.
 
 ## Configuration Structure
 

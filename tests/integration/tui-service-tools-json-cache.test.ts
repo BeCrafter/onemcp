@@ -64,6 +64,15 @@ vi.mock('../../src/tui/clipboard.js', () => ({
   copyToClipboard: copyToClipboardMock,
 }));
 
+/**
+ * Tab from the tool list into the parameters region. Tab cycles
+ * list → description → params, so the fields are two Tabs away.
+ */
+const tabToParams = async (stdin: Parameters<typeof pressKey>[0]): Promise<void> => {
+  await pressKey(stdin, '\t');
+  await pressKey(stdin, '\t');
+};
+
 const MiniApp: React.FC = () => {
   const { stdout } = useStdout();
   const service: ServiceDefinition = {
@@ -99,7 +108,7 @@ describe('ServiceTools JSON editor and per-tool state', () => {
     const { instance, term, stdin } = renderTools();
     await waitFor(() => term.text().includes('PARAMETERS (2)'));
 
-    await pressKey(stdin, '\t'); // list → params
+    await tabToParams(stdin); // list → description → params
     await typeKeys(stdin, 'hello');
     await waitFor(() => term.text().includes('hello'));
 
@@ -119,7 +128,7 @@ describe('ServiceTools JSON editor and per-tool state', () => {
     const { instance, term, stdin } = renderTools();
     await waitFor(() => term.text().includes('PARAMETERS (2)'));
 
-    await pressKey(stdin, '\t');
+    await tabToParams(stdin);
     await typeKeys(stdin, 'x');
     await pressKey(stdin, '\n'); // Ctrl+J → raw JSON
     await waitFor(() => term.text().includes('Arguments (raw JSON):'));
@@ -140,7 +149,7 @@ describe('ServiceTools JSON editor and per-tool state', () => {
     const { instance, term, stdin } = renderTools();
     await waitFor(() => term.text().includes('PARAMETERS (2)'));
 
-    await pressKey(stdin, '\t');
+    await tabToParams(stdin);
     await typeKeys(stdin, 'x');
     await pressKey(stdin, '\x12'); // Ctrl+R
     await waitFor(() => term.text().includes('Result: ✓'));
@@ -163,7 +172,7 @@ describe('ServiceTools JSON editor and per-tool state', () => {
     const { instance, term, stdin } = renderTools();
     await waitFor(() => term.text().includes('alpha'));
 
-    await pressKey(stdin, '\t'); // list → params
+    await tabToParams(stdin); // list → description → params
     await typeKeys(stdin, 'kept-value');
     await waitFor(() => term.text().includes('kept-value'));
 
@@ -173,7 +182,7 @@ describe('ServiceTools JSON editor and per-tool state', () => {
     await pressKey(stdin, '\x1b[A'); // ↑ → alpha
     await waitFor(() => term.text().includes('mock tool alpha'));
 
-    await pressKey(stdin, '\t'); // params again
+    await tabToParams(stdin); // → description → params again
     await pressKey(stdin, '\n'); // Ctrl+J: the JSON projection shows what was kept
     await waitFor(() => term.text().includes('Arguments (raw JSON):'));
     expect(term.text()).toContain('"q": "kept-value"');

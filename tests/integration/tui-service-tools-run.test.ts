@@ -131,6 +131,14 @@ function renderApp(rows: number, cols: number, onBack?: () => void) {
   return { instance, term, stdin, stdout };
 }
 
+/**
+ * Tab from the tool list into the parameters region. The cycle is
+ * list → description → params, so the fields are two Tabs away.
+ */
+const tabToParams = async (stdin: Parameters<typeof pressKey>[0]): Promise<void> => {
+  await pressKey(stdin, '\t');
+  await pressKey(stdin, '\t');
+};
 describe('ServiceTools flattened detail panel', () => {
   beforeEach(() => {
     fetchServiceToolsMock.mockReset();
@@ -187,6 +195,7 @@ describe('ServiceTools flattened detail panel', () => {
     // The toggle is temporary: the next tool starts collapsed again.
     await pressKey(stdin, '\x05'); // expand once more
     await waitFor(() => !term.text().includes('more line(s)'));
+    await pressKey(stdin, '\x1b'); // Esc → hand the arrows back to the list
     await pressKey(stdin, '\x1b[B'); // ↓ → beta
     await waitFor(() => term.text().includes('▶ ✓ beta'));
     await waitFor(() => term.text().includes('more line(s)'));
@@ -200,7 +209,7 @@ describe('ServiceTools flattened detail panel', () => {
     await waitFor(() => term.text().includes('Parameters (4)'));
     expect(term.text()).not.toContain('value');
 
-    await pressKey(stdin, '\t'); // list → fields (q focused)
+    await tabToParams(stdin); // list → description → fields (q focused)
     await waitFor(() => term.text().includes('value')); // input placeholder visible
 
     // Typing 'a' must edit the field, not batch-enable tools.
@@ -216,7 +225,7 @@ describe('ServiceTools flattened detail panel', () => {
     await waitFor(() => term.text().includes('Parameters (4)'));
 
     // Tab now switches REGIONS (list → params); ↑/↓ moves between parameters.
-    await pressKey(stdin, '\t'); // list → params (q expanded)
+    await tabToParams(stdin); // list → description → params (q expanded)
     await typeKeys(stdin, 'hello');
     await pressKey(stdin, '\x1b[B'); // ↓ → limit
     await typeKeys(stdin, '3');
@@ -260,7 +269,7 @@ describe('ServiceTools flattened detail panel', () => {
     const { instance, term, stdin } = renderApp(30, 100);
 
     await waitFor(() => term.text().includes('Parameters (4)'));
-    await pressKey(stdin, '\t');
+    await tabToParams(stdin);
     await typeKeys(stdin, 'x');
     await pressKey(stdin, '\x12'); // Ctrl+R
     await waitFor(() => term.text().includes('Result: ✓'));
@@ -278,7 +287,7 @@ describe('ServiceTools flattened detail panel', () => {
     const { instance, term, stdin } = renderApp(30, 100);
 
     await waitFor(() => term.text().includes('Parameters (4)'));
-    await pressKey(stdin, '\t'); // → q (left empty)
+    await tabToParams(stdin); // → q (left empty)
 
     await pressKey(stdin, '\x12'); // Ctrl+R with required q blank
     await waitFor(() => term.text().includes('q: is required'));
@@ -315,7 +324,7 @@ describe('ServiceTools flattened detail panel', () => {
     const { instance, term, stdin } = renderApp(30, 100);
 
     await waitFor(() => term.text().includes('Parameters (4)'));
-    await pressKey(stdin, '\t');
+    await tabToParams(stdin);
     await typeKeys(stdin, 'x');
     await pressKey(stdin, '\x12');
     await waitFor(() => term.text().includes('boom from backend'));
@@ -331,7 +340,7 @@ describe('ServiceTools flattened detail panel', () => {
 
     await waitFor(() => term.text().includes('Parameters (4)'));
 
-    await pressKey(stdin, '\t'); // → fields
+    await tabToParams(stdin); // → description → fields
     await waitFor(() => term.text().includes('value'));
 
     await pressKey(stdin, '\x1b'); // leave editing → list focus
@@ -380,7 +389,7 @@ describe('ServiceTools flattened detail panel', () => {
         .some((l) => l.trim().startsWith('───'))
     ).toBe(true);
 
-    await pressKey(stdin, '\t'); // → params: the focused one expands fully
+    await tabToParams(stdin); // → params: the focused one expands fully
     await waitFor(() => term.text().includes('▶ 1  q  string  *required'));
     await waitFor(() => term.text().includes('must be cut off'));
     // The other parameter keeps its single line.
@@ -397,13 +406,13 @@ describe('ServiceTools flattened detail panel', () => {
     const { instance, term, stdin } = renderApp(30, 100);
 
     await waitFor(() => term.text().includes('PARAMETERS (4)'));
-    await pressKey(stdin, '\t');
+    await tabToParams(stdin);
     await typeKeys(stdin, 'x');
     await pressKey(stdin, '\x12'); // Ctrl+R → focus lands on the result region
     await waitFor(() => term.text().includes('Result: ✓'));
 
     // The footer advertises the result-region keys once it has focus.
-    await waitFor(() => term.text().includes('PgUp/PgDn Page'));
+    await waitFor(() => term.text().includes('Ctrl+Y Copy result'));
 
     // ↑/↓ scroll the panel line by line from the result region (this is the
     // capability that was previously missing entirely).
@@ -427,7 +436,7 @@ describe('ServiceTools flattened detail panel', () => {
     const { instance, term, stdin } = renderApp(30, 100);
 
     await waitFor(() => term.text().includes('Parameters (4)'));
-    await pressKey(stdin, '\t');
+    await tabToParams(stdin);
     await typeKeys(stdin, 'x');
     await pressKey(stdin, '\x12'); // Ctrl+R → focus lands on the result region
     await waitFor(() => term.text().includes('Result: ✓'));
@@ -452,7 +461,7 @@ describe('ServiceTools flattened detail panel', () => {
     const { instance, term, stdin } = renderApp(30, 100);
 
     await waitFor(() => term.text().includes('Parameters (4)'));
-    await pressKey(stdin, '\t');
+    await tabToParams(stdin);
     await typeKeys(stdin, 'x');
     await pressKey(stdin, '\x12');
     await waitFor(() => term.text().includes('Result: ✓'));
@@ -474,7 +483,7 @@ describe('ServiceTools flattened detail panel', () => {
     const { instance, term, stdin } = renderApp(30, 100);
 
     await waitFor(() => term.text().includes('Parameters (4)'));
-    await pressKey(stdin, '\t');
+    await tabToParams(stdin);
     await typeKeys(stdin, 'x');
     await pressKey(stdin, '\x12'); // Ctrl+R → result focus
     await waitFor(() => term.text().includes('Result: ✓'));
@@ -496,7 +505,7 @@ describe('ServiceTools flattened detail panel', () => {
     const { instance, term, stdin } = renderApp(30, 100);
 
     await waitFor(() => term.text().includes('Parameters (4)'));
-    await pressKey(stdin, '\t');
+    await tabToParams(stdin);
     await typeKeys(stdin, 'x');
     await pressKey(stdin, '\x12');
     await waitFor(() => term.text().includes('Result: ✓'));
@@ -526,7 +535,7 @@ describe('ServiceTools flattened detail panel', () => {
     const { instance, term, stdin } = renderApp(30, 100);
 
     await waitFor(() => term.text().includes('Parameters (4)'));
-    await pressKey(stdin, '\t');
+    await tabToParams(stdin);
     await typeKeys(stdin, 'x');
     await pressKey(stdin, '\x12');
     await waitFor(() => term.text().includes('Result: ✓'));
@@ -566,7 +575,7 @@ describe('ServiceTools flattened detail panel', () => {
     const { instance, term, stdin } = renderApp(30, 100);
 
     await waitFor(() => term.text().includes('Parameters (4)'));
-    await pressKey(stdin, '\t');
+    await tabToParams(stdin);
     await typeKeys(stdin, 'x');
     await pressKey(stdin, '\x12');
     await waitFor(() => term.text().includes('Result: ✓'));
@@ -621,14 +630,16 @@ describe('ServiceTools flattened detail panel', () => {
     instance.unmount();
   });
 
-  it('keeps a literal section heading for each region with the same focus bar', async () => {
+  it('keeps a literal section heading per region, with no focus marker glyph', async () => {
     const { instance, term, stdin } = renderApp(30, 100);
 
     await waitFor(() => term.text().includes('Parameters (4)'));
-    // The bar glyph is identical in both focus states — focus is carried by the
-    // bar's color, which the SGR-stripping harness cannot observe.
+    // Headings are literal in every focus state: the row keeps the same bar
+    // glyph and label, and focus is signalled by colour alone (verified against
+    // real SGR codes in scripts/tui-e2e.mjs T15 — this harness drops them).
     expect(term.text()).toContain('▌ DESCRIPTION');
     expect(term.text()).toContain('▌ PARAMETERS (4)');
+    expect(term.text()).not.toMatch(/▶ ▌/);
     // The rule is drawn out to the panel width.
     expect(
       term
@@ -637,10 +648,12 @@ describe('ServiceTools flattened detail panel', () => {
         .some((l) => l.includes('DESCRIPTION ───'))
     ).toBe(true);
 
-    // Moving focus between regions must not change the glyph.
+    // Moving focus must not change the glyph, shift the label, or add a marker.
     await pressKey(stdin, '\t');
-    await waitFor(() => term.text().includes('▌ PARAMETERS (4)'));
+    await waitFor(() => term.text().includes('Quick Actions — Description'));
     expect(term.text()).toContain('▌ DESCRIPTION');
+    expect(term.text()).toContain('▌ PARAMETERS (4)');
+    expect(term.text()).not.toMatch(/▶ ▌/);
 
     instance.unmount();
   });

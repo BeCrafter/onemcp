@@ -137,10 +137,11 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
             <Text color="cyan">/</Text> - Search tools
           </Text>
           <Text>
-            <Text color="cyan">Tab</Text> - Switch region (list → params → result)
+            <Text color="cyan">Tab</Text> - Switch region (list → description → params → result,
+            once a run has output)
           </Text>
           <Text>
-            <Text color="cyan">↑/↓</Text> - Navigate tools; with a description expanded, scroll it
+            <Text color="cyan">↑/↓</Text> - Navigate tools; in the description region, scroll it
           </Text>
           <Text>
             <Text color="cyan">←/→</Text> - Page the panel (also PgUp/PgDn, Ctrl+U/D)
@@ -149,8 +150,8 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
             <Text color="cyan">Ctrl+R</Text> - Run the selected tool
           </Text>
           <Text>
-            <Text color="cyan">Ctrl+E</Text> - Expand / collapse the tool description (then ↑/↓
-            scroll it)
+            <Text color="cyan">Ctrl+E</Text> - Expand / collapse the tool description; when it
+            overflows, expanding focuses it so ↑/↓ scroll it
           </Text>
           <Text>
             <Text color="cyan">Ctrl+J</Text> - Toggle form / raw JSON arguments
@@ -172,7 +173,8 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
             <Text color="cyan">Ctrl+O</Text> - Save full output to a temp file
           </Text>
           <Text>
-            <Text color="cyan">Esc</Text> - Leave region / back to service list
+            <Text color="cyan">Esc</Text> - Leave the region; from the tool list, back to the
+            service list
           </Text>
         </Box>
       </Box>

@@ -294,7 +294,7 @@ describe('ServiceTools scroll indicator (real components, optimized chrome)', ()
     instance.unmount();
   });
 
-  it('scrolls an expanded description with ↑/↓, falls through to the next tool at the end', async () => {
+  it('scrolls an expanded description in its own region, leaving ↑/↓ to tool navigation', async () => {
     const longDesc = Array.from(
       { length: 80 },
       (_, i) => `desc-line-${String(i).padStart(2, '0')}`
@@ -313,26 +313,28 @@ describe('ServiceTools scroll indicator (real components, optimized chrome)', ()
     const { instance, term, stdin } = renderApp(24, 80);
     await waitFor(() => term.text().includes('desc-line-00'));
 
-    // 展开：立刻回到描述开头（展开是为了从头读）
+    // 展开：立刻回到描述开头（展开是为了从头读），焦点交给描述区
     await pressKey(stdin, '\x05'); // Ctrl+E
     await waitFor(() => !term.text().includes('Ctrl+E expands'));
     expect(term.text()).toContain('desc-line-00');
+    expect(term.text()).toContain('↑/↓ Scroll line');
+    expect(term.text()).toContain('Esc Back to tool list');
 
-    // 展开期间 ↑/↓ 逐行滚动，而不再切换工具（关键判别：选中项必须没变）
+    // 描述区里 ↑/↓ 逐行滚动，而不再切换工具（关键判别：选中项必须没变）
     await pressKey(stdin, '\x1b[B'); // ↓
     await waitFor(() => !term.text().includes('desc-line-00'));
     expect(term.text()).not.toContain('bravo short description');
 
-    // 折叠后再展开，仍回到顶部
-    await pressKey(stdin, '\x05'); // Ctrl+E → 收起
-    await pressKey(stdin, '\x05'); // Ctrl+E → 再展开
-    await waitFor(() => term.text().includes('desc-line-00'));
+    // Esc 把箭头交还工具列表，且**不折叠**描述、不离开工具视图 ——
+    // 这正是「展开后想切工具」那条反馈的判据。
+    await pressKey(stdin, '\x1b'); // Esc
+    await waitFor(() => term.text().includes('↑/↓ Navigate'));
+    expect(term.text()).not.toContain('↑/↓ Scroll line');
 
-    // 一直按到低：滚到尽头后继续 ↓ 才把选中项交给下一个工具
-    for (let i = 0; i < 120 && !term.text().includes('bravo short description'); i += 1) {
-      await pressKey(stdin, '\x1b[B');
-    }
+    // 列表焦点下 ↓ 立刻切换工具（无需先折叠），换到新工具后描述回到折叠态
+    await pressKey(stdin, '\x1b[B'); // ↓ → bravo
     await waitFor(() => term.text().includes('bravo short description'));
+    expect(term.text()).toContain('Ctrl+E Expand desc');
 
     instance.unmount();
   });

@@ -64,7 +64,7 @@ export interface ServiceToolsProps {
 }
 
 /** Where keyboard focus lives inside the tools view. */
-type PanelFocus = 'list' | 'params' | 'result' | 'json';
+type PanelFocus = 'list' | 'desc' | 'params' | 'result' | 'json';
 type RunStatus = 'editing' | 'running' | 'done';
 type ResultView = 'formatted' | 'raw';
 
@@ -173,10 +173,14 @@ function cycleSelectValue(param: ToolParam, current: string): string {
 }
 
 /**
- * Section header row. The bar glyph is the same whether or not the section has
- * focus — only its color differs: the focused bar reads as plain text, the idle
- * one is grey. Grey rather than `dimColor` on purpose: terminals that render
- * faint cells by dimming them would paint a darker block behind the bar.
+ * Section header row: section bar + label + rule.
+ *
+ * Focus shows up as the colour of the WHOLE header — bar, label and rule go
+ * cyan+bold together, idle headers stay grey-bar/plain-label. That is the point:
+ * recolouring only the single `▌` cell was invisible, because the "focused"
+ * colour was the terminal default, i.e. exactly the colour of the label and rule
+ * sitting next to it. Grey rather than `dimColor` on purpose — terminals that
+ * render faint cells by dimming them would paint a darker block behind the bar.
  */
 const sectionRow = (label: string, width: number, focused: boolean): DetailRow => {
   const text = sectionTitle(label, width);
@@ -187,8 +191,8 @@ const sectionRow = (label: string, width: number, focused: boolean): DetailRow =
     type: 'text',
     text,
     segments: [
-      { text: SECTION_BAR, tone: focused ? 'value' : 'muted' },
-      { text: text.slice(SECTION_BAR.length), tone: 'value' },
+      { text: text.slice(0, SECTION_BAR.length), tone: focused ? 'accent' : 'muted' },
+      { text: text.slice(SECTION_BAR.length), tone: focused ? 'accent' : 'value' },
     ],
   };
 };
@@ -270,7 +274,10 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
   const terminalHeight = terminalHeightProp ?? (stdout?.rows || 24);
   const terminalWidth = stdout?.columns || 80;
   const HEADER_LINES = 4;
-  // Contextual hint footer; the "Quick Actions:" title is dropped on tiny terminals.
+  // Contextual hint footer: the two hint lines plus a heading. The heading is
+  // dropped on tiny terminals, and a transient notice takes its place — the
+  // notice must never displace a hint, and the footer must never grow past its
+  // budget or it would squeeze the panels below their measured height.
   const FOOTER_LINES = terminalHeight < 10 ? 2 : 3;
   const ERROR_LINES = error !== null ? 1 : 0;
   const BODY_LINES = Math.max(1, terminalHeight - HEADER_LINES - FOOTER_LINES - ERROR_LINES);
@@ -424,15 +431,24 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
    * Tab order across the panel regions. Unavailable regions are skipped, so
    * Tab only ever lands somewhere meaningful (no result → no result region).
    */
+  /**
+   * Tab order across the panel regions. The description is always in the loop
+   * (it is a region you can focus and read, not only a thing that scrolls), and
+   * the result joins it once a run has produced one. Unavailable regions are
+   * skipped, so Tab only ever lands somewhere meaningful.
+   */
   const cycleRegion = (direction: 1 | -1): void => {
-    const available: PanelFocus[] = ['list'];
+    const available: PanelFocus[] = ['list', 'desc'];
     if (params.length > 0) {
       available.push('params');
     }
     if (runStatus !== 'editing') {
       available.push('result');
     }
-    const current = Math.max(0, available.indexOf(focus));
+    // Ctrl+J replaces the parameters region with the raw-JSON editor, so Tab
+    // continues from where the form sits rather than restarting at the list.
+    const cursor = focus === 'json' ? 'params' : focus;
+    const current = Math.max(0, available.indexOf(cursor));
     const next = available[(current + direction + available.length) % available.length];
     if (next === undefined) {
       return;
@@ -660,9 +676,18 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
       const expanding = !descExpanded;
       setDescExpanded(expanding);
       if (expanding) {
-        // Expanded in order to READ it: put the beginning of the description on
-        // screen, and let ↑/↓ scroll from there.
+        // Expanded in order to READ it: start at the top, and hand the arrow
+        // keys over to the description (`desc` focus) when the full text will
+        // not fit — otherwise Ctrl+E would be a key that spends the arrows on
+        // a region with nothing to scroll.
         setPanelScroll(0);
+        if (focus === 'list' && maxPanelScrollExpanded > 0) {
+          setFocus('desc');
+        }
+      } else if (focus === 'desc') {
+        // Collapsing from inside the description: the region is gone, so land
+        // somewhere that still exists.
+        setFocus('list');
       }
       return;
     }
@@ -749,8 +774,13 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
       return;
     }
 
-    // --- JSON focus: editing keys belong to JsonTextArea ---
+    // --- JSON focus: editing keys belong to JsonTextArea. Tab still cycles
+    //     regions — the editor ignores Tab, so the key is free, and the hint
+    //     line promises it. ---
     if (focus === 'json') {
+      if (key.tab) {
+        cycleRegion(key.shift ? -1 : 1);
+      }
       return;
     }
 
@@ -824,6 +854,24 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
       return;
     }
 
+    // --- Description focus: the arrows read the expanded description. The tool
+    //     list is one Esc away, so switching tools never requires collapsing
+    //     the text first — and ↑/↓ in the list keeps its original job. ---
+    if (focus === 'desc') {
+      if (key.tab) {
+        cycleRegion(key.shift ? -1 : 1);
+      } else if (key.upArrow) {
+        scrollPanel(-1);
+      } else if (key.downArrow) {
+        scrollPanel(1);
+      } else if (key.leftArrow) {
+        pagePanel(-1);
+      } else if (key.rightArrow) {
+        pagePanel(1);
+      }
+      return;
+    }
+
     // --- List focus ---
     if (input === '/') {
       setSearchMode(true);
@@ -834,17 +882,9 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
       return;
     }
     if (key.upArrow) {
-      if (arrowKeysScrollPanel && Math.min(panelScroll, maxPanelScroll) > 0) {
-        scrollPanel(-1);
-      } else {
-        setSelectedIndex((prev) => Math.max(0, prev - 1));
-      }
+      setSelectedIndex((prev) => Math.max(0, prev - 1));
     } else if (key.downArrow) {
-      if (arrowKeysScrollPanel && Math.min(panelScroll, maxPanelScroll) < maxPanelScroll) {
-        scrollPanel(1);
-      } else {
-        setSelectedIndex((prev) => Math.max(0, Math.min(filteredTools.length - 1, prev + 1)));
-      }
+      setSelectedIndex((prev) => Math.max(0, Math.min(filteredTools.length - 1, prev + 1)));
     } else if (key.leftArrow) {
       pagePanel(-1);
     } else if (key.rightArrow) {
@@ -900,29 +940,31 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
   // --- Flattened detail rows (description → parameters; result is pinned) ---
 
   const descCap = Math.min(12, Math.max(3, Math.floor(PANEL_LINES * 0.35)));
+  const descWrapped = useMemo(
+    () => wrapText(currentTool?.description ?? '', PANEL_WIDTH - DESCRIPTION_INDENT.length),
+    [currentTool?.description, PANEL_WIDTH]
+  );
+  /** Rows the description occupies once expanded — the collapsed form is capped. */
+  const descRowCountExpanded = Math.max(1, descWrapped.length);
   const descRows: DetailRow[] = useMemo(() => {
     const rows: DetailRow[] = [];
-    const wrapped = wrapText(
-      currentTool?.description ?? '',
-      PANEL_WIDTH - DESCRIPTION_INDENT.length
-    );
-    if (wrapped.length === 0 || (wrapped.length === 1 && wrapped[0] === '')) {
+    if (descWrapped.length === 0 || (descWrapped.length === 1 && descWrapped[0] === '')) {
       rows.push({ type: 'text', text: `${DESCRIPTION_INDENT}(no description)` });
-    } else if (!descExpanded && wrapped.length > descCap) {
-      for (const line of wrapped.slice(0, descCap)) {
+    } else if (!descExpanded && descWrapped.length > descCap) {
+      for (const line of descWrapped.slice(0, descCap)) {
         rows.push({ type: 'text', text: `${DESCRIPTION_INDENT}${line}` });
       }
       rows.push({
         type: 'text',
-        text: `${DESCRIPTION_INDENT}… ${wrapped.length - descCap} more line(s) — Ctrl+E expands`,
+        text: `${DESCRIPTION_INDENT}… ${descWrapped.length - descCap} more line(s) — Ctrl+E expands`,
       });
     } else {
-      for (const line of wrapped) {
+      for (const line of descWrapped) {
         rows.push({ type: 'text', text: `${DESCRIPTION_INDENT}${line}` });
       }
     }
     return rows;
-  }, [currentTool?.description, PANEL_WIDTH, descCap, descExpanded]);
+  }, [descWrapped, descCap, descExpanded]);
 
   // Only the parameter region expands a field; browsing (list focus) keeps the
   // compact one-line-per-parameter overview.
@@ -961,7 +1003,7 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
   /** Description + parameters + validation rows (the scrollable flow). */
   const allRowsBase: DetailRow[] = useMemo(
     () => [
-      sectionRow('Description', PANEL_WIDTH, focus === 'list'),
+      sectionRow('Description', PANEL_WIDTH, focus === 'desc'),
       { type: 'text' as const, text: ' ' },
       ...descRows,
       { type: 'text' as const, text: ' ' },
@@ -1070,20 +1112,100 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
   const maxPanelScroll = Math.max(0, flowRows.length - FLOW_VISIBLE);
 
   /**
-   * With a description expanded (and actually overflowing) the arrow keys scroll
-   * the panel instead of moving the tool selection: the user pressed Ctrl+E to
-   * read, and the panel's own `↑|↓ more` hint promises exactly that. Reaching
-   * either end lets the next press fall through to tool navigation, and picking
-   * another tool collapses the description (per-tool reset), so this never
-   * becomes a sticky mode.
+   * Scroll range the panel WILL have once the description is expanded. Needed
+   * while deciding whether Ctrl+E should hand the arrows to the description:
+   * the collapsed layout is what is on screen at that moment, and a collapsed
+   * description is capped at `descCap` rows, so its own range says nothing
+   * about whether the full text overflows.
    */
-  const arrowKeysScrollPanel = focus === 'list' && descExpanded && maxPanelScroll > 0;
-  /** Which arrow pair the panel's scroll hint should name for the current focus. */
-  const scrollHintPair: 'vertical' | 'horizontal' =
-    focus === 'list' && !arrowKeysScrollPanel ? 'horizontal' : 'vertical';
+  const maxPanelScrollExpanded = Math.max(
+    0,
+    flowRows.length - descRows.length + descRowCountExpanded - FLOW_VISIBLE
+  );
+  /**
+   * Which arrow pair the panel's scroll hint should name. With the tool list
+   * focused the arrows move the selection, so ←/→ (and PageUp/PageDown) are
+   * what page it; every other region scrolls with ↑/↓.
+   */
+  const scrollHintPair: 'vertical' | 'horizontal' = focus === 'list' ? 'horizontal' : 'vertical';
   // Clamp at render time — PANEL_LINES shrinks while a status message is
   // visible, so an effect-based clamp would leave a blank panel for ~2s.
   const clampedPanelScroll = Math.min(panelScroll, maxPanelScroll);
+
+  /**
+   * The bottom hints describe the focused region and nothing else: both lines
+   * belong to it, and every key named here works right now in that region. A
+   * hint that only applies elsewhere (or to a key that would no-op — `v` before
+   * a result exists, scroll keys in a region with nothing to scroll) is a bug,
+   * not a convenience. Transient notices render on their own line so they can
+   * never displace these.
+   */
+  const regionHints = ((): { label: string; keys: string; actions: string } => {
+    if (searchMode) {
+      return {
+        label: 'Search',
+        keys: 'Type to search • ↑/↓ Navigate matches • Enter Confirm',
+        actions: 'Esc Leave search',
+      };
+    }
+    if (focus === 'desc') {
+      // Three states, three honest hints: scrollable, clipped-but-collapsed
+      // (there IS more text, it just needs Ctrl+E), or nothing to read beyond
+      // what is already on screen.
+      const clipped = !descExpanded && descWrapped.length > descCap;
+      return {
+        label: 'Description',
+        keys:
+          maxPanelScroll > 0
+            ? '↑/↓ Scroll line • ←/→ Page'
+            : clipped
+              ? 'Description is clipped — Ctrl+E expands it'
+              : 'Description fits — nothing to scroll',
+        actions: `Ctrl+E ${descExpanded ? 'Collapse' : 'Expand'} desc • Ctrl+R Run • Tab Next region • Esc Back to tool list`,
+      };
+    }
+    if (focus === 'params') {
+      return {
+        label: 'Parameters',
+        keys: '↑/↓ Param • ←/→ Cursor • Space Cycle option • Enter Next',
+        actions: 'Ctrl+R Run • Ctrl+J JSON • Tab Next region • Esc Back to tool list',
+      };
+    }
+    if (focus === 'result') {
+      if (runStatus === 'running') {
+        return { label: 'Result', keys: 'Running…', actions: 'Ctrl+C Quit TUI' };
+      }
+      if (runStatus !== 'done' || outcome === null) {
+        return {
+          label: 'Result',
+          keys: 'No result yet — Ctrl+R runs the tool',
+          actions: 'Tab Next region • Esc Back to tool list',
+        };
+      }
+      const selecting = selectAnchor !== null;
+      return {
+        label: 'Result',
+        keys: `↑/↓ Cursor • ←/→ Page • v ${selecting ? 'Cancel select' : 'Select lines'} • f Full width`,
+        actions: selecting
+          ? 'Ctrl+Y Copy selection • Esc Cancel select'
+          : 'Ctrl+Y Copy result • Ctrl+P Raw • Ctrl+O Save • Tab Next region • Esc Back to tool list',
+      };
+    }
+    if (focus === 'json') {
+      return {
+        label: 'JSON',
+        keys: 'Edit raw JSON arguments',
+        actions: 'Ctrl+J Back to form • Ctrl+R Run • Tab Next region • Esc Back to tool list',
+      };
+    }
+    return {
+      label: 'Tools',
+      keys: '↑/↓ Navigate • Space Toggle • a/A All on/off • / Search',
+      actions: `←/→ Page • Ctrl+R Run • Ctrl+E ${
+        descExpanded ? 'Collapse' : 'Expand'
+      } desc • Tab Next region`,
+    };
+  })();
 
   /**
    * Keep the expanded parameter visible while navigating it.
@@ -1274,7 +1396,9 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
       <Box flexDirection="column" marginBottom={1}>
         <Box justifyContent="space-between">
           <Box>
-            <Text bold color="cyan">
+            {/* Panel title doubles as the tool list's focus cue: cyan while the
+                list owns the keyboard, grey while another region does. */}
+            <Text bold color={focus === 'list' ? 'cyan' : 'gray'}>
               Tools for: {service.name}
             </Text>
           </Box>
@@ -1434,43 +1558,20 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
       )}
 
       <Box flexDirection="column">
-        {terminalHeight >= 10 && (
-          <Text bold color="cyan">
-            Quick Actions:
+        {(terminalHeight >= 10 || copyNotice !== null) && (
+          <Text
+            {...(copyNotice === null ? { bold: true, color: 'cyan' as const } : { dimColor: true })}
+          >
+            {copyNotice ?? `Quick Actions — ${regionHints.label}`}
           </Text>
         )}
         <Text dimColor wrap="truncate">
           {'  '}
-          {searchMode
-            ? 'Type to search • ↑/↓ Navigate matches • Enter Confirm'
-            : focus === 'params'
-              ? '↑/↓ Param • ←/→ Cursor • Space Cycle option • Enter Next'
-              : focus === 'result'
-                ? `↑/↓ Cursor • ←/→ Page • v ${
-                    selectAnchor !== null ? 'Cancel select' : 'Select lines'
-                  } • f Full width`
-                : focus === 'json'
-                  ? 'Edit raw JSON arguments'
-                  : arrowKeysScrollPanel
-                    ? '↑/↓ Scroll description • Space Toggle • / Search'
-                    : '↑/↓ Navigate • Space Toggle • a/A All on/off • / Search'}
+          {regionHints.keys}
         </Text>
         <Text dimColor wrap="truncate">
           {'  '}
-          {copyNotice ??
-            (searchMode
-              ? 'Ctrl+R Run • Esc Leave search'
-              : focus === 'params' || focus === 'json'
-                ? 'Tab Next region • Ctrl+R Run • Ctrl+J JSON • Esc Done'
-                : focus === 'result'
-                  ? selectAnchor !== null
-                    ? 'Ctrl+Y Copy selection • Esc Cancel'
-                    : 'Ctrl+Y Copy result • Ctrl+P Raw • Ctrl+O Save'
-                  : arrowKeysScrollPanel
-                    ? '↑/↓ Scroll • ←/→ Page • Ctrl+E Collapse • Esc Done'
-                    : `←/→ Page • Tab Region • Ctrl+R Run • f Full width • Ctrl+E ${
-                        descExpanded ? 'Collapse' : 'Expand'
-                      } desc`)}
+          {regionHints.actions}
         </Text>
       </Box>
     </Box>
