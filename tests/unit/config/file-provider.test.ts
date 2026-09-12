@@ -276,6 +276,37 @@ describe('FileConfigProvider', () => {
       expect(result.errors.some((error) => error.message.includes('collides'))).toBe(true);
     });
 
+    it('should reject a service name that normalizes to separators only', () => {
+      // A fully non-ASCII name normalizes to '-' — every such name would share
+      // one tool-namespace prefix, so a single one has to be rejected too (the
+      // collision check cannot see it).
+      const invalidConfig: SystemConfig = {
+        ...validConfig,
+        mcpServers: { '服务端-甲': validConfig.mcpServers['test-service']! },
+      };
+
+      const result = provider.validate(invalidConfig);
+
+      expect(result.valid).toBe(false);
+      expect(
+        result.errors.some((error) => error.message.includes('at least one ASCII letter or digit'))
+      ).toBe(true);
+    });
+
+    it('should accept names with spaces (normalized to hyphens)', () => {
+      const config: SystemConfig = {
+        ...validConfig,
+        mcpServers: {
+          'yapi product': validConfig.mcpServers['test-service']!,
+          'yapi supply': validConfig.mcpServers['test-service']!,
+        },
+      };
+
+      const result = provider.validate(config);
+
+      expect(result.valid).toBe(true);
+    });
+
     it('should reject missing required fields', () => {
       // Arrange
       const invalidConfig = { ...validConfig };

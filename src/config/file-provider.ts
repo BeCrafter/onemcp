@@ -437,6 +437,22 @@ export class FileConfigProvider implements ConfigProvider {
           .toLowerCase()
           .replace(/\s+/g, '-')
           .replace(/[^a-z0-9\-_]/g, '');
+
+        // The normalized name becomes the tool namespace prefix
+        // (`{service}__{tool}`), so it has to stay distinguishable. A name that
+        // normalizes to separators only (e.g. a fully non-ASCII name) yields the
+        // SAME prefix for every such service — with one such name the collision
+        // check below can't see it, and with two the error is unreadable.
+        if (!/[a-z0-9]/.test(normalized)) {
+          errors.push({
+            field: `mcpServers.${serviceName}`,
+            message: `Service name "${serviceName}" must contain at least one ASCII letter or digit — the name becomes the tool namespace prefix`,
+            expected: 'a name containing [A-Za-z0-9]',
+            actual: serviceName,
+          });
+          continue;
+        }
+
         const existing = normalizedNames.get(normalized);
         if (existing !== undefined) {
           errors.push({

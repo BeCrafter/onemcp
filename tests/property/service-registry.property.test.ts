@@ -33,10 +33,16 @@ const DANGEROUS_KEYS = new Set([
   'hasOwnProperty',
 ]);
 
+/**
+ * Service names must satisfy the documented contract: the name becomes the tool
+ * namespace prefix, so its normalized form (lowercased, whitespace → '-', other
+ * non-ASCII stripped) has to keep at least one ASCII alphanumeric. Generating
+ * raw `fc.string()` produced names the config validator now rejects.
+ */
 const serviceNameArbitrary = (): fc.Arbitrary<string> =>
   fc
-    .string({ minLength: 1, maxLength: 50 })
-    .filter((s) => s.trim().length > 0 && !DANGEROUS_KEYS.has(s.trim()))
+    .stringMatching(/[a-zA-Z0-9][a-zA-Z0-9 _.-]{0,20}/)
+    .filter((s) => s.trim().length > 0 && s.trim().length <= 50 && !DANGEROUS_KEYS.has(s.trim()))
     .map((s) => s.trim());
 
 /**
