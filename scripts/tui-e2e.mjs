@@ -122,17 +122,35 @@ const capture = () => tmuxRaw(['capture-pane', '-p', '-t', 'tui']).stdout ?? '';
 /** Same frame, but keeping SGR colour codes (`-e`) — the only way to see colour. */
 const captureColored = () => tmuxRaw(['capture-pane', '-e', '-p', '-t', 'tui']).stdout ?? '';
 /**
- * The SGR code that applies to the text immediately before `needle`, on the
- * screen line containing `label`. Returns 'none' when that text inherits the
- * terminal default colour, or null when label/needle are not on screen.
+ * The foreground colour actually in effect at `needle`, on the screen line
+ * containing `label` — 'default' when nothing colours it.
+ *
+ * The codes must be walked in order: "the last code before the needle" is
+ * whatever the *previous* segment emitted (a reset from the tool-list column,
+ * say), which made a focused and an unfocused header compare equal and quietly
+ * neutered this check. Resets (0/39/49) clear the running colour.
  */
-const sgrBefore = (colored, label, needle) => {
+const colorAt = (colored, label, needle) => {
   const line = colored.split('\n').find((l) => l.includes(label));
   if (line === undefined) return null;
   const at = line.indexOf(needle);
   if (at < 0) return null;
-  const codes = line.slice(0, at).match(/\x1b\[[0-9;]*m/g);
-  return codes === null ? 'none' : codes[codes.length - 1];
+  let current = 'default';
+  for (const code of line.slice(0, at).match(/\x1b\[[0-9;]*m/g) ?? []) {
+    const params = code
+      .slice(2, -1)
+      .split(';')
+      .map((n) => Number(n));
+    if (params.includes(0) || params.includes(39) || params.includes(49)) {
+      current = 'default';
+    } else if (
+      params.includes(38) ||
+      params.some((p) => (p >= 30 && p <= 37) || (p >= 90 && p <= 97))
+    ) {
+      current = code.slice(2, -1);
+    }
+  }
+  return current;
 };
 const sessionAlive = () => tmuxRaw(['has-session', '-t', 'tui']).status === 0;
 /**
@@ -771,13 +789,13 @@ async function t15FocusAndHints() {
   //   与旁边永远默认色的标题文字同色，等于没有高亮；
   // ②聚焦时竖线与标题文字取同一个颜色（整块标题区一起变），未聚焦则不是。
   const colored = captureColored();
-  const focusedLabel = sgrBefore(colored, 'DESCRIPTION', 'DESCRIPTION');
-  const focusedBar = sgrBefore(colored, 'DESCRIPTION', '▌');
-  const idleLabel = sgrBefore(colored, 'PARAMETERS', 'PARAMETERS');
-  const idleBar = sgrBefore(colored, 'PARAMETERS', '▌');
+  const focusedLabel = colorAt(colored, 'DESCRIPTION', 'DESCRIPTION');
+  const focusedBar = colorAt(colored, 'DESCRIPTION', '▌');
+  const idleLabel = colorAt(colored, 'PARAMETERS', 'PARAMETERS');
+  const idleBar = colorAt(colored, 'PARAMETERS', '▌');
   check(
     '聚焦区标题文字变色（不只是那个竖线格子）',
-    focusedLabel !== null && idleLabel !== null && focusedLabel !== idleLabel,
+    focusedLabel !== null && focusedLabel !== 'default' && focusedLabel !== idleLabel,
     `聚焦标题=${focusedLabel} 未聚焦标题=${idleLabel}`
   );
   check(

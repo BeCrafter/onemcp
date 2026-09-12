@@ -132,19 +132,19 @@ describe('ServiceTools region focus (real components)', () => {
     expect(term.text()).not.toMatch(/▶ ▌/);
 
     await typeKeys(stdin, '\t');
-    await waitFor(() => term.text().includes('Quick Actions — Description'));
+    expect(await waitFor(() => term.text().includes('Quick Actions — Description'))).toBe(true);
     expect(term.text()).toContain('Tools for: demo');
     expect(term.text()).toContain('▌ DESCRIPTION');
     expect(term.text()).not.toMatch(/▶ ▌/);
 
     await typeKeys(stdin, '\t');
-    await waitFor(() => term.text().includes('Quick Actions — Parameters'));
+    expect(await waitFor(() => term.text().includes('Quick Actions — Parameters'))).toBe(true);
     expect(term.text()).toContain('▌ PARAMETERS (2)');
     expect(term.text()).not.toMatch(/▶ ▌/);
 
     // A third Tab wraps back to the tool list.
     await typeKeys(stdin, '\t');
-    await waitFor(() => term.text().includes('Quick Actions — Tools'));
+    expect(await waitFor(() => term.text().includes('Quick Actions — Tools'))).toBe(true);
 
     instance.unmount();
   });
@@ -233,11 +233,11 @@ describe('ServiceTools region focus (real components)', () => {
 
     // Still in the cycle: result → list → desc → params → result.
     await typeKeys(stdin, '\t');
-    await waitFor(() => term.text().includes('Quick Actions — Tools'));
+    expect(await waitFor(() => term.text().includes('Quick Actions — Tools'))).toBe(true);
     await typeKeys(stdin, '\t');
     await typeKeys(stdin, '\t');
     await typeKeys(stdin, '\t');
-    await waitFor(() => term.text().includes('Quick Actions — Result'));
+    expect(await waitFor(() => term.text().includes('Quick Actions — Result'))).toBe(true);
     expect(term.text()).toContain('Ctrl+Y Copy result');
 
     instance.unmount();
