@@ -7,12 +7,12 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { Readable } from 'stream';
 import { Box, useStdout, render } from 'ink';
 import { ServiceTools } from '../../src/tui/components/ServiceTools.js';
 import type { ToolCallOutcome } from '../../src/tui/discovery-worker.js';
 import type { Tool } from '../../src/types/tool.js';
 import type { ServiceDefinition } from '../../src/types/service.js';
+import { Terminal, createStdin, waitFor, typeKeys, pressKey } from './helpers/ansi-terminal.js';
 
 const { tools, fetchServiceToolsMock, callServiceToolMock, mockOutcome } = vi.hoisted(() => {
   const tools: Tool[] = [
@@ -75,93 +75,6 @@ vi.mock('../../src/tui/clipboard.js', () => ({
   copyToClipboard: copyToClipboardMock,
 }));
 
-// Minimal ANSI terminal emulator (same harness as tui-service-tools-scroll)
-class Terminal {
-  grid: string[][];
-  rows: number;
-  cols: number;
-  private r = 0;
-  private c = 0;
-  constructor(rows: number, cols: number) {
-    this.rows = rows;
-    this.cols = cols;
-    this.grid = Array.from({ length: rows }, () => Array(cols).fill(' '));
-  }
-  feed(data: string) {
-    let i = 0;
-    while (i < data.length) {
-      const ch = data[i]!;
-      if (ch === '\x1b') {
-        if (data[i + 1] === '[') {
-          let j = i + 2;
-          let paramStr = '';
-          while (j < data.length && !/[A-Za-z]/.test(data[j]!)) {
-            paramStr += data[j]!;
-            j++;
-          }
-          const final = data[j]!;
-          j++;
-          const isPrivate = paramStr.includes('?');
-          const clean = paramStr.replace(/[^0-9;]/g, '');
-          const parts = clean.split(';');
-          const num = (s: string) => (s === '' ? 1 : parseInt(s, 10) || 1);
-          if (!isPrivate) {
-            if (final === 'H' || final === 'f') {
-              this.r = Math.min(this.rows - 1, Math.max(0, num(parts[0] ?? '1') - 1));
-              this.c = Math.min(this.cols - 1, Math.max(0, num(parts[1] ?? '1') - 1));
-            } else if (final === 'A') this.r = Math.max(0, this.r - num(parts[0] ?? '1'));
-            else if (final === 'B') this.r = Math.min(this.rows - 1, this.r + num(parts[0] ?? '1'));
-            else if (final === 'C') this.c = Math.min(this.cols - 1, this.c + num(parts[0] ?? '1'));
-            else if (final === 'D') this.c = Math.max(0, this.c - num(parts[0] ?? '1'));
-            else if (final === 'G')
-              this.c = Math.min(this.cols - 1, Math.max(0, num(parts[0] ?? '1') - 1));
-            else if (final === 'K') {
-              if (this.r >= 0 && this.r < this.rows) {
-                for (let k = this.c; k < this.cols; k++) this.grid[this.r]![k] = ' ';
-              }
-            } else if (final === 'J' && parts[0] === '2') {
-              for (let rr = 0; rr < this.rows; rr++)
-                for (let cc = 0; cc < this.cols; cc++) this.grid[rr]![cc] = ' ';
-            }
-          }
-          i = j;
-        } else {
-          i += 2;
-          while (i < data.length && !/[A-Za-z]/.test(data[i]!)) i++;
-          i++;
-        }
-      } else if (ch === '\n') {
-        this.r++;
-        this.c = 0;
-        i++;
-      } else if (ch === '\r') {
-        this.c = 0;
-        i++;
-      } else if (ch >= ' ') {
-        if (this.r >= 0 && this.r < this.rows && this.c >= 0 && this.c < this.cols) {
-          this.grid[this.r]![this.c] = ch;
-        }
-        this.c++;
-        i++;
-      } else {
-        i++;
-      }
-    }
-  }
-  text(): string {
-    return this.grid.map((row) => row.join('').replace(/\s+$/, '')).join('\n');
-  }
-}
-
-const createStdin = () => {
-  const stdin: any = new Readable({ read() {} });
-  stdin.isTTY = true;
-  stdin.setRawMode = () => {};
-  stdin.ref = () => {};
-  stdin.unref = () => {};
-  return stdin;
-};
-
 const MiniApp: React.FC<{ rows: number; onBack?: (() => void) | undefined }> = ({
   rows,
   onBack,
@@ -217,29 +130,6 @@ function renderApp(rows: number, cols: number, onBack?: () => void) {
   });
   return { instance, term, stdin, stdout };
 }
-
-const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
-const waitFor = async (pred: () => boolean, timeoutMs = 5000): Promise<boolean> => {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    await new Promise((r) => setImmediate(r));
-    await sleep(20);
-    if (pred()) return true;
-  }
-  return pred();
-};
-const typeKeys = async (stdin: any, chars: string, perKey = 60) => {
-  for (const ch of chars) {
-    stdin.push(Buffer.from(ch, 'utf8'));
-    await new Promise((r) => setImmediate(r));
-    await sleep(perKey);
-  }
-};
-const pressKey = async (stdin: any, bytes: string) => {
-  stdin.push(Buffer.from(bytes, 'utf8'));
-  await new Promise((r) => setImmediate(r));
-  await sleep(80);
-};
 
 describe('ServiceTools flattened detail panel', () => {
   beforeEach(() => {
