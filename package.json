@@ -26,13 +26,14 @@
     "test:watch": "vitest",
     "test:coverage": "vitest --run --coverage",
     "test:property": "vitest --run property",
-    "lint": "eslint src tests --ext .ts",
-    "lint:fix": "eslint src tests --ext .ts --fix",
-    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "lint": "eslint src tests --ext .ts,.tsx",
+    "lint:fix": "eslint src tests --ext .ts,.tsx --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"src/**/*.tsx\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"src/**/*.tsx\" \"tests/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "deploy:local": "npm run build && node scripts/deploy-local.mjs",
     "verify:local": "node scripts/e2e-local.mjs",
+    "verify:tui": "node scripts/tui-e2e.mjs",
     "clean": "node -e \"require('fs').rmSync('dist', {recursive:true, force:true})\"",
     "prepublishOnly": "npm run clean && npm run build",
     "prepare": "husky"
@@ -61,7 +62,9 @@
     "ink-text-input": "^6.0.0",
     "pino": "^8.17.2",
     "pino-pretty": "^10.3.1",
-    "react": "^18.2.0"
+    "react": "^18.2.0",
+    "string-width": "^7.2.0",
+    "wrap-ansi": "^9.0.2"
   },
   "devDependencies": {
     "@types/eventsource": "^1.1.15",

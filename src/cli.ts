@@ -614,7 +614,9 @@ async function main(): Promise<void> {
       log.setStderrEnabled(false);
 
       const { runApp } = await import('./tui.js');
-      await runApp(config, configProvider);
+      // Pass the RESOLVED directory (CLI flag / env / default), not the stale
+      // value recorded inside config.json.
+      await runApp(config, configProvider, configDir);
     } else {
       // Daemon mode: spawn detached process and exit
       if (args.daemon) {

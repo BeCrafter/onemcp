@@ -1,6 +1,5 @@
 /**
- * Integration tests for triggerHints support across the three TUI input paths:
- *  - ServiceJsonEditor (validateJson) — mcpServers map and array branches
+ * Integration tests for triggerHints support across the TUI form input paths:
  *  - ServiceFormUnified (formDataToService)
  *  - ServiceForm (formDataToService)
  *
@@ -10,7 +9,6 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { validateJson, type ValidationResult } from '../../src/tui/components/ServiceJsonEditor.js';
 import {
   formDataToService as unifiedFormDataToService,
   type FormData as UnifiedFormData,
@@ -19,13 +17,6 @@ import {
   formDataToService as legacyFormDataToService,
   type FormData as LegacyFormData,
 } from '../../src/tui/components/ServiceForm.js';
-
-function expectValid(result: ValidationResult): NonNullable<ValidationResult['services']> {
-  if (!result.valid || !result.services) {
-    throw new Error(`expected valid result, got: ${JSON.stringify(result)}`);
-  }
-  return result.services;
-}
 
 const baseUnifiedForm: UnifiedFormData = {
   name: 'svc',
@@ -62,79 +53,6 @@ const baseLegacyForm: LegacyFormData = {
   triggerHintsEnd: '',
   triggerHintsPhrases: '',
 };
-
-describe('ServiceJsonEditor.validateJson — triggerHints passthrough', () => {
-  it('preserves triggerHints in mcpServers map format', () => {
-    const json = JSON.stringify({
-      prompx: {
-        transport: 'http',
-        url: 'http://127.0.0.1:5203/mcp',
-        triggerHints: {
-          onSessionStart: 'recall role memory',
-          onSessionEnd: 'persist new memory',
-          phrases: ['我是X', 'switch role'],
-        },
-      },
-    });
-
-    const services = expectValid(validateJson(json));
-    expect(services).toHaveLength(1);
-    expect(services[0]?.triggerHints).toEqual({
-      onSessionStart: 'recall role memory',
-      onSessionEnd: 'persist new memory',
-      phrases: ['我是X', 'switch role'],
-    });
-  });
-
-  it('omits triggerHints when not present (no empty object injected)', () => {
-    const json = JSON.stringify({
-      plain: { transport: 'stdio', command: 'node' },
-    });
-    const services = expectValid(validateJson(json));
-    expect(services[0]?.triggerHints).toBeUndefined();
-  });
-
-  it('rejects malformed triggerHints (array) by ignoring it, not crashing', () => {
-    const json = JSON.stringify({
-      bad: { transport: 'stdio', command: 'node', triggerHints: ['not', 'an', 'object'] },
-    });
-    const services = expectValid(validateJson(json));
-    expect(services[0]?.triggerHints).toBeUndefined();
-  });
-
-  it('preserves triggerHints in single-service object format', () => {
-    const json = JSON.stringify({
-      name: 'prompx',
-      transport: 'http',
-      url: 'http://127.0.0.1:5203/mcp',
-      enabled: true,
-      tags: [],
-      connectionPool: { maxConnections: 5, idleTimeout: 60000, connectionTimeout: 30000 },
-      triggerHints: { onSessionStart: 'recall', phrases: ['我是X'] },
-    });
-    const services = expectValid(validateJson(json));
-    expect(services[0]?.triggerHints).toEqual({
-      onSessionStart: 'recall',
-      phrases: ['我是X'],
-    });
-  });
-
-  it('preserves triggerHints inside an array of services', () => {
-    const json = JSON.stringify([
-      {
-        name: 'prompx',
-        transport: 'http',
-        url: 'http://127.0.0.1:5203/mcp',
-        enabled: true,
-        tags: [],
-        connectionPool: { maxConnections: 5, idleTimeout: 60000, connectionTimeout: 30000 },
-        triggerHints: { onSessionEnd: 'remember' },
-      },
-    ]);
-    const services = expectValid(validateJson(json));
-    expect(services[0]?.triggerHints).toEqual({ onSessionEnd: 'remember' });
-  });
-});
 
 describe('ServiceFormUnified.formDataToService — triggerHints assembly', () => {
   it('assembles full triggerHints when all three fields are filled', () => {

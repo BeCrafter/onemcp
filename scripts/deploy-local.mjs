@@ -11,9 +11,12 @@
  *   3. npm install -g <tarball>（全局真实副本，完整替代旧 onemcp 命令，
  *      与从 registry 安装同语义）+ 安装形态硬校验（防软链式假安装）
  * 然后本脚本：
- *   4. 安全停止旧 daemon：读 pidfile → SIGTERM → 等待退出 → 必要时 SIGKILL → 清理 pidfile
- *   5. onemcp -m server -d 后台启动新 daemon
- *   6. 轮询 initialize 直至就绪（避免 pidfile 竞态与半启动状态）
+ *   4. 重启旧 daemon：
+ *      - 端口由 launchd 守护时（如 LaunchAgent + KeepAlive，这类 daemon 不写 pidfile）：
+ *        `launchctl kickstart -k gui/<uid>/<label>`，重启后仍由 launchd 监督
+ *      - 否则按 pidfile：读 pidfile → SIGTERM → 等待退出 → 必要时 SIGKILL → 清理 pidfile，
+ *        再用 `onemcp -m server -d` 后台启动
+ *   5. 轮询 initialize 直至就绪（避免 pidfile 竞态与半启动状态）
  */
 import fs from 'node:fs';
 import http from 'node:http';
@@ -21,7 +24,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { buildPackAndInstall } from './lib/install-local.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -65,6 +68,77 @@ function portInUse(port) {
       resolve(false);
     });
   });
+}
+
+/**
+ * PID owning the listening socket of `port`, or null when unknown.
+ */
+function portOwnerPid(port) {
+  const res = spawnSync('lsof', ['-tiTCP:' + port, '-sTCP:LISTEN'], { encoding: 'utf8' });
+  if (res.status !== 0) return null;
+  const first = (res.stdout || '').trim().split('\n')[0] ?? '';
+  const pid = Number.parseInt(first, 10);
+  return Number.isFinite(pid) && pid > 0 ? pid : null;
+}
+
+function parentPid(pid) {
+  const res = spawnSync('ps', ['-o', 'ppid=', '-p', String(pid)], { encoding: 'utf8' });
+  const ppid = Number.parseInt((res.stdout || '').trim(), 10);
+  return Number.isFinite(ppid) && ppid > 1 ? ppid : null;
+}
+
+/**
+ * launchd label supervising `pid` (checked over the whole process ancestry), or
+ * null when the process is not launchd-managed / this is not macOS.
+ *
+ * Needed because such a daemon never writes ~/.onemcp/server.pid, so the pidfile
+ * path below can only refuse — restarting has to go through launchd itself.
+ */
+function launchdLabelFor(pid) {
+  if (process.platform !== 'darwin') return null;
+  const list = spawnSync('launchctl', ['list'], { encoding: 'utf8' });
+  if (list.status !== 0) return null;
+
+  const labelByPid = new Map();
+  for (const line of (list.stdout || '').split('\n').slice(1)) {
+    const [pidCol, , label] = line.trim().split(/\s+/);
+    if (pidCol === undefined || label === undefined || pidCol === '-') continue;
+    const servicePid = Number.parseInt(pidCol, 10);
+    if (Number.isFinite(servicePid)) labelByPid.set(servicePid, label);
+  }
+
+  const seen = new Set();
+  for (let current = pid; current !== null && !seen.has(current); current = parentPid(current)) {
+    seen.add(current);
+    const label = labelByPid.get(current);
+    if (label !== undefined) return label;
+  }
+  return null;
+}
+
+/**
+ * Restart a launchd service, preferring kickstart (stop/start is the older
+ * fallback). Neither command's exit status is trusted: with KeepAlive a `stop`
+ * can trigger an immediate auto-restart that makes the following `start` report
+ * "already running", which is a success in disguise. What matters is whether the
+ * port answers again, which the caller's readiness poll already decides.
+ */
+function restartViaLaunchd(label) {
+  const domain = `gui/${process.getuid()}`;
+  const kicked = spawnSync('launchctl', ['kickstart', '-k', `${domain}/${label}`], {
+    encoding: 'utf8',
+  });
+  if (kicked.status === 0) return;
+
+  spawnSync('launchctl', ['stop', label], { encoding: 'utf8' });
+  const started = spawnSync('launchctl', ['start', label], { encoding: 'utf8' });
+  if (started.status !== 0) {
+    const detail = (kicked.stderr || started.stderr || '').trim();
+    log(
+      `launchctl restart of ${label} reported failure${detail ? ` (${detail})` : ''} — ` +
+        'verifying whether the service came back anyway...'
+    );
+  }
 }
 
 async function stopDaemon() {
@@ -158,21 +232,33 @@ async function waitReady(port, timeoutMs = 60_000) {
 async function main() {
   await buildPackAndInstall(ROOT, (msg) => log(msg));
 
-  await stopDaemon();
+  const ownerPid = portOwnerPid(PORT);
+  const launchdLabel = ownerPid === null ? null : launchdLabelFor(ownerPid);
 
-  log(`starting daemon: onemcp -m server -p ${PORT} -l ${LOG_LEVEL} -d`);
-  const code = await new Promise((resolve) => {
-    const child = spawn('onemcp', ['-m', 'server', '-p', String(PORT), '-l', LOG_LEVEL, '-d'], {
-      stdio: 'ignore',
+  if (launchdLabel !== null) {
+    log(`port ${PORT} is served by launchd service '${launchdLabel}' — restarting it via launchctl`);
+    // A pidfile left behind by an earlier non-launchd start would point at some
+    // unrelated (possibly recycled) PID; the pidfile path below would later try
+    // to signal it. Drop it while we are here.
+    fs.rmSync(PID_FILE, { force: true });
+    restartViaLaunchd(launchdLabel);
+  } else {
+    await stopDaemon();
+
+    log(`starting daemon: onemcp -m server -p ${PORT} -l ${LOG_LEVEL} -d`);
+    const code = await new Promise((resolve) => {
+      const child = spawn('onemcp', ['-m', 'server', '-p', String(PORT), '-l', LOG_LEVEL, '-d'], {
+        stdio: 'ignore',
+      });
+      child.on('exit', resolve);
+      child.on('error', () => resolve(1));
     });
-    child.on('exit', resolve);
-    child.on('error', () => resolve(1));
-  });
-  if (code !== 0) {
-    const tail = fs.existsSync(LOG_FILE)
-      ? fs.readFileSync(LOG_FILE, 'utf8').trimEnd().split('\n').slice(-5).join('\n')
-      : '(no log file)';
-    throw new Error(`daemon failed to start (exit ${code}). Last log lines:\n${tail}`);
+    if (code !== 0) {
+      const tail = fs.existsSync(LOG_FILE)
+        ? fs.readFileSync(LOG_FILE, 'utf8').trimEnd().split('\n').slice(-5).join('\n')
+        : '(no log file)';
+      throw new Error(`daemon failed to start (exit ${code}). Last log lines:\n${tail}`);
+    }
   }
 
   log('waiting for readiness (initialize round-trip)...');

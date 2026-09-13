@@ -3,10 +3,16 @@
  *
  * Displays all registered services with their status and details.
  * Supports navigation and selection with enhanced visual feedback.
+ *
+ * Every service renders on EXACTLY one line: the endpoint/tags are truncated to
+ * a computed cell budget instead of wrapping. Wrapping was what pushed the frame
+ * past the terminal (rows can be 2-3 lines when an endpoint is long), and a frame
+ * taller than the viewport makes ink's absolute writes land on the wrong rows.
  */
 
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
+import { truncateDisplay } from '../text-layout.js';
 import type { ServiceDefinition } from '../../types/service.js';
 import type { DiscoveryStatus } from '../tool-discovery-manager.js';
 
@@ -15,13 +21,62 @@ export interface ServiceListProps {
   selectedIndex: number;
   onSelect: (index: number) => void;
   terminalHeight?: number;
-  showDetails?: boolean;
-  globalToolStats?: {
-    enabled: number;
-    total: number;
-  };
   discoveryStatus?: Map<string, DiscoveryStatus>;
   toolCounts?: Map<string, number>;
+}
+
+/** Column budgets derived from the terminal width. */
+export interface ListColumnLayout {
+  nameWidth: number;
+  transportWidth: number;
+  endpointWidth: number;
+  /** null → the tags column is dropped to keep the endpoint readable. */
+  tagWidth: number | null;
+  /** null → the tool-count column is dropped. */
+  toolWidth: number | null;
+}
+
+const MARKER_WIDTH = 3;
+const TRANSPORT_WIDTH = 8;
+const DEFAULT_NAME_WIDTH = 25;
+const DEFAULT_TAG_WIDTH = 28;
+const DEFAULT_TOOL_WIDTH = 12;
+const MIN_NAME_WIDTH = 10;
+/** Below this the endpoint stops being readable, so columns get dropped instead. */
+const MIN_ENDPOINT_WIDTH = 10;
+
+/**
+ * Split the horizontal budget between columns, dropping the optional ones
+ * (tags, then tool counts) before letting the endpoint collapse to nothing.
+ */
+export function computeColumnLayout(terminalWidth: number): ListColumnLayout {
+  const inner = Math.max(20, terminalWidth - 4); // borders (2) + paddingX (2)
+  const fixed = MARKER_WIDTH + TRANSPORT_WIDTH;
+  let nameWidth = DEFAULT_NAME_WIDTH;
+  let tagWidth: number | null = DEFAULT_TAG_WIDTH;
+  let toolWidth: number | null = DEFAULT_TOOL_WIDTH;
+
+  const endpointIfKept = (): number =>
+    inner - fixed - nameWidth - (tagWidth ?? 0) - (toolWidth ?? 0);
+
+  if (endpointIfKept() < MIN_ENDPOINT_WIDTH) {
+    tagWidth = null;
+  }
+  if (endpointIfKept() < MIN_ENDPOINT_WIDTH) {
+    toolWidth = null;
+  }
+  if (endpointIfKept() < MIN_ENDPOINT_WIDTH) {
+    const deficit = MIN_ENDPOINT_WIDTH - endpointIfKept();
+    nameWidth -= Math.min(deficit, nameWidth - MIN_NAME_WIDTH);
+  }
+
+  return {
+    nameWidth,
+    transportWidth: TRANSPORT_WIDTH,
+    endpointWidth: Math.max(4, endpointIfKept()),
+    tagWidth,
+    toolWidth,
+  };
 }
 
 /**
@@ -50,14 +105,15 @@ function formatEnabled(enabled: boolean): { text: string; color: string; symbol:
 }
 
 /**
- * Service List Item Component
+ * Service List Item Component — renders exactly one terminal line.
  */
 const ServiceListItem: React.FC<{
   service: ServiceDefinition;
   isSelected: boolean;
+  layout: ListColumnLayout;
   discoveryStatus?: DiscoveryStatus;
   toolCount?: number;
-}> = ({ service, isSelected, discoveryStatus, toolCount }) => {
+}> = ({ service, isSelected, layout, discoveryStatus, toolCount }) => {
   const transport = formatTransport(service.transport);
   const status = formatEnabled(service.enabled);
 
@@ -68,97 +124,85 @@ const ServiceListItem: React.FC<{
 
   const enabledTools = (toolCount ?? 0) - disabledTools;
 
-  const endpoint = service.transport === 'stdio'
-    ? ((service.command || '') + (service.args?.length ? ' ' + service.args.join(' ') : ''))
-    : (service.url || '');
+  const endpoint =
+    service.transport === 'stdio'
+      ? (service.command || '') + (service.args?.length ? ' ' + service.args.join(' ') : '')
+      : service.url || '';
 
-  const endpointDisplay = endpoint.length > 50
-    ? endpoint.substring(0, 47) + '...'
-    : endpoint;
+  const tags = service.tags?.slice(0, 3) ?? [];
 
-  const renderTags = () => {
-    const tags = service.tags?.slice(0, 3) ?? [];
-
-    return (
-      <Box width={28} flexShrink={0} paddingX={1}>
-        {tags.map((tag, index) => (
-          <Text key={tag}>
-            <Text dimColor>[</Text>
-            <Text color="yellow">{tag}</Text>
-            <Text dimColor>]</Text>
-            {index < tags.length - 1 && <Text dimColor> </Text>}
-          </Text>
-        ))}
-      </Box>
-    );
-  };
-
-  // Render tool count indicator based on discovery status
-  const renderToolIndicator = () => {
+  const toolLabel = (): string => {
     if (!service.enabled) {
-      return <Box width={12} flexShrink={0} />;
+      return '';
     }
-
     switch (discoveryStatus) {
       case 'in-progress':
-        return (
-          <Box width={12} flexShrink={0}>
-            <Text dimColor>⏳ loading</Text>
-          </Box>
-        );
+        return '⏳ loading';
       case 'failed':
-        return (
-          <Box width={12} flexShrink={0}>
-            <Text color="red">✗ failed</Text>
-          </Box>
-        );
+        return '✗ failed';
       case 'completed':
-        if (toolCount !== undefined && toolCount > 0) {
-          return (
-            <Box width={12} flexShrink={0} justifyContent="flex-end">
-              <Text color="magenta" bold>{Math.max(0, enabledTools)}/{toolCount}</Text>
-              <Text dimColor> tools</Text>
-            </Box>
-          );
-        }
-        return <Box width={12} flexShrink={0} />;
+        return toolCount !== undefined && toolCount > 0
+          ? `${Math.max(0, enabledTools)}/${toolCount} tools`
+          : '';
       default:
-        return <Box width={12} flexShrink={0} />;
+        return '';
     }
   };
 
   return (
-    <Box
-      flexDirection="row"
-      paddingX={1}
-      paddingY={0}
-      marginBottom={0}
-    >
-      <Box width={3}>
-        <Text bold color={isSelected ? 'cyan' : 'dimGray'}>
+    <Box flexDirection="row" paddingX={1} paddingY={0} marginBottom={0}>
+      <Box width={MARKER_WIDTH} flexShrink={0}>
+        <Text bold color={isSelected ? 'cyan' : 'gray'}>
           {isSelected ? '▶' : ' '}
         </Text>
       </Box>
 
-      <Box width={25} flexShrink={0}>
+      <Box width={layout.nameWidth} flexShrink={0}>
         <Text bold color={status.color}>
           {status.symbol}
         </Text>
-        <Text bold color={isSelected ? 'cyan' : 'white'}>
-          {' '}{service.name}
+        <Text bold color={isSelected ? 'cyan' : 'white'} wrap="truncate">
+          {' '}
+          {truncateDisplay(service.name, Math.max(1, layout.nameWidth - 2))}
         </Text>
       </Box>
 
-      <Box width={8} flexShrink={0}>
-        <Text color={transport.color} bold>{transport.text}</Text>
+      <Box width={layout.transportWidth} flexShrink={0}>
+        <Text color={transport.color} bold wrap="truncate">
+          {transport.text}
+        </Text>
       </Box>
 
-      <Box flexGrow={1} flexShrink={1}>
-        <Text color="dimGray">{endpointDisplay}</Text>
+      <Box width={layout.endpointWidth} flexShrink={0}>
+        <Text color="gray" wrap="truncate">
+          {truncateDisplay(endpoint, layout.endpointWidth)}
+        </Text>
       </Box>
 
-      {renderTags()}
-      {renderToolIndicator()}
+      {layout.tagWidth !== null && (
+        <Box width={layout.tagWidth} flexShrink={0} paddingX={1}>
+          <Text wrap="truncate">
+            {tags.map((tag, index) => (
+              <Text key={tag}>
+                <Text color="gray">[</Text>
+                <Text color="yellow">{tag}</Text>
+                <Text color="gray">]</Text>
+                {index < tags.length - 1 ? ' ' : ''}
+              </Text>
+            ))}
+          </Text>
+        </Box>
+      )}
+
+      {layout.toolWidth !== null && (
+        <Box width={layout.toolWidth} flexShrink={0} justifyContent="flex-end">
+          <Text wrap="truncate">
+            <Text color={discoveryStatus === 'failed' ? 'red' : 'magenta'} bold>
+              {toolLabel()}
+            </Text>
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 };
@@ -177,12 +221,17 @@ export const ServiceList: React.FC<ServiceListProps> = ({
   const { stdout } = useStdout();
   const effectiveTerminalHeight = terminalHeight || 24;
   const effectiveTerminalWidth = stdout?.columns || 80;
-  const HEADER_LINES = 2;
-  const FOOTER_LINES = 2;
-  const SERVICE_ITEM_LINES = 1;
-  // Calculate visible services based on terminal height, but cap at 25 per page
-  const calculatedVisible = Math.floor((effectiveTerminalHeight - HEADER_LINES - FOOTER_LINES) / SERVICE_ITEM_LINES);
-  const MAX_VISIBLE_SERVICES = Math.min(25, Math.max(3, calculatedVisible));
+
+  const layout = computeColumnLayout(effectiveTerminalWidth);
+
+  // Chrome the list draws around its rows: header(1) + box borders(2) +
+  // footer borders(2), plus one row for the pagination hint when it shows.
+  const LIST_CHROME_LINES = 5;
+  const rowsForItems = (withPager: boolean): number =>
+    Math.max(3, effectiveTerminalHeight - LIST_CHROME_LINES - (withPager ? 1 : 0));
+
+  const wouldPaginate = Math.ceil(services.length / Math.min(25, rowsForItems(false))) > 1;
+  const MAX_VISIBLE_SERVICES = Math.min(25, rowsForItems(wouldPaginate));
 
   const [currentPage, setCurrentPage] = useState(0);
   const totalPages = Math.ceil(services.length / MAX_VISIBLE_SERVICES);
@@ -215,50 +264,58 @@ export const ServiceList: React.FC<ServiceListProps> = ({
   if (services.length === 0) {
     return (
       <Box flexDirection="column">
-        <Box
-          borderStyle="double"
-          borderColor="yellow"
-          padding={1}
-          flexDirection="column"
-        >
-          <Text bold color="yellow">📋 No services registered</Text>
-          <Text dimColor>Get started by adding your first MCP service</Text>
+        <Box borderStyle="double" borderColor="yellow" padding={1} flexDirection="column">
+          <Text bold color="yellow">
+            📋 No services registered
+          </Text>
+          <Text color="gray">Get started by adding your first MCP service</Text>
         </Box>
 
         <Box marginTop={1} borderStyle="single" borderColor="cyan" paddingX={1}>
           <Text>
             <Text color="cyan">a</Text>
-            <Text dimColor>: Add service | </Text>
+            <Text color="gray">: Add service | </Text>
             <Text color="cyan">?</Text>
-            <Text dimColor>: Help | </Text>
+            <Text color="gray">: Help | </Text>
             <Text color="cyan">q</Text>
-            <Text dimColor>: Quit</Text>
+            <Text color="gray">: Quit</Text>
           </Text>
         </Box>
       </Box>
     );
   }
 
-  const enabledCount = services.filter(s => s.enabled).length;
+  const enabledCount = services.filter((s) => s.enabled).length;
   const disabledCount = services.length - enabledCount;
 
   return (
     <Box flexDirection="column">
       {/* Header */}
       <Box paddingX={1} paddingY={0}>
-        <Text bold color="cyan">{services.length} Services</Text>
-        <Text dimColor>: </Text>
-        <Text color="green" bold>{enabledCount} enabled</Text>
+        <Text bold color="cyan">
+          {services.length} Services
+        </Text>
+        <Text color="gray">: </Text>
+        <Text color="green" bold>
+          {enabledCount} enabled
+        </Text>
         {disabledCount > 0 && (
           <>
-            <Text dimColor>, </Text>
-            <Text color="red" bold>{disabledCount} disabled</Text>
+            <Text color="gray">, </Text>
+            <Text color="red" bold>
+              {disabledCount} disabled
+            </Text>
           </>
         )}
       </Box>
 
       {/* Service list with border */}
-      <Box width={effectiveTerminalWidth} flexDirection="column" borderStyle="single" borderColor="gray" marginY={0}>
+      <Box
+        width={effectiveTerminalWidth}
+        flexDirection="column"
+        borderStyle="single"
+        borderColor="gray"
+      >
         {visibleServices.map((service, index) => {
           const svcDiscoveryStatus = discoveryStatus?.get(service.name);
           const svcToolCount = toolCounts?.get(service.name);
@@ -267,6 +324,7 @@ export const ServiceList: React.FC<ServiceListProps> = ({
               key={service.name}
               service={service}
               isSelected={startIndex + index === selectedIndex}
+              layout={layout}
               {...(svcDiscoveryStatus !== undefined ? { discoveryStatus: svcDiscoveryStatus } : {})}
               {...(svcToolCount !== undefined ? { toolCount: svcToolCount } : {})}
             />
@@ -276,17 +334,19 @@ export const ServiceList: React.FC<ServiceListProps> = ({
 
       {totalPages > 1 && (
         <Box marginTop={0} paddingX={2} justifyContent="center">
-          <Text dimColor>
-            <Text bold>{currentPage + 1}/{totalPages}</Text>
+          <Text color="gray">
+            <Text bold>
+              {currentPage + 1}/{totalPages}
+            </Text>
             <Text> | ↑/↓ Navigate | ←/→ Page </Text>
-            <Text dimColor>({services.length} services)</Text>
+            <Text color="gray">({services.length} services)</Text>
           </Text>
         </Box>
       )}
 
       {/* Footer with shortcuts */}
-      <Box width={effectiveTerminalWidth} borderStyle="single" borderColor="gray" paddingX={1} marginTop={0}>
-        <Text dimColor>
+      <Box width={effectiveTerminalWidth} borderStyle="single" borderColor="gray" paddingX={1}>
+        <Text color="gray" wrap="truncate">
           ↑/↓ Navigate | Enter Edit | Space Toggle | a Add | d Delete | v Tools | r Refresh | q Quit
         </Text>
       </Box>

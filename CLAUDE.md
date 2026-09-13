@@ -15,13 +15,20 @@
 | `npm run test:watch` | Watch mode tests |
 | `npm run test:coverage` | Coverage report (thresholds: 80% lines/fn/stmt, 75% branches) |
 | `npm run test:property` | Property-based tests (fast-check) |
-| `npm run deploy:local` | 编译 → npm 打包真实 tarball → 全局安装（完整替代旧 onemcp 命令）→ 重启 ~/.onemcp daemon → 冒烟 |
-| `npm run verify:local` | 端到端回归：重新编译安装后，以独立实例（随机端口）跑全部场景 case |
+| `npm run deploy:local` | 编译 → npm 打包真实 tarball → 全局安装（完整替代旧 onemcp 命令）→ 重启 daemon（launchd 守护时自动走 `launchctl kickstart`）→ 就绪冒烟 |
+| `npm run verify:local` | 端到端回归：重新编译安装后，以独立实例（随机端口）跑全部场景 case（N*/F*） |
+| `npm run verify:tui` | TUI 端到端回归：tmux 驱动真实终端跑交互场景（T*），不动 daemon/用户配置 |
 | `npm run lint` / `lint:fix` | ESLint |
 | `npm run format` / `format:check` | Prettier |
 | `npm run typecheck` | TypeScript check only |
 | `npx vitest run <file>` | Single test file |
 | `npx vitest run -t "<name>"` | Single test by name |
+
+> **本机注记（daemon 守护方式）**：:5625 由 launchd 守护 `site.iskill.onemcp`
+> （plist `~/Library/LaunchAgents/site.iskill.onemcp.plist`，`RunAtLoad` + `KeepAlive`）直接运行**全局安装的 `onemcp`**，
+> 因此 `deploy:local` 装的本地构建只要重启守护即可生效（脚本会自动检测并用 `launchctl kickstart -k` 重启）。
+> 这类守护进程**不写** `~/.onemcp/server.pid`，手动切版用
+> `launchctl kickstart -k gui/$(id -u)/site.iskill.onemcp`；plist 备份见同目录 `*.bak-*`。
 
 ---
 
@@ -37,7 +44,14 @@
    修复类问题放入 `F*`（故障恢复），新功能/正常操作放入 `N*`（正常场景），编号顺延。
    确保每个问题都能在端到端层面复现与验证，迭代过程始终可用全局 case 回归。
 2. **每次修改代码后的标准验证链**（全绿才算完成）：
-   `npm test` → `npm run deploy:local` → `npm run verify:local`
+   `npm test` → `npm run build && npm run verify:tui`（改动涉及 TUI 时）→
+   `npm run deploy:local` → `npm run verify:local`
+   - CI（`.github/workflows/ci.yml`）跑 `lint` / `typecheck` / `build` / 单测 / 集成测试 / coverage
+     以及 **TUI E2E**（tui-e2e 任务，`verify:tui`）；
+     `verify:local` 需要全局安装，仍是本地门禁，CI 不跑。
+   - 驱动脚本会为 tmux 会话**剥掉 `CI` / `CONTINUOUS_INTEGRATION` / `CI_*`**（`withoutCiMarkers`）：
+     Ink 用 `is-in-ci` 判断 CI 环境，命中时只在**退出时**绘制最后一帧，驱动会全程看到空屏
+     （这是排查「CI 里 TUI 未就绪」类问题的第一嫌疑人，而不是应用代码）。
 3. **场景编写约定**：
    - 随机空闲端口 + `mkdtemp` 独立临时配置，绝不触碰 :5625 运行实例
    - mock 后端自带请求级日志与 `/__stats`、`/__expire`（HTTP 过期触发）控制端点；
@@ -60,8 +74,48 @@
 - **F2** HTTP 后端规范型会话过期（HTTP 404）→ 透明重建
 - **F3** stdio 后端进程崩溃 → 自动 respawn 重放
 - **F4** 前端客户端会话句柄失效 → 重启实例后旧 Mcp-Session-Id 透明重建
-- TUI：交互式界面需 PTY，不纳入脚本；其恢复逻辑由
-  `tests/integration/discovery-worker-session-expiry.test.ts` 覆盖
+- TUI：交互式界面需 PTY，由 **`scripts/tui-e2e.mjs`**（`npm run verify:tui`）覆盖，
+  见下「TUI 场景回归规则」；组件级行为另有 `tests/integration/tui-*.test.ts`
+
+---
+
+## TUI 场景回归规则（必须遵守）
+
+TUI 交互场景统一维护在 **`scripts/tui-e2e.mjs`**（`npm run verify:tui`），用 tmux 充当真实终端：
+私有 socket 建会话、`send-keys` 驱动按键、`capture-pane` 读屏。**必须用真实终端驱动**——
+自研 ANSI 仿真在帧高溢出等场景下的滚动语义与真实终端不一致，会产生假象。
+
+### 规则
+
+1. **改动 TUI 行为（按键、布局、渲染）时，必须同步在 `scripts/tui-e2e.mjs` 增加/更新 T* 场景**，
+   编号顺延；纯组件逻辑另加 `tests/integration/tui-*.test.ts`。
+2. **隔离是硬性要求**：
+   - tmux 私有 socket（`-L onemcp-tui-e2e`），不触碰用户默认 tmux server
+   - 每场景 `mkdtemp` 独立配置目录，绝不读写 `~/.onemcp`；配置由 `onemcp --init` 生成后打补丁
+     （不要手写配置模板：schema 新增必填字段时会静默失效，应用会因校验失败直接退出）
+   - 不绑定端口，与运行中的 daemon 无关
+3. **断言要锁行为而不是锁像素**：相对式判断（如「每个服务恰好占一行」「无 `-http://` 游离字符」
+   「确认前服务数不变」），失败时转储当前画面。退出码：0 通过 / 1 断言失败 / 2 环境不具备（未装 tmux，
+   需显式 `--allow-skip` 才会按通过处理）——「跳过」不允许伪装成「通过」。
+4. **文档同步**：新增/调整场景后同步更新 README「本地部署与端到端验证」的 TUI 场景清单。
+
+### 当前 TUI 场景清单（以 scripts/tui-e2e.mjs 为准）
+
+- **T1** 列表一屏渲染（16 服务 @34 行 / @50 行）：每服务恰好一行、无续行、无游离字符、不超帧高
+- **T2** 窄终端降级（60 列）：丢弃 tags 列、端点省略号截断、仍每服务一行
+- **T3** 删除二次确认：`d` 弹确认 → `n` 取消（配置未变）→ `d`+`y` 才删除并落盘
+- **T4** 重名覆盖确认：同名保存弹确认，`n` 取消且原 tags 完好（不静默覆盖）
+- **T5** Ctrl+S 不污染：空 Command 连按 3 次 → 字段无 `s`、有错误提示、零落库
+- **T6** Ctrl+C 退出：有服务配置时进程也能真正结束
+- **T7** 参数粘贴并运行：整块粘贴（一次多字符输入）生效并运行成功
+- **T8** 工具视图：工具清单（精确计数）+ 搜索框粘贴过滤
+- **T9** 结果区操作：Ctrl+P 原始输出 / `v` 选行 + Ctrl+Y 复制选区 / `f` 全宽
+- **T10** 结果分页：大输出下 PageDown/PageUp 改变可见行区间
+- **T11** CJK：中文标签在列表里每服务一行；中文参数值运行后原样回显
+- **T12** 配置路径与自身写盘提示：footer 显示真实 configDir；保存后提示是成功而非「外部变更」
+- **T13** 结果存档：Ctrl+O 生成临时文件、给出路径并复制完整路径
+- **T14** 长描述滚动：Ctrl+E 展开后焦点进入描述区，↑/↓ 逐行滚动（选中项不变）；Esc 回到工具列表后 ↑/↓ 立刻切换工具（无需先折叠描述）
+- **T15** 区域焦点与提示：标题字形恒定（无焦点箭头），焦点靠颜色 —— `-e` 抓屏断言聚焦区标题文字与竖线同色、且与未聚焦区不同；底部提示只讲当前区域；运行后结果区加入循环；瞬时通知不顶掉提示行
 
 ---
 
@@ -110,6 +164,8 @@
 **Discovery Cache Reuse**: `findTool` serves tool lookups from the per-service discovery cache (60s TTL, same cache as `discoverTools`); misses fall back to a live backend query. Cache invalidation hooks: service register/unregister, health events, `setToolState`, config hot-reload.
 
 **Configuration Hot-Reload**: Config file changes are detected and services are reloaded without restarting the entire system.
+
+**TUI Region Focus**: Focus is carried by colour, and the colour must change the WHOLE heading — bar, label and rule together go cyan+bold, idle headings keep the grey bar and plain label. Changing only the bar cell is invisible: the "focused" colour was the terminal default, i.e. exactly the colour of the always-default label beside it. Keep heading rows glyph-identical across focus states (no marker arrows), and keep the panel title (`Tools for: …`) as the tool list's cue (cyan focused / grey idle). Neither test harness sees colour, so focus is asserted through `capture-pane -e` SGR comparison in T15 plus the per-region footer label. Each region also owns its bottom hints (`Quick Actions — <Region>`); a hint that names another region's key, or a key that cannot work in the current state, is a bug. The footer budget is 3 lines, so a transient notice (copy/save feedback) takes the heading slot instead of adding a line.
 
 ## Configuration Structure
 
@@ -270,6 +326,7 @@ src/
 scripts/
 ├── deploy-local.mjs          # npm run deploy:local
 ├── e2e-local.mjs             # npm run verify:local（E2E 场景 case 维护在此）
+├── tui-e2e.mjs               # npm run verify:tui（TUI 场景 case 维护在此，tmux 驱动）
 └── lib/install-local.mjs     # 共享"编译→打包→安装"管道
 ```
 

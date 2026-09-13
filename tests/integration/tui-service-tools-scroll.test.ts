@@ -7,11 +7,18 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
-import { Readable } from 'stream';
 import { Box, useStdout, render } from 'ink';
 import { ServiceTools } from '../../src/tui/components/ServiceTools.js';
 import { Header } from '../../src/tui/components/Header.js';
 import type { ServiceDefinition } from '../../src/types/service.js';
+import {
+  Terminal,
+  createStdin,
+  sleep,
+  waitFor,
+  typeKeys,
+  pressKey,
+} from './helpers/ansi-terminal.js';
 
 // Hoisted so the mock factory can reference it and tests can assert that the
 // mock (not a real connection attempt) drove the render.
@@ -28,96 +35,16 @@ const { fetchServiceToolsMock } = vi.hoisted(() => {
 vi.mock('../../src/tui/discovery-worker.js', () => ({
   __esModule: true,
   fetchServiceTools: fetchServiceToolsMock,
+  // ServiceTools also imports the call API; tests here never invoke it but
+  // the named exports must exist for the module import to succeed.
+  callServiceTool: vi.fn(),
+  ToolCallError: class ToolCallError extends Error {},
+  DiscoveryError: class DiscoveryError extends Error {},
+  DiscoveryErrorType: { TIMEOUT: 'timeout', CONNECTION_FAILED: 'connection_failed' },
   default: fetchServiceToolsMock,
 }));
 
 // Minimal ANSI terminal emulator (same as repro script)
-class Terminal {
-  grid: string[][];
-  rows: number;
-  cols: number;
-  private r = 0;
-  private c = 0;
-  constructor(rows: number, cols: number) {
-    this.rows = rows;
-    this.cols = cols;
-    this.grid = Array.from({ length: rows }, () => Array(cols).fill(' '));
-  }
-  feed(data: string) {
-    let i = 0;
-    while (i < data.length) {
-      const ch = data[i]!;
-      if (ch === '\x1b') {
-        if (data[i + 1] === '[') {
-          let j = i + 2;
-          let paramStr = '';
-          while (j < data.length && !/[A-Za-z]/.test(data[j]!)) {
-            paramStr += data[j]!;
-            j++;
-          }
-          const final = data[j]!;
-          j++;
-          const isPrivate = paramStr.includes('?');
-          const clean = paramStr.replace(/[^0-9;]/g, '');
-          const parts = clean.split(';');
-          const num = (s: string) => (s === '' ? 1 : parseInt(s, 10) || 1);
-          if (!isPrivate) {
-            if (final === 'H' || final === 'f') {
-              this.r = Math.min(this.rows - 1, Math.max(0, num(parts[0] ?? '1') - 1));
-              this.c = Math.min(this.cols - 1, Math.max(0, num(parts[1] ?? '1') - 1));
-            } else if (final === 'A') this.r = Math.max(0, this.r - num(parts[0] ?? '1'));
-            else if (final === 'B') this.r = Math.min(this.rows - 1, this.r + num(parts[0] ?? '1'));
-            else if (final === 'C') this.c = Math.min(this.cols - 1, this.c + num(parts[0] ?? '1'));
-            else if (final === 'D') this.c = Math.max(0, this.c - num(parts[0] ?? '1'));
-            else if (final === 'G')
-              this.c = Math.min(this.cols - 1, Math.max(0, num(parts[0] ?? '1') - 1));
-            else if (final === 'K') {
-              if (this.r >= 0 && this.r < this.rows) {
-                for (let k = this.c; k < this.cols; k++) this.grid[this.r]![k] = ' ';
-              }
-            } else if (final === 'J' && parts[0] === '2') {
-              for (let rr = 0; rr < this.rows; rr++)
-                for (let cc = 0; cc < this.cols; cc++) this.grid[rr]![cc] = ' ';
-            }
-          }
-          i = j;
-        } else {
-          i += 2;
-          while (i < data.length && !/[A-Za-z]/.test(data[i]!)) i++;
-          i++;
-        }
-      } else if (ch === '\n') {
-        this.r++;
-        this.c = 0;
-        i++;
-      } else if (ch === '\r') {
-        this.c = 0;
-        i++;
-      } else if (ch >= ' ') {
-        if (this.r >= 0 && this.r < this.rows && this.c >= 0 && this.c < this.cols) {
-          this.grid[this.r]![this.c] = ch;
-        }
-        this.c++;
-        i++;
-      } else {
-        i++;
-      }
-    }
-  }
-  text(): string {
-    return this.grid.map((row) => row.join('').replace(/\s+$/, '')).join('\n');
-  }
-}
-
-const createStdin = () => {
-  const stdin: any = new Readable({ read() {} });
-  stdin.isTTY = true;
-  stdin.setRawMode = () => {};
-  stdin.ref = () => {};
-  stdin.unref = () => {};
-  return stdin;
-};
-
 // Mirrors the optimized app's outer chrome + contentHeight wiring
 const MiniApp: React.FC<{ rows: number }> = ({ rows }) => {
   const { stdout } = useStdout();
@@ -192,28 +119,10 @@ function renderApp(rows: number, cols: number) {
   return { instance, term, stdin, stdout };
 }
 
-const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 // Poll the rendered terminal until `pred` holds or the timeout elapses, so slow
 // CI runners don't flake on Ink's 32ms-throttled render loop.
-const waitFor = async (pred: () => boolean, timeoutMs = 5000): Promise<boolean> => {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    await new Promise((r) => setImmediate(r));
-    await sleep(20);
-    if (pred()) return true;
-  }
-  return pred();
-};
 // Push a sequence of keystrokes with enough delay between each for Ink's
 // throttled render loop (32ms) to flush, then flush the scheduler.
-const typeKeys = async (stdin: any, chars: string, perKey = 60) => {
-  for (const ch of chars) {
-    stdin.push(Buffer.from(ch, 'utf8'));
-    await new Promise((r) => setImmediate(r));
-    await sleep(perKey);
-  }
-};
-
 describe('ServiceTools scroll indicator (real components, optimized chrome)', () => {
   it('keeps ↑ more on its own line at the bottom of a long tool list (24-row terminal)', async () => {
     const { instance, term, stdin } = renderApp(24, 80);
@@ -266,7 +175,7 @@ describe('ServiceTools scroll indicator (real components, optimized chrome)', ()
       const ellipsisCol = row.indexOf('…');
       expect(ellipsisCol).toBeGreaterThan(0);
       expect(ellipsisCol).toBeLessThan(LEFT_PANEL_WIDTH);
-      const descCol = row.indexOf('Description');
+      const descCol = row.indexOf('DESCRIPTION');
       if (descCol > -1) {
         expect(ellipsisCol).toBeLessThan(descCol);
       }
@@ -381,6 +290,51 @@ describe('ServiceTools scroll indicator (real components, optimized chrome)', ()
     const selectedRow = text.split('\n').find((l) => l.includes('▶') && l.includes('tool_040'));
     expect(selectedRow).toBeDefined();
     expect(selectedRow!.includes('✗')).toBe(true);
+
+    instance.unmount();
+  });
+
+  it('scrolls an expanded description in its own region, leaving ↑/↓ to tool navigation', async () => {
+    const longDesc = Array.from(
+      { length: 80 },
+      (_, i) => `desc-line-${String(i).padStart(2, '0')}`
+    ).join('\n');
+    fetchServiceToolsMock.mockImplementation(() =>
+      Promise.resolve([
+        { name: 'alpha', description: longDesc, inputSchema: { type: 'object', properties: {} } },
+        {
+          name: 'bravo',
+          description: 'bravo short description',
+          inputSchema: { type: 'object', properties: {} },
+        },
+      ])
+    );
+
+    const { instance, term, stdin } = renderApp(24, 80);
+    await waitFor(() => term.text().includes('desc-line-00'));
+
+    // 展开：立刻回到描述开头（展开是为了从头读），焦点交给描述区
+    await pressKey(stdin, '\x05'); // Ctrl+E
+    await waitFor(() => !term.text().includes('Ctrl+E expands'));
+    expect(term.text()).toContain('desc-line-00');
+    expect(term.text()).toContain('↑/↓ Scroll line');
+    expect(term.text()).toContain('Esc Back to tool list');
+
+    // 描述区里 ↑/↓ 逐行滚动，而不再切换工具（关键判别：选中项必须没变）
+    await pressKey(stdin, '\x1b[B'); // ↓
+    await waitFor(() => !term.text().includes('desc-line-00'));
+    expect(term.text()).not.toContain('bravo short description');
+
+    // Esc 把箭头交还工具列表，且**不折叠**描述、不离开工具视图 ——
+    // 这正是「展开后想切工具」那条反馈的判据。
+    await pressKey(stdin, '\x1b'); // Esc
+    await waitFor(() => term.text().includes('↑/↓ Navigate'));
+    expect(term.text()).not.toContain('↑/↓ Scroll line');
+
+    // 列表焦点下 ↓ 立刻切换工具（无需先折叠），换到新工具后描述回到折叠态
+    await pressKey(stdin, '\x1b[B'); // ↓ → bravo
+    await waitFor(() => term.text().includes('bravo short description'));
+    expect(term.text()).toContain('Ctrl+E Expand desc');
 
     instance.unmount();
   });
