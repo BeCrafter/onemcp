@@ -624,7 +624,7 @@ npm run deploy:local [-- --port 5625 --log-level INFO]
 脚本改用守护自身的重启命令（macOS 上为 `launchctl kickstart -k gui/<uid>/<label>`）并等待 initialize 就绪；
 否则按 `~/.onemcp/server.pid` 停旧实例、再以 `-d` 启动新实例。两种方式最后都会做一次 initialize 冒烟。
 
-针对**已安装产物**的端到端回归。脚本自身完成"编译 → npm pack → 全局真实安装（tarball + 安装形态校验）"，然后以随机端口 + 独立临时配置的独立实例（不影响正在运行的 daemon，注册 HTTP×2 + SSE + stdio×2 共 5 个 mock 后端）覆盖正常与故障恢复两类共 10 个场景，每条断言独立报告、退出码可供 CI 使用：
+针对**已安装产物**的端到端回归。脚本自身完成"编译 → npm pack → 全局真实安装（tarball + 安装形态校验）"，然后以随机端口 + 独立临时配置的独立实例（不影响正在运行的 daemon，注册 HTTP×3 + SSE + stdio×2 共 6 个 mock 后端）覆盖正常与故障恢复两类共 11 个场景，每条断言独立报告、退出码可供 CI 使用：
 
 ```bash
 npm run verify:local
@@ -645,6 +645,7 @@ npm run verify:local
 - **F2 后端规范型会话过期（HTTP 404）**：同上，验证 MCP 规范的过期信号
 - **F3 stdio 后端进程崩溃**：进程运行中退出，调用路径自动 respawn 并重放请求
 - **F4 前端会话句柄失效**：重启 onemcp 实例后客户端携带旧 `Mcp-Session-Id` 重放，会话句柄透明重建
+- **F5 服务省略 `tags` / `connectionPool`**：外部工具写入的条目常省略这两个字段（文件 schema 允许），加载后仍被正常路由与调用（连接池回退到顶层配置）
 
 ### TUI 端到端验证（需 tmux）
 
@@ -676,6 +677,7 @@ CI 的 `tui-e2e` 任务也在 CI 上运行同一套场景。注意脚本会为 t
 - **T13 结果存档**：Ctrl+O 生成临时文件、给出路径并复制完整路径
 - **T14 长描述滚动**：Ctrl+E 展开后焦点进入描述区，`↑/↓` 逐行滚动（选中项不变）；`Esc` 回到工具列表后 `↑/↓` 立刻切换工具（无需先折叠描述）
 - **T15 区域焦点与提示**：标题字形恒定（无焦点箭头），焦点靠颜色——`-e` 抓屏断言聚焦区**标题文字**与竖线同色、且与未聚焦区不同；底部提示只讲当前区域；运行后结果区加入循环；瞬时通知不顶掉提示行
+- **T16 缺省 `tags` / `connectionPool` 的服务**：这类条目（`~/.onemcp/config.json` 里很常见）按 `e` 能进编辑态、表单渲染出来，且不出现 `Cannot read properties of undefined` —— 回归「一按 `e` 就崩、整个界面画不出来」
 
 组件级 TUI 行为（渲染细节、按键分发）另有 `tests/integration/tui-*.test.ts`（伪终端 harness）覆盖。
 

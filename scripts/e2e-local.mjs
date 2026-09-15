@@ -370,11 +370,15 @@ async function main() {
   const httpNormalPort = await freePort(); // N1/F1: -32001 过期
   const http404Port = await freePort(); // F2: 404 过期
   const ssePort = await freePort(); // N3: SSE
+  const notagsPort = await freePort(); // F5: 缺省 tags/connectionPool 的服务
   const onemcpPort = await freePort();
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'onemcp-e2e-'));
   const backendNormal = startHttpBackend(httpNormalPort, 'jsonrpc');
   const backend404 = startHttpBackend(http404Port, 'http404');
   const sseBackend = startSseBackend(ssePort);
+  // F5 用独立后端：N1.2 断言的是 backendNormal 的精确请求计数，
+  // 让 http-notags 指向它会直接打崩那条断言。
+  const backendNoTags = startHttpBackend(notagsPort, 'jsonrpc');
   const stderrBuf = { text: '' };
   const onStderr = (d) => (stderrBuf.text += d);
 
@@ -390,6 +394,7 @@ async function main() {
     await backendNormal.listen();
     await backend404.listen();
     await sseBackend.listen();
+    await backendNoTags.listen();
     fs.writeFileSync(
       path.join(tmpDir, 'config.json'),
       JSON.stringify({
@@ -411,6 +416,13 @@ async function main() {
             transport: 'http',
             url: `http://127.0.0.1:${http404Port}/mcp`,
             connectionPool: { maxConnections: 2, idleTimeout: 60000, connectionTimeout: 10000 },
+          },
+          // F5：外部工具写入的条目常省略 tags / connectionPool（文件 schema 允许），
+          // 这里刻意不写这两个字段，锁住「加载后仍可正常路由」。
+          'http-notags': {
+            enabled: true,
+            transport: 'http',
+            url: `http://127.0.0.1:${notagsPort}/mcp`,
           },
           'sse-svc': {
             enabled: true,
@@ -444,7 +456,7 @@ async function main() {
       })
     );
 
-    console.log('\n[准备] 启动 onemcp 实例（HTTP×2 + SSE + stdio×2 共 5 个后端）');
+    console.log('\n[准备] 启动 onemcp 实例（HTTP×3 + SSE + stdio×2 共 6 个后端）');
     child = spawnOnemcp(onemcpCmd, onemcpPort, tmpDir, onStderr);
     const session = await waitReady(onemcpPort);
     record('实例就绪（initialize 往返正常）', true);
@@ -638,6 +650,31 @@ async function main() {
       }
     }
 
+    console.log('\n[F5] 服务省略 tags / connectionPool → 仍可加载与路由');
+    {
+      const listRes = JSON.parse(
+        (await post(onemcpPort, { jsonrpc: '2.0', id: 'f5l', method: 'tools/list', params: {} }, H))
+          .body
+      );
+      const names = (listRes.result?.tools || []).map((t) => t.name);
+      record(
+        'F5.1 缺省 tags/connectionPool 的服务被正常加载',
+        !listRes.error && names.includes('http-notags__alpha'),
+        `[${names.filter((n) => n.startsWith('http-notags__')).join(', ')}]`
+      );
+
+      let ok = true;
+      try {
+        await callTool(onemcpPort, session, 'f5a', 'http-notags__alpha');
+      } catch (e) {
+        ok = false;
+        record('F5.2 缺省 connectionPool 的服务可正常调用', false, e.message);
+      }
+      if (ok) {
+        record('F5.2 缺省 connectionPool 的服务可正常调用', true, '回退到顶层 connectionPool 后连接池可用');
+      }
+    }
+
     console.log('\n[N6] 诊断端点');
     {
       const diag = JSON.parse((await get(onemcpPort, '/diagnostics')).body);
@@ -668,6 +705,7 @@ async function main() {
     await backendNormal.close().catch(() => {});
     await backend404.close().catch(() => {});
     await sseBackend.close().catch(() => {});
+    await backendNoTags.close().catch(() => {});
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
