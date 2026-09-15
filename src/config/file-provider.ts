@@ -13,7 +13,7 @@ import type {
   ValidationResult,
   ValidationError,
 } from '../types/config.js';
-import type { ServiceDefinition } from '../types/service.js';
+import type { ConnectionPoolConfig, ServiceDefinition } from '../types/service.js';
 import { DEFAULT_CONNECTION_POOL } from '../types/service.js';
 import type { StorageAdapter } from '../types/storage.js';
 import * as log from '../utils/logger.js';
@@ -327,12 +327,29 @@ export class FileConfigProvider implements ConfigProvider {
 
         const parsedRecord = parsed as Record<string, unknown>;
 
+        const rawServers =
+          (parsedRecord['mcpServers'] as Record<string, Omit<ServiceDefinition, 'name'>>) ||
+          (parsedRecord['services'] as Record<string, Omit<ServiceDefinition, 'name'>>) ||
+          {};
+        const fallbackPool = parsedRecord['connectionPool'] as ConnectionPoolConfig | undefined;
+
         const processed = {
           ...parsedRecord,
-          mcpServers:
-            (parsedRecord['mcpServers'] as Record<string, Omit<ServiceDefinition, 'name'>>) ||
-            (parsedRecord['services'] as Record<string, Omit<ServiceDefinition, 'name'>>) ||
-            {},
+          // 文件 schema 把 tags / connectionPool 声明为可选，ServiceDefinition 却声明为必填。
+          // 配置进入内存只有这一条路径（registry、watch、server-mode 都走 load），在此补齐，
+          // 否则下游读到 undefined（TUI 表单初始化、tool-router.getCachedTools）。
+          mcpServers: Object.fromEntries(
+            Object.entries(rawServers).map(([name, def]) => [
+              name,
+              {
+                ...def,
+                tags: def.tags ?? [],
+                // 与 cli-mode / server-mode 的 `service.connectionPool || config.connectionPool`
+                // 兜底取值一致：用顶层配置而非硬编码默认值，否则用户调过顶层值会被静默忽略。
+                connectionPool: def.connectionPool ?? fallbackPool ?? DEFAULT_CONNECTION_POOL,
+              },
+            ])
+          ),
         };
 
         if ('services' in processed) {

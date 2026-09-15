@@ -840,6 +840,38 @@ async function t15FocusAndHints() {
   );
 }
 
+/**
+ * T16 — 省略 `tags` / `connectionPool` 的服务（外部工具写入配置时很常见，
+ * 文件的 schema 也允许省略）必须能进入编辑态。
+ *
+ * 回归：这类服务曾经一按 `e` 就在表单初始化处 `service.tags.join(', ')` 抛
+ * "Cannot read properties of undefined (reading 'join')"，整个界面画不出来。
+ */
+async function t16EditServiceWithoutOptionalFields() {
+  process.stdout.write('\n[T16] 缺省 tags / connectionPool 的服务可进编辑态\n');
+  // 手写字面量、刻意不写这两个字段：stdioService() 的 base 里带着它们且 extra
+  // 展开在后，只能改值、删不掉键。形态对齐真实机器上那份配置（如 context7）。
+  const configDir = makeConfigDir({
+    context7: {
+      transport: 'http',
+      enabled: false,
+      url: 'https://mcp.context7.com/mcp',
+    },
+  });
+
+  await startSession({ configDir, cols: 100, rows: 34 });
+  check('列表先渲染出该服务', capture().includes('context7'));
+
+  await sendText('e');
+  const entered = await waitFor(() => capture().includes('Edit Service'), 6000);
+  if (!entered) dumpScreen('进入编辑态', 100, 34);
+  // 崩溃时 Ink 会卸载整个界面、画面变空，所以「表单渲染出来」本身就是崩溃的判据：
+  // 单独断言「没出现 Cannot read properties of undefined」会在空屏下假通过（崩溃信息不落在面板里）。
+  check('按 e 进入编辑态（表单渲染出来）', entered);
+  check('表单取到该服务', capture().includes('context7'));
+  check('进入编辑态后 TUI 进程仍存活', sessionAlive());
+}
+
 // --------------------------------------------------------------------- main
 
 function assertFreshBuild() {
@@ -888,6 +920,7 @@ async function main() {
     t13SaveOutput,
     t14DescriptionScroll,
     t15FocusAndHints,
+    t16EditServiceWithoutOptionalFields,
   ];
 
   for (const scenario of scenarios) {

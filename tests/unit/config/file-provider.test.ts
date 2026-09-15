@@ -205,6 +205,76 @@ describe('FileConfigProvider', () => {
       expect(config.mcpServers['sse-service']?.transport).toBe('sse');
       expect(config.mcpServers['sse-service']?.url).toBe('https://example.com/events');
     });
+
+    it('should fill in tags and connectionPool for a service that omits them', async () => {
+      // Arrange — 文件的 schema 允许省略这两个字段（外部工具写入的条目就是这样），
+      // 但 ServiceDefinition 声明为必填，load() 必须在进入内存时补齐
+      const configWithMinimalService = {
+        ...validConfig,
+        mcpServers: {
+          context7: {
+            transport: 'http',
+            enabled: false,
+            url: 'https://mcp.context7.com/mcp',
+          },
+        },
+      };
+      await storage.write('config.json', JSON.stringify(configWithMinimalService));
+
+      // Act
+      const config = await provider.load();
+
+      // Assert
+      expect(config.mcpServers['context7']?.tags).toEqual([]);
+      expect(config.mcpServers['context7']?.connectionPool).toEqual(validConfig.connectionPool);
+    });
+
+    it('should keep a service-level connectionPool rather than the top-level one', async () => {
+      // Arrange
+      const explicitPool = { maxConnections: 9, idleTimeout: 111, connectionTimeout: 222 };
+      const configWithExplicitPool = {
+        ...validConfig,
+        mcpServers: {
+          'with-pool': {
+            transport: 'http',
+            enabled: true,
+            url: 'https://example.com/mcp',
+            connectionPool: explicitPool,
+          },
+        },
+      };
+      await storage.write('config.json', JSON.stringify(configWithExplicitPool));
+
+      // Act
+      const config = await provider.load();
+
+      // Assert
+      expect(config.mcpServers['with-pool']?.connectionPool).toEqual(explicitPool);
+    });
+
+    it('should fall back to the top-level connectionPool, not hardcoded defaults', async () => {
+      // Arrange — 顶层值与 DEFAULT_CONNECTION_POOL 刻意取得不同，
+      // 用硬编码默认值兜底会让用户改过的顶层配置被静默忽略
+      const globalPool = { maxConnections: 17, idleTimeout: 64000, connectionTimeout: 31000 };
+      const configWithGlobalPool = {
+        ...validConfig,
+        connectionPool: globalPool,
+        mcpServers: {
+          minimal: {
+            transport: 'http',
+            enabled: true,
+            url: 'https://example.com/mcp',
+          },
+        },
+      };
+      await storage.write('config.json', JSON.stringify(configWithGlobalPool));
+
+      // Act
+      const config = await provider.load();
+
+      // Assert
+      expect(config.mcpServers['minimal']?.connectionPool).toEqual(globalPool);
+    });
   });
 
   describe('save()', () => {

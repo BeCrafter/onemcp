@@ -74,6 +74,7 @@
 - **F2** HTTP 后端规范型会话过期（HTTP 404）→ 透明重建
 - **F3** stdio 后端进程崩溃 → 自动 respawn 重放
 - **F4** 前端客户端会话句柄失效 → 重启实例后旧 Mcp-Session-Id 透明重建
+- **F5** 服务省略 `tags` / `connectionPool`（文件 schema 允许，外部工具写入的条目常见）→ 加载后仍被正常路由与调用，连接池回退到顶层配置
 - TUI：交互式界面需 PTY，由 **`scripts/tui-e2e.mjs`**（`npm run verify:tui`）覆盖，
   见下「TUI 场景回归规则」；组件级行为另有 `tests/integration/tui-*.test.ts`
 
@@ -116,6 +117,7 @@ TUI 交互场景统一维护在 **`scripts/tui-e2e.mjs`**（`npm run verify:tui`
 - **T13** 结果存档：Ctrl+O 生成临时文件、给出路径并复制完整路径
 - **T14** 长描述滚动：Ctrl+E 展开后焦点进入描述区，↑/↓ 逐行滚动（选中项不变）；Esc 回到工具列表后 ↑/↓ 立刻切换工具（无需先折叠描述）
 - **T15** 区域焦点与提示：标题字形恒定（无焦点箭头），焦点靠颜色 —— `-e` 抓屏断言聚焦区标题文字与竖线同色、且与未聚焦区不同；底部提示只讲当前区域；运行后结果区加入循环；瞬时通知不顶掉提示行
+- **T16** 缺省 `tags` / `connectionPool` 的服务按 `e` 能进编辑态：表单渲染出来、不出现 `Cannot read properties of undefined`、进程仍存活
 
 ---
 

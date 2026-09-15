@@ -3,12 +3,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import React from 'react';
+import { Box } from 'ink';
 import { mkdirSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { FileStorageAdapter } from '../../src/storage/file.js';
 import { FileConfigProvider } from '../../src/config/file-provider.js';
 import { ServiceRegistry } from '../../src/registry/service-registry.js';
+import { ServiceFormUnified } from '../../src/tui/components/ServiceFormUnified.js';
+import { renderWithTerminal, waitFor } from './helpers/ansi-terminal.js';
 import type { ServiceDefinition } from '../../src/types/service.js';
 
 describe('TUI Service Form Integration', () => {
@@ -466,6 +470,81 @@ describe('TUI Service Form Integration', () => {
 
       services = await registry.list();
       expect(services.length).toBe(initialCount + 1);
+    });
+  });
+
+  describe('Editing a service from a minimal config entry', () => {
+    /**
+     * 回归：外部工具写入配置时经常省略 `tags` / `connectionPool`（文件的 schema 允许，
+     * `ServiceDefinition` 却把它们声明为必填）。这样的服务曾经一进编辑态就在
+     * `service.tags.join(', ')` 上抛 "Cannot read properties of undefined (reading 'join')"。
+     */
+    const writeMinimalConfig = async (): Promise<void> => {
+      await storage.write(
+        'config.json',
+        JSON.stringify({
+          mode: 'cli',
+          logLevel: 'INFO',
+          configDir: testDir,
+          mcpServers: {
+            context7: {
+              transport: 'http',
+              enabled: false,
+              url: 'https://mcp.context7.com/mcp',
+            },
+          },
+          connectionPool: { maxConnections: 5, idleTimeout: 60000, connectionTimeout: 30000 },
+          healthCheck: { enabled: false, interval: 30000, failureThreshold: 3, autoUnload: true },
+          audit: {
+            enabled: false,
+            level: 'standard',
+            logInput: false,
+            logOutput: false,
+            retention: { days: 30, maxSize: '1GB' },
+          },
+          security: { dataMasking: { enabled: true, patterns: [] } },
+        })
+      );
+      await registry.initialize();
+    };
+
+    it('should load a config entry that omits tags and connectionPool', async () => {
+      await writeMinimalConfig();
+
+      const loaded = registry.list()[0];
+      expect(loaded?.name).toBe('context7');
+      expect(loaded?.tags).toEqual([]);
+      expect(loaded?.connectionPool).toEqual({
+        maxConnections: 5,
+        idleTimeout: 60000,
+        connectionTimeout: 30000,
+      });
+    });
+
+    it('should render the edit form for a service loaded without tags', async () => {
+      await writeMinimalConfig();
+
+      const { instance, term } = renderWithTerminal(
+        React.createElement(
+          Box,
+          { flexDirection: 'column', height: 34 },
+          React.createElement(ServiceFormUnified, {
+            service: registry.list()[0],
+            onSubmit: () => {},
+            onCancel: () => {},
+            terminalHeight: 29,
+          })
+        ),
+        { rows: 34, cols: 100 }
+      );
+
+      try {
+        await waitFor(() => term.text().includes('Edit Service'));
+        expect(term.text()).toContain('context7');
+        expect(term.text()).not.toContain('Cannot read properties of undefined');
+      } finally {
+        instance.unmount();
+      }
     });
   });
 });
