@@ -1,6 +1,6 @@
 {
   "name": "onemcp",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "MCP Router System - Intelligent routing layer between MCP clients and multiple backend MCP servers",
   "type": "module",
   "main": "./dist/index.js",
