@@ -75,6 +75,7 @@
 - **F3** stdio 后端进程崩溃 → 自动 respawn 重放
 - **F4** 前端客户端会话句柄失效 → 重启实例后旧 Mcp-Session-Id 透明重建
 - **F5** 服务省略 `tags` / `connectionPool`（文件 schema 允许，外部工具写入的条目常见）→ 加载后仍被正常路由与调用，连接池回退到顶层配置
+- **F6** 服务省略 `enabled`（只写 transport 与命令/URL 是最常见的写法）→ 缺省按**启用**加载，工具可列出且可调用；缺省成停用会让服务从列表与路由里静默消失
 - TUI：交互式界面需 PTY，由 **`scripts/tui-e2e.mjs`**（`npm run verify:tui`）覆盖，
   见下「TUI 场景回归规则」；组件级行为另有 `tests/integration/tui-*.test.ts`
 
@@ -118,6 +119,13 @@ TUI 交互场景统一维护在 **`scripts/tui-e2e.mjs`**（`npm run verify:tui`
 - **T14** 长描述滚动：Ctrl+E 展开后焦点进入描述区，↑/↓ 逐行滚动（选中项不变）；Esc 回到工具列表后 ↑/↓ 立刻切换工具（无需先折叠描述）
 - **T15** 区域焦点与提示：标题字形恒定（无焦点箭头），焦点靠颜色 —— `-e` 抓屏断言聚焦区标题文字与竖线同色、且与未聚焦区不同；底部提示只讲当前区域；运行后结果区加入循环；瞬时通知不顶掉提示行
 - **T16** 缺省 `tags` / `connectionPool` 的服务按 `e` 能进编辑态：表单渲染出来、不出现 `Cannot read properties of undefined`、进程仍存活
+- **T17** 传输类型切换：`←/→` 循环 stdio/sse/http（含越界回绕），连接字段随之换成 Command/URL；http 下 URL 里的 `?` 留在字段内（全局帮助键不得劫持表单）；保存落库为 http
+- **T18** Enabled 切换：`←/→` 切 Off 并落库 `enabled:false`
+- **T19** 编辑保存保留 `toolStates`（表单无此字段但必须原样带回）
+- **T20** 扁平两栏版式 + 超长值不破帧：每字段恰好一行、标签与值同行、无 `▌` 与全宽横线；粘贴 300 字符后帧高与底部提示行位不变
+- **T21** 非必填字段的非法值行内拦下：Max Connections=0 → 表单报错、零落库、不出现 registry 原始报错
+- **T22** 确认框按键不漏进字段：覆盖确认框里按 `n` → 字段值不被追加
+- **T23** Esc 丢弃前确认：`n` 留在表单、`y` 才回列表且零落库
 
 ---
 
@@ -168,6 +176,12 @@ TUI 交互场景统一维护在 **`scripts/tui-e2e.mjs`**（`npm run verify:tui`
 **Configuration Hot-Reload**: Config file changes are detected and services are reloaded without restarting the entire system.
 
 **TUI Region Focus**: Focus is carried by colour, and the colour must change the WHOLE heading — bar, label and rule together go cyan+bold, idle headings keep the grey bar and plain label. Changing only the bar cell is invisible: the "focused" colour was the terminal default, i.e. exactly the colour of the always-default label beside it. Keep heading rows glyph-identical across focus states (no marker arrows), and keep the panel title (`Tools for: …`) as the tool list's cue (cyan focused / grey idle). Neither test harness sees colour, so focus is asserted through `capture-pane -e` SGR comparison in T15 plus the per-region footer label. Each region also owns its bottom hints (`Quick Actions — <Region>`); a hint that names another region's key, or a key that cannot work in the current state, is a bug. The footer budget is 3 lines, so a transient notice (copy/save feedback) takes the heading slot instead of adding a line.
+
+**TUI Key Ownership (one handler per key)**: ink's `useInput` has no stopPropagation — EVERY mounted handler sees EVERY keystroke. A parent form that maps `↑/↓` to "next field" therefore raced the nested dropdown's own handler: the focus moved off the field, the dropdown unmounted with the highlight it had just moved, and its value could never be changed by keyboard (only by an undocumented 1-9 shortcut). Enumerated fields in the service form are now single-row inline radios (`InlineSelect`, presentational, no handler of its own): `↑/↓` always navigates fields, `←/→` always changes the focused field's value. More generally — control keys (Ctrl+S/A, y/n answers to a host dialog) belong to exactly one owner; a host dialog passes `suspended` so the form mounts no editor and reads no key, otherwise the `y`/`n` answering the dialog is typed into the focused field. Global view shortcuts (`?` for help) must not fire while a form or the tool search owns the keyboard — `?` is a legitimate character in a URL query.
+
+**TUI Frame Budget**: a frame taller than the terminal makes ink's absolute writes land on the wrong rows, so every row the form draws must come out of a budget computed from the height the host passes in (`terminalHeight`). Two traps that bit here: a text field renders its value unrestricted (pass `width` to `SingleLineInput` so it is windowed to one row), and the scroll indicators (`▲/▼ more`) are drawn INSIDE the scrolling body, so their rows have to be reserved in the same budget and the window recomputed once they are known.
+
+**TUI Service Form Layout**: the service form is a FLAT TWO-COLUMN list — one row per field (`Label  value`), ONE bordered box around the fields, and plain `gray` lines for the title (`Add Service` / `Edit Service — <name>` + `● N unsaved`), the focused field's help, and the key hints. Do not reintroduce section headings: an earlier revision drew `▌ SERVICE ────` rules inside a four-box stack — twelve horizontal lines per screen — and read as noise rather than structure, while its label-on-its-own-row layout spent a row per field on a mostly-empty line. The label column width is derived from the widest label over BOTH transport variants (`LABEL_TEXT_WIDTH`) so the column does not resize when the transport toggles; the focused row's marker keeps the `'▶ '` / `'   '` three-cell convention (a `▶` is double-width in some terminals) so the label column stays aligned; and each row is exactly one row tall (plus one for an inline error), which is what keeps the window math exact. Adding any wrapper — a border, a heading, a hint row — means adding it to `chromeRows()`.
 
 ## Configuration Structure
 
