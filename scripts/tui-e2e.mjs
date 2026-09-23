@@ -45,6 +45,8 @@
  *   T23 Esc 丢弃前确认：n 留在表单、y 才回列表且零落库
  *   T24 窄终端（80 列）表单切堆叠版式：标签独占一行、值在下一行、不破帧
  *   T25 窗口尺寸变化即时重排：tmux resize 后不按任何键，两栏 ↔ 堆叠自动切换
+ *   T26 短终端刚好填满不破帧：80x24（macOS 默认窗口）12 服务 —— 全部一屏可见、
+ *       名字列无游离字符、提示行自成一行且含 q Quit、底部的 Last refresh 仍在屏内
  *
  * 用法：
  *   npm run verify:tui [-- --keep] [--verbose]
@@ -406,7 +408,8 @@ async function t3DeleteConfirm() {
   await sendText('d');
   const promptAppeared = await waitFor(() => capture().includes("Delete service 'delete-me'?"));
   check('d 弹出确认框', promptAppeared);
-  check('确认前不删除（服务数不变）', capture().includes('2 Services'));
+  // 服务数取自顶部 Header 的统计（列表自己那行计数已删：与 Header 重复）。
+  check('确认前不删除（服务数不变）', capture().includes('Services: 2'));
 
   await sendText('n');
   check('n 取消并保留服务', await waitFor(() => capture().includes('Cancelled')));
@@ -1196,6 +1199,58 @@ async function t25ReflowOnResize() {
   );
 }
 
+/**
+ * T26 — 短终端不破帧：80x24（macOS 默认窗口）下列表刚好填满预算。
+ *
+ * 回归的是帧预算少算一行：底部提示盒高 3 行（上下边框 + 提示行），早期 chrome
+ * 只按 2 行计入，于是列表填满时整帧比终端高 1 行 —— 终端中途滚屏，之后 ink 的
+ * 绝对写入全部错位：服务名后面挂着游离字符、提示行并进边框、底部的行被顶出屏幕。
+ * 34/50 行的 T1/T2 看不见它，因为帧没顶到屏幕底。
+ */
+async function t26ShortTerminalFits() {
+  process.stdout.write('\n[T26] 短终端 80x24 刚好填满不破帧\n');
+  const services = Object.fromEntries(
+    Array.from({ length: 12 }, (_, i) => [`svc-${i}`, httpService(i)])
+  );
+  const configDir = makeConfigDir(services);
+  const names = Object.keys(services);
+
+  await startSession({ configDir, cols: 80, rows: 24 });
+  const lines = screenLines(capture());
+  const cells = lines.map((l) => nameInRow(l));
+
+  check(
+    '12 个服务全部在同一屏（帧没被撑出去）',
+    names.every((n) => cells.includes(n)),
+    `实际名字列：${cells.filter(Boolean).join(',')}`
+  );
+  check(
+    '每个服务恰好一行',
+    names.every((n) => cells.filter((c) => c === n).length === 1)
+  );
+  check(
+    '没有游离字符（名字列出现的都属于配置里的服务）',
+    cells.filter(Boolean).every((c) => names.includes(c)),
+    `多余：${cells.filter((c) => c && !names.includes(c)).join(',')}`
+  );
+
+  const footerRow = (lines.find((l) => l.includes('Enter Edit')) ?? '').trimEnd();
+  check('提示行自成一行（没有被并进边框）', /^│ .*│$/.test(footerRow), footerRow);
+  check('80 列下提示完整：q Quit 不再被截掉', capture().includes('q Quit'));
+  check(
+    '列表 + 提示的竖线行数完整',
+    lines.filter((l) => l.trimStart().startsWith('│')).length >= 13,
+    `${lines.filter((l) => l.trimStart().startsWith('│')).length} 行`
+  );
+  check('每行不超过终端宽度', lines.every((l) => l.length <= 80));
+  check('画面不超出终端高度', lines.length <= 24, `${lines.length} 行`);
+  check(
+    '底部的行没被顶出屏幕（最后一行仍是 Last refresh）',
+    /Last refresh:/.test(lines[lines.length - 1] ?? ''),
+    lines[lines.length - 1] ?? ''
+  );
+}
+
 // --------------------------------------------------------------------- main
 
 function assertFreshBuild() {
@@ -1254,6 +1309,7 @@ async function main() {
     t23EscConfirmsDiscard,
     t24NarrowFormStacks,
     t25ReflowOnResize,
+    t26ShortTerminalFits,
   ];
 
   for (const scenario of scenarios) {

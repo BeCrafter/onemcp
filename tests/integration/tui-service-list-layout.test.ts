@@ -17,7 +17,11 @@
 import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { Box, useStdout } from 'ink';
-import { ServiceList, computeColumnLayout } from '../../src/tui/components/ServiceList.js';
+import {
+  ServiceList,
+  computeColumnLayout,
+  footerHint,
+} from '../../src/tui/components/ServiceList.js';
 import type { ServiceDefinition } from '../../src/types/service.js';
 import { renderWithTerminal, waitFor } from './helpers/ansi-terminal.js';
 
@@ -89,16 +93,16 @@ describe('ServiceList layout', () => {
     expect(wide).toEqual({
       nameWidth: 25,
       transportWidth: 8,
-      endpointWidth: 20,
+      endpointWidth: 19,
       tagWidth: 28,
-      toolWidth: 12,
+      toolWidth: 13,
     });
 
     // Too narrow for tags → the tag column is dropped, not squeezed to nothing.
     const medium = computeColumnLayout(80);
     expect(medium.tagWidth).toBeNull();
-    expect(medium.toolWidth).toBe(12);
-    expect(medium.endpointWidth).toBe(28);
+    expect(medium.toolWidth).toBe(13);
+    expect(medium.endpointWidth).toBe(27);
     expect(medium.endpointWidth).toBeGreaterThanOrEqual(10);
 
     // Even narrower → tool counts go too.
@@ -121,10 +125,11 @@ describe('ServiceList layout', () => {
 
     await waitFor(() => term.text().includes('mock-stdio'));
 
-    // header (1) + list box borders (2) + one line per service (16) +
-    // footer box (3) = 22. A wrapped row would make this count grow.
+    // list box borders (2) + one line per service (16) + footer box (3) = 21.
+    // A wrapped row would make this count grow; a mis-counted chrome row used to
+    // make it one MORE than the height the host reserved for the list.
     const lines = term.lines();
-    expect(lines.length).toBe(22);
+    expect(lines.length).toBe(21);
 
     // No service row may be followed by a wrapped continuation of itself.
     for (const service of manyServices) {
@@ -156,9 +161,9 @@ describe('ServiceList layout', () => {
     await waitFor(() => term.text().includes('mock-stdio'));
 
     const lines = term.lines();
-    // Still one line per service (22 lines) — the old layout wrapped every
+    // Still one line per service (21 lines) — the old layout wrapped every
     // endpoint character onto its own row at this width.
-    expect(lines.length).toBe(22);
+    expect(lines.length).toBe(21);
     for (const service of manyServices) {
       expect(lines.filter((l) => nameInRow(l) === service.name)).toHaveLength(1);
     }
@@ -188,7 +193,75 @@ describe('ServiceList layout', () => {
     expect(lines.filter((l) => l.includes('svc-')).length).toBe(8);
     expect(term.text()).toContain('1/5');
     expect(term.maxRowWritten).toBeLessThanOrEqual(19);
+    // A paginated list still fits the rows the host reserved for it.
+    expect(lines.length).toBeLessThanOrEqual(14);
 
     instance.unmount();
+  });
+
+  /**
+   * The frame budget is what keeps ink's absolute writes on the right rows: a
+   * list that draws even ONE row more than the host reserved pushes the whole
+   * frame past the terminal on a short window (the terminal scrolls mid-frame and
+   * every later write lands one row off — stray characters instead of rows).
+   * The footer box is 3 rows tall, not 2; counting it wrong is exactly how the
+   * old chrome constant got here.
+   */
+  it('never draws more rows than the budget the host passes in', async () => {
+    const services = Array.from({ length: 18 }, (_, i) =>
+      mkService(`svc-${i}`, `http://127.0.0.1:${9000 + i}/mcp`)
+    );
+
+    // Same budget arithmetic as app-optimized: header (5) + "Last refresh" (2).
+    for (const screenHeight of [24, 20, 34, 40]) {
+      const listHeight = screenHeight - 5 - 2;
+      const { instance, term } = renderWithTerminal(
+        React.createElement(
+          Box,
+          { flexDirection: 'column' },
+          React.createElement(ServiceList, {
+            services,
+            selectedIndex: 0,
+            onSelect: () => {},
+            terminalHeight: listHeight,
+          })
+        ),
+        { rows: screenHeight, cols: 80 }
+      );
+
+      await waitFor(() => term.text().includes('svc-0'));
+      const drawn = term.lines().length;
+      expect(drawn, `screen ${screenHeight} → budget ${listHeight}`).toBeLessThanOrEqual(
+        listHeight
+      );
+      expect(term.maxRowWritten).toBeLessThanOrEqual(screenHeight - 1);
+      instance.unmount();
+    }
+  });
+
+  /**
+   * The footer row used to be a fixed 90-character string in a box that only has
+   * `width - 4` cells: at 80 columns `q Quit` was clipped away entirely, so the
+   * documented quit key was invisible on the most common terminal size.
+   */
+  it('keeps the essential footer hints as the terminal narrows', () => {
+    const wide = footerHint(120);
+    expect(wide).toContain('r Refresh');
+    expect(wide).not.toContain('…');
+
+    const standard = footerHint(80);
+    expect(standard).toContain('q Quit');
+    expect(standard).toContain('Enter Edit');
+    expect(standard).toContain('…'); // r Refresh dropped, visibly
+
+    const narrow = footerHint(60);
+    expect(narrow).toContain('Enter Edit');
+    expect(narrow.length).toBeLessThanOrEqual(56);
+
+    // Whatever survives must fit the box, otherwise `wrap="truncate"` eats the
+    // tail of the last hint again.
+    for (const width of [40, 60, 80, 100, 120, 200]) {
+      expect(footerHint(width).length, `width ${width}`).toBeLessThanOrEqual(width - 4);
+    }
   });
 });
