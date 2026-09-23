@@ -22,6 +22,8 @@
  *   F2 HTTP 后端规范型会话过期（HTTP 404）→ 同上
  *   F3 stdio 后端进程崩溃（fixture 第 2 次 tools/call 后自杀）→ 自动 respawn 重放
  *   F4 前端客户端会话句柄失效 → 重启 onemcp 实例后旧 Mcp-Session-Id 透明重建
+ *   F5 服务省略 tags / connectionPool（文件 schema 允许）→ 仍可加载与路由
+ *   F6 服务省略 enabled → 默认按「启用」加载并路由（缺省=停用会让它静默消失）
  *
  * TUI：交互式界面需 PTY，不纳入本脚本；其恢复逻辑由
  * tests/integration/discovery-worker-session-expiry.test.ts 覆盖。
@@ -424,6 +426,12 @@ async function main() {
             transport: 'http',
             url: `http://127.0.0.1:${notagsPort}/mcp`,
           },
+          // F6：条目只写 transport 与 url 是最常见的写法。enabled 缺省必须是
+          // 「启用」—— 把「没写」当成「停用」会让这个服务从列表与路由里静默消失。
+          'http-noenabled': {
+            transport: 'http',
+            url: `http://127.0.0.1:${notagsPort}/mcp`,
+          },
           'sse-svc': {
             enabled: true,
             tags: ['grp-sse'],
@@ -672,6 +680,27 @@ async function main() {
       }
       if (ok) {
         record('F5.2 缺省 connectionPool 的服务可正常调用', true, '回退到顶层 connectionPool 后连接池可用');
+      }
+    }
+
+    console.log('\n[F6] 服务省略 enabled → 默认启用且可路由');
+    {
+      const listRes = JSON.parse(
+        (await post(onemcpPort, { jsonrpc: '2.0', id: 'f6l', method: 'tools/list', params: {} }, H))
+          .body
+      );
+      const names = (listRes.result?.tools || []).map((t) => t.name);
+      record(
+        'F6.1 缺省 enabled 的条目按「启用」加载（出现在工具清单里）',
+        !listRes.error && names.includes('http-noenabled__alpha'),
+        `[${names.filter((n) => n.startsWith('http-noenabled__')).join(', ')}]`
+      );
+
+      try {
+        await callTool(onemcpPort, session, 'f6a', 'http-noenabled__alpha');
+        record('F6.2 缺省 enabled 的服务可正常调用', true, '未被当成停用');
+      } catch (e) {
+        record('F6.2 缺省 enabled 的服务可正常调用', false, e.message);
       }
     }
 

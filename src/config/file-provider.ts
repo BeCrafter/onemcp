@@ -114,7 +114,7 @@ export class FileConfigProvider implements ConfigProvider {
           type: 'object',
           additionalProperties: {
             type: 'object',
-            required: ['transport', 'enabled'],
+            required: ['transport'],
             additionalProperties: false,
             properties: {
               transport: {
@@ -335,14 +335,17 @@ export class FileConfigProvider implements ConfigProvider {
 
         const processed = {
           ...parsedRecord,
-          // 文件 schema 把 tags / connectionPool 声明为可选，ServiceDefinition 却声明为必填。
-          // 配置进入内存只有这一条路径（registry、watch、server-mode 都走 load），在此补齐，
-          // 否则下游读到 undefined（TUI 表单初始化、tool-router.getCachedTools）。
+          // 文件 schema 把 enabled / tags / connectionPool 声明为可选，ServiceDefinition
+          // 却声明为必填。配置进入内存只有这一条路径（registry、watch、server-mode 都走
+          // load），在此补齐，否则下游读到 undefined（TUI 表单初始化、tool-router.getCachedTools）。
+          // enabled 缺省为 true：外部工具写入的条目常常只写 transport 与命令/URL，
+          // 把「没写」当成「停用」会让服务静默消失。
           mcpServers: Object.fromEntries(
             Object.entries(rawServers).map(([name, def]) => [
               name,
               {
                 ...def,
+                enabled: def.enabled ?? true,
                 tags: def.tags ?? [],
                 // 与 cli-mode / server-mode 的 `service.connectionPool || config.connectionPool`
                 // 兜底取值一致：用顶层配置而非硬编码默认值，否则用户调过顶层值会被静默忽略。
