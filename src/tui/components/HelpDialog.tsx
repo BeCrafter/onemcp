@@ -56,9 +56,6 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
             <Text color="cyan">r</Text> - Refresh service list
           </Text>
           <Text>
-            <Text color="cyan">y</Text> - Toggle form mode (unified/traditional)
-          </Text>
-          <Text>
             <Text color="cyan">?</Text> - Show this help
           </Text>
           <Text>
@@ -69,49 +66,33 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ onClose }) => {
 
       <Box flexDirection="column" borderStyle="single" paddingX={1} marginBottom={1}>
         <Text bold color="yellow">
-          Service Form (Unified)
+          Service Form
         </Text>
         <Box flexDirection="column" marginLeft={2}>
           <Text>
-            <Text color="cyan">Tab</Text> - Next field
+            <Text color="cyan">↑/↓</Text> - Previous / next field
           </Text>
           <Text>
-            <Text color="cyan">↑/↓</Text> - Previous / next field
+            <Text color="cyan">Tab</Text> - Next field
           </Text>
           <Text>
             <Text color="cyan">Shift+Tab</Text> - Previous field
           </Text>
           <Text>
+            <Text color="cyan">←/→</Text> - Change the focused field's option (transport, enabled)
+          </Text>
+          <Text>
             <Text color="cyan">Enter</Text> - Confirm field and move to next
           </Text>
           <Text>
-            <Text color="cyan">Ctrl+A</Text> - Toggle advanced options
+            <Text color="cyan">Ctrl+A</Text> - Expand / collapse the advanced fields (shows how many
+            are folded)
           </Text>
           <Text>
-            <Text color="cyan">Ctrl+S</Text> - Save service
+            <Text color="cyan">Ctrl+S</Text> - Save (invalid values are reported inline)
           </Text>
           <Text>
-            <Text color="cyan">Esc</Text> - Cancel and return
-          </Text>
-        </Box>
-      </Box>
-
-      <Box flexDirection="column" borderStyle="single" paddingX={1} marginBottom={1}>
-        <Text bold color="yellow">
-          Service Form (Traditional)
-        </Text>
-        <Box flexDirection="column" marginLeft={2}>
-          <Text>
-            <Text color="cyan">Enter</Text> - Next step
-          </Text>
-          <Text>
-            <Text color="cyan">↑/↓</Text> - Select option (for dropdowns)
-          </Text>
-          <Text>
-            <Text color="cyan">p</Text> - Preview configuration (at confirm step)
-          </Text>
-          <Text>
-            <Text color="cyan">Esc</Text> - Cancel and return
+            <Text color="cyan">Esc</Text> - Cancel; with unsaved edits it asks first
           </Text>
         </Box>
       </Box>

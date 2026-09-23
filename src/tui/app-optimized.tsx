@@ -10,7 +10,6 @@ import { FileConfigProvider } from '../config/file-provider.js';
 import { FileStorageAdapter } from '../storage/file.js';
 import { ServiceRegistry } from '../registry/service-registry.js';
 import { ServiceList } from './components/ServiceList.js';
-import { ServiceForm } from './components/ServiceForm.js';
 import { ServiceFormUnified } from './components/ServiceFormUnified.js';
 import { ServiceTools } from './components/ServiceTools.js';
 import { Header } from './components/Header.js';
@@ -71,7 +70,6 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
   const [statusMessage, setStatusMessage] = useState<StatusMessage | null>(null);
   const [editingService, setEditingService] = useState<ServiceDefinition | undefined>(undefined);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [useUnifiedForm, setUseUnifiedForm] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   /**
    * Pending destructive action. Config writes go straight to disk, so deleting
@@ -449,20 +447,23 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
 
   // Handle service toggle
   const handleToggleService = async (serviceName: string, enabled: boolean) => {
-    if (!config || !configProvider) return;
+    const target = services.find((s) => s.name === serviceName);
+    // The registry owns persistence (it rewrites mcpServers); the old fallback
+    // here wrote a `services` key that the config schema does not have.
+    if (!serviceRegistry || target === undefined) {
+      setStatusMessage({
+        type: 'error',
+        message: `Cannot toggle '${serviceName}': service registry unavailable`,
+        duration: 3000,
+      });
+      return;
+    }
 
     try {
       markSelfWrite();
-      const updatedServices = services.map((s) => (s.name === serviceName ? { ...s, enabled } : s));
-      const newConfig = { ...config, services: updatedServices };
-      await configProvider.save(newConfig);
-
-      const target = updatedServices.find((s) => s.name === serviceName);
-      if (serviceRegistry && target !== undefined) {
-        await serviceRegistry.register(target);
-      }
-
-      setServices(updatedServices);
+      const updated = { ...target, enabled };
+      await serviceRegistry.register(updated);
+      setServices(services.map((s) => (s.name === serviceName ? updated : s)));
       setStatusMessage({
         type: 'success',
         message: `Service '${serviceName}' ${enabled ? 'enabled' : 'disabled'}`,
@@ -487,10 +488,10 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       if (serviceRegistry) {
         await serviceRegistry.unregister(serviceName);
       } else {
-        // Fallback: update config directly
-        const updatedServices = services.filter((s) => s.name !== serviceName);
-        const newConfig = { ...config, services: updatedServices };
-        await configProvider.save(newConfig);
+        // Fallback: drop the entry from mcpServers directly.
+        const newServers = { ...config.mcpServers };
+        delete newServers[serviceName];
+        await configProvider.save({ ...config, mcpServers: newServers });
       }
 
       // Update local state
@@ -544,12 +545,6 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       return;
     }
 
-    // Global help shortcut
-    if (input === '?' && view !== 'help') {
-      setView('help');
-      return;
-    }
-
     // Help view
     if (view === 'help') {
       if (key.escape || input === '?' || input === 'q') {
@@ -558,28 +553,24 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
       return;
     }
 
-    // Global quit
-    if (input === 'q' && view === 'list') {
-      exitApp();
-      return;
-    }
-
-    // Tools view: ServiceTools handles its own input (search Esc layering,
-    // tool navigation/toggle). Do not intercept Esc here — that would bypass
-    // ServiceTools' layered Esc (exit search → clear filter → back) and jump
-    // straight to the service list.
-    if (view === 'tools') {
-      return;
-    }
-
-    // Form views
-    if (view === 'add' || view === 'edit') {
-      // Forms handle their own input
+    // Tools and form views own their keys. In particular '?' must not be
+    // hijacked as the global help shortcut there: it is a legitimate character
+    // in a URL query string and in a search box, and switching views would throw
+    // away the form the user is filling in.
+    if (view === 'tools' || view === 'add' || view === 'edit') {
       return;
     }
 
     // List view navigation
     if (view === 'list') {
+      if (input === '?') {
+        setView('help');
+        return;
+      }
+      if (input === 'q') {
+        exitApp();
+        return;
+      }
       if (key.upArrow) {
         setSelectedIndex((prev) => Math.max(0, prev - 1));
       } else if (key.downArrow) {
@@ -616,13 +607,6 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
         // Reload config then re-discover zero-tool services
         const refreshed = reloadServices();
         void discoveryManagerRef.current.refreshZeroToolServices(refreshed ?? services);
-      } else if (input === 'y') {
-        setUseUnifiedForm(!useUnifiedForm);
-        setStatusMessage({
-          type: 'info',
-          message: `Switched to ${!useUnifiedForm ? 'unified' : 'traditional'} form mode`,
-          duration: 2000,
-        });
       }
     }
   });
@@ -669,7 +653,6 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
   }
 
   const enabledServices = services.filter((s) => s.enabled).length;
-  const formMode = useUnifiedForm ? 'Unified' : 'Traditional';
 
   // Render main application
   return (
@@ -681,7 +664,6 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
           { label: 'Services', value: services.length, color: 'yellow' },
           { label: 'Enabled', value: enabledServices, color: 'green' },
           { label: 'Mode', value: config?.mode || 'unknown', color: 'blue' },
-          { label: 'Form', value: formMode, color: 'magenta' },
         ]}
         showHelp={view === 'list'}
       />
@@ -724,21 +706,20 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
           />
         )}
 
-        {(view === 'add' || view === 'edit') &&
-          (useUnifiedForm ? (
-            <ServiceFormUnified
-              service={editingService}
-              onSubmit={handleServiceSubmit}
-              onCancel={handleServiceCancel}
-              terminalHeight={panelHeight}
-            />
-          ) : (
-            <ServiceForm
-              service={editingService}
-              onSubmit={handleServiceSubmit}
-              onCancel={handleServiceCancel}
-            />
-          ))}
+        {(view === 'add' || view === 'edit') && (
+          <ServiceFormUnified
+            // Re-initialise whenever the edit target changes: the form seeds its
+            // state (and its dirty baseline) once, on mount.
+            key={editingService?.name ?? 'new-service'}
+            service={editingService}
+            onSubmit={handleServiceSubmit}
+            onCancel={handleServiceCancel}
+            terminalHeight={panelHeight}
+            // While the confirmation dialog is up it owns the keyboard, and the
+            // form must not mount an editor that would swallow the y/n answer.
+            suspended={pendingConfirm !== null}
+          />
+        )}
 
         {view === 'tools' && editingService && (
           <ServiceTools

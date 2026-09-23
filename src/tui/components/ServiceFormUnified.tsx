@@ -1,18 +1,33 @@
 /**
  * Unified Service Form Component
  *
- * Single-page progressive form for adding and editing services.
- * Shows all fields on one page with progressive disclosure for optional fields.
- * Provides inline validation and real-time preview.
- * Handles terminal height constraints for small terminals.
+ * Single-page form for adding and editing services, laid out as a flat
+ * two-column list: one row per field (`Label  value`), one box around the fields,
+ * and plain lines for the title, the focused field's help and the key hints.
+ * No section rules, no group headings, no nested boxes — the earlier sectioned
+ * version drew four full-width rules inside a four-box stack, twelve horizontal
+ * lines in one screen, which read as noise rather than structure, and its
+ * label-on-its-own-row layout spent a row per field (mostly empty) on nothing.
+ *
+ * Row math is exact on purpose. Every field occupies a fixed number of rows (one,
+ * plus one for an inline error) and every value is windowed to a single row by
+ * its editor, so the render window can never push the frame past the terminal —
+ * a frame taller than the viewport makes ink's absolute writes land on the wrong
+ * rows.
+ *
+ * The form owns ALL keys. The enumerated fields render as inline single-row
+ * radios (see InlineSelect) instead of a nested dropdown: in ink every mounted
+ * `useInput` sees every keystroke, so a child select's own ↑/↓ handler raced the
+ * form's field navigation and the value could never be changed.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
-import SelectInput from 'ink-select-input';
 import { SingleLineInput } from './SingleLineInput.js';
-import type { ServiceDefinition, TransportType } from '../../types/service.js';
+import { InlineSelect } from './InlineSelect.js';
 import { fieldHelp, fieldPlaceholder } from './service-field-config.js';
+import { displayWidth, truncateDisplay, wrapDisplay } from '../text-layout.js';
+import type { ServiceDefinition, TransportType } from '../../types/service.js';
 
 export interface ServiceFormUnifiedProps {
   /** Existing service to edit (undefined for new service) */
@@ -26,6 +41,13 @@ export interface ServiceFormUnifiedProps {
    * the host's own header/footer). Falls back to the raw terminal height.
    */
   terminalHeight?: number | undefined;
+  /**
+   * True while the host renders its own dialog (delete/overwrite confirmation).
+   * The form then stops reading keys AND stops mounting editors — otherwise the
+   * `y`/`n` that answers the dialog is typed into the focused field as well,
+   * corrupting the value that is about to be saved.
+   */
+  suspended?: boolean | undefined;
 }
 
 /**
@@ -48,17 +70,23 @@ type FormField =
   | 'triggerHintsEnd'
   | 'triggerHintsPhrases';
 
-/**
- * Field configuration
- */
-interface FieldConfig {
-  field: FormField;
-  label: string;
-  help: string;
-  required: boolean;
-  type: 'text' | 'select';
-  dependsOn?: { field: FormField; value: string };
-}
+const FORM_FIELDS: readonly FormField[] = [
+  'name',
+  'transport',
+  'command',
+  'url',
+  'args',
+  'env',
+  'headers',
+  'tags',
+  'enabled',
+  'maxConnections',
+  'idleTimeout',
+  'connectionTimeout',
+  'triggerHintsStart',
+  'triggerHintsEnd',
+  'triggerHintsPhrases',
+];
 
 /**
  * Form data structure
@@ -82,11 +110,37 @@ export interface FormData {
 }
 
 /**
- * Validation error
+ * Field configuration
  */
-interface ValidationError {
+interface FieldConfig {
   field: FormField;
-  message: string;
+  label: string;
+  help: string;
+  required: boolean;
+  type: 'text' | 'select';
+  /** Folded away until Ctrl+A. */
+  advanced: boolean;
+}
+
+/** Enumerated fields: the stored values and how they are spelled out. */
+const TRANSPORT_VALUES: readonly string[] = ['stdio', 'sse', 'http'];
+const ENABLED_VALUES: readonly string[] = ['on', 'off'];
+
+const SELECT_LABELS: Record<string, string> = { on: 'On', off: 'Off' };
+
+function selectValues(field: FormField): readonly string[] {
+  if (field === 'transport') {
+    return TRANSPORT_VALUES;
+  }
+  if (field === 'enabled') {
+    return ENABLED_VALUES;
+  }
+  return [];
+}
+
+/** The enumerated field's current value as it is stored in FormData. */
+function selectValue(field: FormField, data: FormData): string {
+  return field === 'enabled' ? (data.enabled ? 'on' : 'off') : data.transport;
 }
 
 /**
@@ -100,58 +154,64 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
       help: fieldHelp.name,
       required: true,
       type: 'text',
+      advanced: false,
     },
     {
       field: 'transport',
-      label: 'Transport Type',
+      label: 'Transport',
       help: fieldHelp.transport,
       required: true,
       type: 'select',
+      advanced: false,
     },
   ];
 
   if (transport === 'stdio') {
-    configs.push({
-      field: 'command',
-      label: 'Command',
-      help: fieldHelp.command,
-      required: true,
-      type: 'text',
-      dependsOn: { field: 'transport', value: 'stdio' },
-    });
-    configs.push({
-      field: 'args',
-      label: 'Arguments',
-      help: fieldHelp.args,
-      required: false,
-      type: 'text',
-      dependsOn: { field: 'transport', value: 'stdio' },
-    });
-    configs.push({
-      field: 'env',
-      label: 'Environment Variables',
-      help: fieldHelp.env,
-      required: false,
-      type: 'text',
-      dependsOn: { field: 'transport', value: 'stdio' },
-    });
+    configs.push(
+      {
+        field: 'command',
+        label: 'Command',
+        help: fieldHelp.command,
+        required: true,
+        type: 'text',
+        advanced: false,
+      },
+      {
+        field: 'args',
+        label: 'Arguments',
+        help: fieldHelp.args,
+        required: false,
+        type: 'text',
+        advanced: false,
+      },
+      {
+        field: 'env',
+        label: 'Environment',
+        help: fieldHelp.env,
+        required: false,
+        type: 'text',
+        advanced: false,
+      }
+    );
   } else {
-    configs.push({
-      field: 'url',
-      label: 'URL',
-      help: fieldHelp.url,
-      required: true,
-      type: 'text',
-      dependsOn: { field: 'transport', value: transport },
-    });
-    configs.push({
-      field: 'headers',
-      label: 'Headers',
-      help: fieldHelp.headers,
-      required: false,
-      type: 'text',
-      dependsOn: { field: 'transport', value: transport },
-    });
+    configs.push(
+      {
+        field: 'url',
+        label: 'URL',
+        help: fieldHelp.url,
+        required: true,
+        type: 'text',
+        advanced: false,
+      },
+      {
+        field: 'headers',
+        label: 'Headers',
+        help: fieldHelp.headers,
+        required: false,
+        type: 'text',
+        advanced: false,
+      }
+    );
   }
 
   configs.push(
@@ -161,6 +221,7 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
       help: fieldHelp.tags,
       required: false,
       type: 'text',
+      advanced: false,
     },
     {
       field: 'enabled',
@@ -168,6 +229,7 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
       help: fieldHelp.enabled,
       required: false,
       type: 'select',
+      advanced: false,
     },
     {
       field: 'maxConnections',
@@ -175,6 +237,7 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
       help: fieldHelp.maxConnections,
       required: false,
       type: 'text',
+      advanced: true,
     },
     {
       field: 'idleTimeout',
@@ -182,6 +245,7 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
       help: fieldHelp.idleTimeout,
       required: false,
       type: 'text',
+      advanced: true,
     },
     {
       field: 'connectionTimeout',
@@ -189,27 +253,31 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
       help: fieldHelp.connectionTimeout,
       required: false,
       type: 'text',
+      advanced: true,
     },
     {
       field: 'triggerHintsStart',
-      label: 'Trigger: On Session Start',
+      label: 'Trigger on start',
       help: fieldHelp.triggerHintsStart,
       required: false,
       type: 'text',
+      advanced: true,
     },
     {
       field: 'triggerHintsEnd',
-      label: 'Trigger: On Session End',
+      label: 'Trigger on end',
       help: fieldHelp.triggerHintsEnd,
       required: false,
       type: 'text',
+      advanced: true,
     },
     {
       field: 'triggerHintsPhrases',
-      label: 'Trigger Phrases',
+      label: 'Trigger phrases',
       help: fieldHelp.triggerHintsPhrases,
       required: false,
       type: 'text',
+      advanced: true,
     }
   );
 
@@ -217,7 +285,31 @@ function getFieldConfigs(transport: TransportType): FieldConfig[] {
 }
 
 /**
- * Validate single field
+ * Widest label over BOTH transport variants, so the label column keeps its width
+ * when the transport switches (a column that resizes on every toggle would make
+ * the whole form jump).
+ */
+const LABEL_TEXT_WIDTH = Math.max(
+  ...getFieldConfigs('stdio').map((config) => displayWidth(config.label)),
+  ...getFieldConfigs('http').map((config) => displayWidth(config.label))
+);
+
+/** Cells reserved for the focus marker; both states are padded to this width. */
+const MARKER_WIDTH = 3;
+/** The value column never collapses below this, even on a tiny terminal. */
+const MIN_VALUE_WIDTH = 20;
+/** Gap between the label cell and the value cell. */
+const COLUMN_GAP = 2;
+
+/** Marker glyph plus its padding. `▶` renders two cells wide on some terminals,
+ * so the idle form keeps three spaces — the same convention the parameter list
+ * uses (see tool-param-schema.ts) — leaving every row's label at the same cell.
+ */
+const focusMarker = (focused: boolean): string => (focused ? '▶ ' : '   ');
+
+/**
+ * Validate one field; null when the value is acceptable. Optional fields are
+ * only checked when they carry a value.
  */
 function validateField(
   field: FormField,
@@ -279,10 +371,66 @@ function validateField(
   }
 }
 
+/** Form data for a new service, or the current values of `service`. */
+function buildInitialFormData(service?: ServiceDefinition): FormData {
+  if (!service) {
+    return {
+      name: '',
+      transport: 'stdio',
+      command: '',
+      url: '',
+      args: '',
+      env: '',
+      headers: '',
+      tags: '',
+      enabled: true,
+      maxConnections: '5',
+      idleTimeout: '60000',
+      connectionTimeout: '30000',
+      triggerHintsStart: '',
+      triggerHintsEnd: '',
+      triggerHintsPhrases: '',
+    };
+  }
+
+  return {
+    name: service.name,
+    transport: service.transport,
+    command: service.command || '',
+    url: service.url || '',
+    args: service.args?.join(', ') || '',
+    env: service.env
+      ? Object.entries(service.env)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(', ')
+      : '',
+    headers:
+      service.transport === 'stdio'
+        ? ''
+        : service.headers
+          ? Object.entries(service.headers)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join(', ')
+          : '',
+    tags: service.tags?.join(', ') ?? '',
+    enabled: service.enabled,
+    maxConnections: (service.connectionPool?.maxConnections ?? 5).toString(),
+    idleTimeout: (service.connectionPool?.idleTimeout ?? 60000).toString(),
+    connectionTimeout: (service.connectionPool?.connectionTimeout ?? 30000).toString(),
+    triggerHintsStart: service.triggerHints?.onSessionStart || '',
+    triggerHintsEnd: service.triggerHints?.onSessionEnd || '',
+    triggerHintsPhrases: service.triggerHints?.phrases?.join(', ') || '',
+  };
+}
+
 /**
- * Convert form data to service definition
+ * Convert form data to service definition.
+ *
+ * `base` is the service being edited; state the form has no input for is carried
+ * over verbatim. `toolStates` especially — dropping it silently re-enabled every
+ * tool the user had switched off.
  */
-export function formDataToService(data: FormData): ServiceDefinition {
+export function formDataToService(data: FormData, base?: ServiceDefinition): ServiceDefinition {
   const service: ServiceDefinition = {
     name: data.name.trim(),
     transport: data.transport,
@@ -297,6 +445,10 @@ export function formDataToService(data: FormData): ServiceDefinition {
       connectionTimeout: parseInt(data.connectionTimeout || '30000', 10),
     },
   };
+
+  if (base?.toolStates !== undefined) {
+    service.toolStates = base.toolStates;
+  }
 
   if (data.transport === 'stdio') {
     service.command = data.command.trim();
@@ -354,18 +506,7 @@ export function formDataToService(data: FormData): ServiceDefinition {
   return service;
 }
 
-/**
- * Collapsed-field value. Booleans read Yes/No (the raw `true` leaked the
- * internal representation), and empty values read as a grey placeholder.
- */
-const formatFieldValue = (field: FormField, data: FormData): React.ReactNode => {
-  const value = data[field as keyof FormData];
-  if (typeof value === 'boolean') {
-    return value ? 'Yes' : 'No';
-  }
-  const text = value?.toString() ?? '';
-  return text.length > 0 ? text : <Text color="gray">(empty)</Text>;
-};
+type Entry = { kind: 'field'; config: FieldConfig } | { kind: 'advanced' };
 
 /**
  * Unified Service Form Component
@@ -375,508 +516,439 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   onSubmit,
   onCancel,
   terminalHeight: terminalHeightProp,
+  suspended = false,
 }) => {
   const { stdout } = useStdout();
   const terminalHeight = terminalHeightProp ?? (stdout?.rows || 24);
+  const terminalWidth = stdout?.columns || 80;
 
-  // Initialize form data
-  const [formData, setFormData] = useState<FormData>(() => {
-    if (service) {
-      return {
-        name: service.name,
-        transport: service.transport,
-        command: service.command || '',
-        url: service.url || '',
-        args: service.args?.join(', ') || '',
-        env: service.env
-          ? Object.entries(service.env)
-              .map(([k, v]) => `${k}=${v}`)
-              .join(', ')
-          : '',
-        headers:
-          service.transport === 'stdio'
-            ? ''
-            : service.headers
-              ? Object.entries(service.headers)
-                  .map(([k, v]) => `${k}: ${v}`)
-                  .join(', ')
-              : '',
-        tags: service.tags.join(', '),
-        enabled: service.enabled,
-        maxConnections: service.connectionPool.maxConnections.toString(),
-        idleTimeout: service.connectionPool.idleTimeout.toString(),
-        connectionTimeout: service.connectionPool.connectionTimeout.toString(),
-        triggerHintsStart: service.triggerHints?.onSessionStart || '',
-        triggerHintsEnd: service.triggerHints?.onSessionEnd || '',
-        triggerHintsPhrases: service.triggerHints?.phrases?.join(', ') || '',
-      };
-    } else {
-      return {
-        name: '',
-        transport: 'stdio',
-        command: '',
-        url: '',
-        args: '',
-        env: '',
-        headers: '',
-        tags: '',
-        enabled: true,
-        maxConnections: '5',
-        idleTimeout: '60000',
-        connectionTimeout: '30000',
-        triggerHintsStart: '',
-        triggerHintsEnd: '',
-        triggerHintsPhrases: '',
-      };
-    }
-  });
-
+  const [initialData] = useState<FormData>(() => buildInitialFormData(service));
+  const [formData, setFormData] = useState<FormData>(initialData);
   const [currentField, setCurrentField] = useState<FormField>('name');
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<Map<FormField, string>>(new Map());
-  const [touched, setTouched] = useState<Set<FormField>>(new Set());
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [discardPending, setDiscardPending] = useState(false);
+  const [touched, setTouched] = useState<ReadonlySet<FormField>>(new Set());
 
-  // Get field configurations based on transport type
-  const fieldConfigs = getFieldConfigs(formData.transport);
-  const requiredFields = fieldConfigs.filter((c) => c.required).map((c) => c.field);
-  const connectionPoolFields: FormField[] = ['maxConnections', 'idleTimeout', 'connectionTimeout'];
-  const advancedOnlyFields: FormField[] = [
-    ...connectionPoolFields,
-    'triggerHintsStart',
-    'triggerHintsEnd',
-    'triggerHintsPhrases',
-  ];
+  const fieldConfigs = useMemo(() => getFieldConfigs(formData.transport), [formData.transport]);
 
-  const HEADER_LINES = 4;
-  const FOOTER_LINES = 3;
-  const AVAILABLE_LINES = Math.max(1, terminalHeight - HEADER_LINES - FOOTER_LINES);
-
-  // Default to compact mode - current field expanded, others collapsed
-  const isCompactMode = true;
-
-  /**
-   * Lines a field actually occupies. Counting rows instead of assuming one line
-   * per field is what keeps the form inside the viewport: a select renders one
-   * row per option, so the old `SERVICE_ITEM_LINES`-style math under-counted and
-   * pushed the whole frame past the terminal, which corrupts the screen.
-   */
-  const fieldHeight = (config: FieldConfig): number => {
-    if (config.type !== 'select') {
-      return 2; // label + value/editor row
-    }
-    const optionRows = config.field === 'transport' ? 3 : 2; // stdio/sse/http | Yes/No
-    return optionRows + 1; // label + options
-  };
-
-  // Chrome the form draws itself: title box(3) + fields box borders(2) +
-  // field-help box(3) + navigation box(3) + advanced hint + scroll indicators(2).
-  const FORM_CHROME_LINES = 3 + 2 + 3 + 3 + (showAdvanced ? 1 : 2) + 2;
-  const FIELD_BUDGET = Math.max(3, AVAILABLE_LINES - FORM_CHROME_LINES);
-
-  /**
-   * Fields to render: the window always contains the current field and expands
-   * outward while the line budget allows, so the focused field can never be
-   * scrolled off-screen.
-   */
-  const { visibleConfigs, hasMoreAbove, hasMoreBelow } = useMemo(() => {
-    const heights = fieldConfigs.map(fieldHeight);
-    const currentIdx = Math.max(
-      0,
-      fieldConfigs.findIndex((c) => c.field === currentField)
-    );
-    let used = heights[currentIdx] ?? 1;
-    let start = currentIdx;
-    let end = currentIdx + 1;
-    for (;;) {
-      let grew = false;
-      if (end < fieldConfigs.length && used + (heights[end] ?? 1) <= FIELD_BUDGET) {
-        used += heights[end] ?? 1;
-        end += 1;
-        grew = true;
-      }
-      if (start > 0 && used + (heights[start - 1] ?? 1) <= FIELD_BUDGET) {
-        used += heights[start - 1] ?? 1;
-        start -= 1;
-        grew = true;
-      }
-      if (!grew) {
-        break;
+  /** Fields the user has changed since the form opened. */
+  const dirtyFields = useMemo(() => {
+    const dirty = new Set<FormField>();
+    for (const field of FORM_FIELDS) {
+      if (formData[field] !== initialData[field]) {
+        dirty.add(field);
       }
     }
-    return {
-      visibleConfigs: fieldConfigs.slice(start, end),
-      hasMoreAbove: start > 0,
-      hasMoreBelow: end < fieldConfigs.length,
-    };
-  }, [fieldConfigs, currentField, FIELD_BUDGET, showAdvanced]);
+    return dirty;
+  }, [formData, initialData]);
 
-  // Get current field config for help text
-  const currentFieldConfig = fieldConfigs.find((c) => c.field === currentField);
-  const currentFieldHelp = currentFieldConfig?.help || '';
-
-  // Validate current field when it changes
-  useEffect(() => {
-    if (touched.has(currentField)) {
-      const value = formData[currentField as keyof FormData];
-      const error = validateField(currentField, value, formData.transport);
-
-      setFieldErrors((prev) => {
-        const next = new Map(prev);
-        if (error) {
-          next.set(currentField, error);
-        } else {
-          next.delete(currentField);
-        }
-        return next;
-      });
-    }
-  }, [formData, currentField, touched, formData.transport]);
-
-  // Check if form is valid
-  const isFormValid = (): boolean => {
-    const errors: ValidationError[] = [];
-
+  /** Errors follow the values, so correcting a field clears its own error. */
+  const errors = useMemo(() => {
+    const next = new Map<FormField, string>();
     for (const config of fieldConfigs) {
-      if (config.required) {
-        const value = formData[config.field as keyof FormData];
-        const error = validateField(config.field, value, formData.transport);
-        if (error) {
-          errors.push({ field: config.field, message: error });
-        }
+      const error = validateField(config.field, formData[config.field], formData.transport);
+      if (error) {
+        next.set(config.field, error);
       }
     }
+    return next;
+  }, [fieldConfigs, formData]);
 
-    return errors.length === 0;
-  };
+  const shownError = (field: FormField): string | undefined =>
+    touched.has(field) ? errors.get(field) : undefined;
 
-  const isFieldVisible = (config: FieldConfig): boolean => {
-    const isAdvanced = advancedOnlyFields.includes(config.field);
-    return config.required || !isAdvanced || (showAdvanced && isAdvanced);
-  };
+  const currentConfig = fieldConfigs.find((config) => config.field === currentField);
+  const currentHelp =
+    currentField === 'name' && service !== undefined && formData.name !== service.name
+      ? 'Renaming replaces the old entry. Tool states and other settings are kept.'
+      : (currentConfig?.help ?? '');
 
-  // Handle field navigation
-  const goToNextField = (overrideTransport?: TransportType) => {
-    const transportForFields = overrideTransport ?? formData.transport;
-    const configsForTransport = getFieldConfigs(transportForFields);
-    const currentIndex = configsForTransport.findIndex((c) => c.field === currentField);
-    if (currentIndex < configsForTransport.length - 1) {
-      // Mark current field as touched
-      setTouched((prev) => new Set(prev).add(currentField));
+  const isVisible = (config: FieldConfig): boolean => !config.advanced || showAdvanced;
 
-      // Find next visible field
-      for (let i = currentIndex + 1; i < configsForTransport.length; i++) {
-        const nextConfig = configsForTransport[i];
-        if (nextConfig && isFieldVisible(nextConfig)) {
-          setCurrentField(nextConfig.field);
-          return;
-        }
+  // ---------------------------------------------------------------- navigation
+
+  const goToNextField = (): void => {
+    const index = fieldConfigs.findIndex((config) => config.field === currentField);
+    for (let i = index + 1; i < fieldConfigs.length; i += 1) {
+      const config = fieldConfigs[i];
+      if (config !== undefined && isVisible(config)) {
+        setTouched((prev) => new Set(prev).add(currentField));
+        setCurrentField(config.field);
+        return;
       }
     }
   };
 
-  const goToPrevField = () => {
-    const currentIndex = fieldConfigs.findIndex((c) => c.field === currentField);
-    if (currentIndex > 0) {
-      // Find previous visible field
-      for (let i = currentIndex - 1; i >= 0; i--) {
-        const prevConfig = fieldConfigs[i];
-        if (prevConfig && isFieldVisible(prevConfig)) {
-          setCurrentField(prevConfig.field);
-          return;
-        }
+  const goToPrevField = (): void => {
+    const index = fieldConfigs.findIndex((config) => config.field === currentField);
+    for (let i = index - 1; i >= 0; i -= 1) {
+      const config = fieldConfigs[i];
+      if (config !== undefined && isVisible(config)) {
+        setCurrentField(config.field);
+        return;
       }
     }
   };
 
-  // Handle form submission
-  const handleSubmit = () => {
-    // Mark all required fields as touched
-    const allTouched = new Set(touched);
-    requiredFields.forEach((f) => allTouched.add(f));
-    setTouched(allTouched);
+  /** ←/→ on an enumerated field: move the selection, wrapping at both ends. */
+  const cycleSelect = (field: FormField, delta: number): void => {
+    const values = selectValues(field);
+    const index = values.indexOf(selectValue(field, formData));
+    const next = values[(index + delta + values.length) % values.length];
+    if (values.length === 0 || next === undefined) {
+      return;
+    }
+    setFormData((prev) =>
+      field === 'enabled'
+        ? { ...prev, enabled: next === 'on' }
+        : { ...prev, transport: next as TransportType }
+    );
+    setTouched((prev) => new Set(prev).add(field));
+    setSubmitError(null);
+  };
 
-    if (!isFormValid()) {
-      // Focus the first offending field AND say so — a silent no-op looks like
-      // a broken save button when the field is already focused.
-      for (const config of fieldConfigs) {
-        const value = formData[config.field as keyof FormData];
-        const error = validateField(config.field, value, formData.transport);
-        if (error) {
-          setCurrentField(config.field);
-          setSubmitError(`${config.label}: ${error}`);
-          return;
-        }
+  // ------------------------------------------------------------------ submit
+
+  const handleSubmit = (): void => {
+    // Every field is validated once it has a value, not just the required ones:
+    // an out-of-range timeout used to slip through and come back later as a raw
+    // registry error naming a field the user could not see.
+    const offender = fieldConfigs.find((config) => errors.has(config.field));
+    if (offender !== undefined) {
+      setTouched(new Set(FORM_FIELDS));
+      if (offender.advanced && !showAdvanced) {
+        setShowAdvanced(true);
       }
-      setSubmitError('Some fields are invalid.');
+      setCurrentField(offender.field);
+      setSubmitError(`${offender.label}: ${errors.get(offender.field) ?? 'invalid value'}`);
       return;
     }
 
     setSubmitError(null);
-    const serviceDefinition = formDataToService(formData);
-    onSubmit(serviceDefinition);
+    onSubmit(formDataToService(formData, service));
   };
 
-  // Handle keyboard input
-  useInput((input, key) => {
-    if (key.escape) {
-      onCancel();
-      return;
-    }
+  // ------------------------------------------------------------------- input
 
-    // Field navigation — the render window follows the focused field, so
-    // arrows move between fields instead of scrolling a fixed viewport.
-    if (key.upArrow) {
-      goToPrevField();
-      return;
-    }
-    if (key.downArrow) {
-      goToNextField();
-      return;
-    }
+  useInput(
+    (input, key) => {
+      // The discard confirmation owns the keyboard while it is up. No editor is
+      // mounted in that state, so nothing can leak into a field.
+      if (discardPending) {
+        if (input === 'y' || input === 'Y') {
+          onCancel();
+        } else if (input === 'n' || input === 'N' || key.escape) {
+          setDiscardPending(false);
+        }
+        return;
+      }
 
-    // Toggle advanced options (Ctrl+A) - for optional fields like tags, env, args
-    if (input === 'a' && key.ctrl) {
-      setShowAdvanced(!showAdvanced);
-      return;
-    }
+      if (key.escape) {
+        if (dirtyFields.size > 0) {
+          setDiscardPending(true);
+        } else {
+          onCancel();
+        }
+        return;
+      }
 
-    // Submit form (Ctrl+S). The chord itself never reaches the text editor
-    // (SingleLineInput ignores ctrl chords), so no stray 's' is inserted.
-    if (input === 's' && key.ctrl) {
-      handleSubmit();
-      return;
-    }
+      if (input === 's' && key.ctrl) {
+        handleSubmit();
+        return;
+      }
 
-    // Navigate fields (Tab / Shift+Tab)
-    if (key.tab) {
-      if (key.shift) {
+      if (input === 'a' && key.ctrl) {
+        const next = !showAdvanced;
+        setShowAdvanced(next);
+        // Expanding parks the focus on the first revealed field, collapsing walks
+        // back to one that stays on screen — the focus never sits on a hidden row.
+        if (next) {
+          setCurrentField('maxConnections');
+        } else if (currentConfig?.advanced === true) {
+          setCurrentField('enabled');
+        }
+        return;
+      }
+
+      if (key.upArrow || (key.tab && key.shift)) {
         goToPrevField();
-      } else {
-        goToNextField();
+        return;
       }
-      return;
-    }
+      if (key.downArrow || key.tab) {
+        goToNextField();
+        return;
+      }
 
-    // Confirm a field and move on (Enter). Selects handle Enter themselves.
-    if (key.return && currentField !== 'transport' && currentField !== 'enabled') {
-      setTouched((prev) => new Set(prev).add(currentField));
-      goToNextField();
-      return;
-    }
+      // ←/→ belongs to the focused field: caret movement in a text field, value
+      // selection in an enumerated one.
+      if (key.leftArrow || key.rightArrow) {
+        if (currentConfig?.type === 'select') {
+          cycleSelect(currentField, key.rightArrow ? 1 : -1);
+        }
+        return;
+      }
 
-    // Handle select fields
-    if (currentField === 'transport' || currentField === 'enabled') {
       if (key.return) {
+        setTouched((prev) => new Set(prev).add(currentField));
         goToNextField();
       }
+    },
+    // A host dialog owns the keyboard while it is up.
+    { isActive: !suspended }
+  );
+
+  // ------------------------------------------------------------------ render
+
+  // Two columns: a fixed label cell (focus marker + label + required marker +
+  // the gap) and the value cell that takes the rest. Being fixed is what keeps
+  // the labels aligned down the whole form.
+  const innerWidth = Math.max(12, terminalWidth - 2);
+  const labelTextWidth = Math.max(
+    8,
+    Math.min(LABEL_TEXT_WIDTH, innerWidth - MIN_VALUE_WIDTH - MARKER_WIDTH - 3)
+  );
+  const labelCellWidth = MARKER_WIDTH + labelTextWidth + 1 + COLUMN_GAP;
+  const valueWidth = Math.max(MIN_VALUE_WIDTH, innerWidth - labelCellWidth);
+  const helpPrefix = `${currentConfig?.label ?? ''} · `;
+  const helpWidth = Math.max(8, innerWidth - 2 - displayWidth(helpPrefix));
+
+  const advancedCount = fieldConfigs.filter((config) => config.advanced).length;
+
+  const entries = useMemo<Entry[]>(() => {
+    // The Advanced row is drawn where the folded fields belong, so it reads as
+    // their header — and, while they are folded, as the only statement of what
+    // is hidden and how to reveal it.
+    const list: Entry[] = fieldConfigs
+      .filter((config) => !config.advanced)
+      .map((config) => ({ kind: 'field', config }));
+    list.push({ kind: 'advanced' });
+    if (showAdvanced) {
+      for (const config of fieldConfigs.filter((c) => c.advanced)) {
+        list.push({ kind: 'field', config });
+      }
     }
-  });
+    return list;
+  }, [fieldConfigs, showAdvanced]);
 
-  // Render transport selector
-  const renderTransportSelector = () => {
-    const items = [
-      { label: 'stdio', value: 'stdio' },
-      { label: 'sse', value: 'sse' },
-      { label: 'http', value: 'http' },
-    ];
+  // Rows the form spends outside the scrolling field window. Everything here is
+  // a plain line except the body box, which is the only border on screen.
+  const helpRows = currentHelp === '' ? 0 : wrapDisplay(currentHelp, helpWidth).length;
+  const submitRows = submitError !== null ? 1 : 0;
+  const chromeRows = (withTitle: boolean, withHelp: boolean): number =>
+    1 /* hint line */ +
+    2 /* body borders */ +
+    (withTitle ? 1 : 0) +
+    (withHelp ? helpRows : 0) +
+    submitRows;
 
-    return (
-      <SelectInput
-        items={items}
-        initialIndex={items.findIndex((i) => i.value === formData.transport)}
-        onSelect={(item) => {
-          const newTransport = item.value as TransportType;
-          setFormData({ ...formData, transport: newTransport });
-          setTouched((prev) => new Set(prev).add('transport'));
-          goToNextField(newTransport);
-        }}
-      />
+  const useTitle = terminalHeight - chromeRows(true, helpRows > 0) >= 3;
+  const useHelp = helpRows > 0 && terminalHeight - chromeRows(useTitle, true) >= 3;
+  const bodyBudget = Math.max(3, terminalHeight - chromeRows(useTitle, useHelp));
+
+  const { visibleEntries, hasMoreAbove, hasMoreBelow } = useMemo(() => {
+    const rows = entries.map((entry) =>
+      entry.kind === 'advanced' || shownError(entry.config.field) === undefined ? 1 : 2
     );
-  };
-
-  // Render enabled selector
-  const renderEnabledSelector = () => {
-    const items = [
-      { label: 'Yes', value: true },
-      { label: 'No', value: false },
-    ];
-
-    return (
-      <SelectInput
-        items={items}
-        initialIndex={formData.enabled ? 0 : 1}
-        onSelect={(item) => {
-          setFormData({ ...formData, enabled: item.value as boolean });
-          setTouched((prev) => new Set(prev).add('enabled'));
-        }}
-      />
+    const focusIndex = Math.max(
+      0,
+      entries.findIndex((entry) => entry.kind === 'field' && entry.config.field === currentField)
     );
-  };
 
-  // Render text input. SingleLineInput ignores control chords outright (so
-  // Ctrl+S/Ctrl+A can never be typed into the field) and accepts pasted chunks.
-  const renderTextInput = (field: FormField) => {
-    const placeholder = fieldPlaceholder[field];
-    return (
-      <SingleLineInput
-        value={formData[field as keyof FormData] as string}
-        onChange={(value) => {
-          setFormData({ ...formData, [field]: value });
-          setSubmitError(null);
-        }}
-        {...(placeholder ? { placeholder } : {})}
-      />
-    );
-  };
+    // The window always contains the focused field and grows outward while the
+    // row budget allows. The scroll indicators are drawn INSIDE the body, so the
+    // rows they need come out of the same budget: reserving them up front (and
+    // re-running once the window is known) keeps the frame inside the terminal.
+    const windowFor = (budget: number): { start: number; end: number } => {
+      let used = rows[focusIndex] ?? 1;
+      let start = focusIndex;
+      let end = focusIndex + 1;
+      for (;;) {
+        let grew = false;
+        if (end < entries.length && used + (rows[end] ?? 1) <= budget) {
+          used += rows[end] ?? 1;
+          end += 1;
+          grew = true;
+        }
+        if (start > 0 && used + (rows[start - 1] ?? 1) <= budget) {
+          used += rows[start - 1] ?? 1;
+          start -= 1;
+          grew = true;
+        }
+        if (!grew) {
+          break;
+        }
+      }
+      return { start, end };
+    };
 
-  // Render field
-  const renderField = (config: FieldConfig, isCurrent: boolean) => {
-    const error = fieldErrors.get(config.field);
-    const hasError = touched.has(config.field) && error;
-    const isAdvanced = advancedOnlyFields.includes(config.field);
-    const isVisible = config.required || !isAdvanced || (showAdvanced && isAdvanced);
-
-    if (!isVisible) {
-      return null;
+    let reserved = 0;
+    let win = windowFor(bodyBudget);
+    for (let pass = 0; pass < 3; pass += 1) {
+      const need = (win.start > 0 ? 1 : 0) + (win.end < entries.length ? 1 : 0);
+      if (need <= reserved) {
+        break;
+      }
+      reserved = need;
+      win = windowFor(Math.max(3, bodyBudget - reserved));
     }
 
-    // In compact mode, help is shown in the dedicated help area
-    const showHelp = !isCompactMode;
+    return {
+      visibleEntries: entries.slice(win.start, win.end),
+      hasMoreAbove: win.start > 0,
+      hasMoreBelow: win.end < entries.length,
+    };
+    // shownError (and therefore the row heights) reads both of these.
+  }, [entries, currentField, bodyBudget, errors, touched]);
+
+  const renderValue = (config: FieldConfig, editable: boolean): React.ReactNode => {
+    if (config.type === 'select') {
+      return (
+        <InlineSelect
+          options={selectValues(config.field).map((value) => ({
+            value,
+            label: SELECT_LABELS[value] ?? value,
+          }))}
+          value={selectValue(config.field, formData)}
+          focused={editable}
+          width={valueWidth}
+        />
+      );
+    }
+
+    if (editable) {
+      return (
+        <SingleLineInput
+          value={formData[config.field] as string}
+          onChange={(next) => {
+            setFormData((prev) => ({ ...prev, [config.field]: next }));
+            setSubmitError(null);
+          }}
+          width={valueWidth}
+          {...(fieldPlaceholder[config.field] !== undefined
+            ? { placeholder: fieldPlaceholder[config.field] as string }
+            : {})}
+        />
+      );
+    }
+
+    const value = formData[config.field] as string;
+    return (
+      <Box width={valueWidth}>
+        <Text wrap="truncate">{value.length > 0 ? value : <Text color="gray">(empty)</Text>}</Text>
+      </Box>
+    );
+  };
+
+  const renderField = (config: FieldConfig): React.ReactNode => {
+    const isCurrent = config.field === currentField;
+    const error = shownError(config.field);
+    // A host dialog (or the discard prompt) leaves every row read-only.
+    const editable = isCurrent && !suspended && !discardPending;
 
     return (
-      <Box key={config.field} flexDirection="column" marginBottom={fieldMarginBottom}>
-        <Box>
-          <Text bold color={isCurrent ? 'cyan' : 'white'}>
-            {isCurrent ? '▶ ' : '  '}
-            {config.label}
-            {config.required && <Text color="red">*</Text>}
-          </Text>
-        </Box>
-
-        {/* Help text only shown in non-compact mode (it's in dedicated area in compact mode) */}
-        {showHelp && (
-          <Box marginLeft={2}>
-            <Text dimColor>{config.help}</Text>
-          </Box>
-        )}
-
-        <Box marginLeft={2} marginTop={isCompactMode ? 0 : 0}>
-          {isCurrent ? (
-            <>
-              {config.type === 'select'
-                ? config.field === 'transport'
-                  ? renderTransportSelector()
-                  : config.field === 'enabled'
-                    ? renderEnabledSelector()
-                    : null
-                : renderTextInput(config.field)}
-            </>
-          ) : (
-            <Text color={hasError ? 'red' : 'green'}>
-              {formatFieldValue(config.field, formData)}
+      <Box key={config.field} flexDirection="column">
+        <Box flexDirection="row">
+          <Box width={labelCellWidth} flexShrink={0}>
+            <Text bold color={isCurrent ? 'cyan' : 'gray'}>
+              {focusMarker(isCurrent)}
+              {truncateDisplay(config.label, labelTextWidth)}
+              {config.required && <Text color="red">*</Text>}
             </Text>
-          )}
+          </Box>
+          <Box width={valueWidth} flexShrink={0}>
+            {renderValue(config, editable)}
+          </Box>
         </Box>
-
-        {hasError && (
-          <Box marginLeft={2}>
-            <Text color="red">✗ {error}</Text>
+        {error !== undefined && (
+          <Box marginLeft={labelCellWidth} width={valueWidth}>
+            <Text color="red" wrap="truncate">
+              ✗ {error}
+            </Text>
           </Box>
         )}
       </Box>
     );
   };
 
-  // Adjust padding and margins based on terminal height for small terminals
-  const isUltraCompactMode = terminalHeight < 15;
-  const formPadding = isCompactMode ? 0 : 1;
-  const formMarginBottom = isCompactMode ? 0 : 1;
-  const fieldPadding = isCompactMode ? 0 : 1;
-  const fieldMarginBottom = isCompactMode ? (isUltraCompactMode ? 0 : 0) : 1;
-  const helpPaddingX = isCompactMode ? 0 : 1;
-
-  return (
-    <Box flexDirection="column" padding={formPadding}>
-      {/* Header */}
-      <Box
-        borderStyle="round"
-        borderColor="cyan"
-        padding={formPadding}
-        marginBottom={formMarginBottom}
-      >
-        <Text bold color="cyan">
-          {' '}
-          {service ? 'Edit Service' : 'Add New Service'}
+  const renderAdvancedRow = (): React.ReactNode => (
+    <Box key="advanced" flexDirection="row">
+      <Box width={labelCellWidth} flexShrink={0}>
+        <Text color="gray">
+          {focusMarker(false)}
+          {'Advanced'}
         </Text>
       </Box>
+      <Box width={valueWidth} flexShrink={0}>
+        <Text color="gray" wrap="truncate">
+          {showAdvanced ? 'Ctrl+A: hide' : `Ctrl+A: show ${advancedCount} more`}
+        </Text>
+      </Box>
+    </Box>
+  );
 
-      {/* Form fields */}
-      <Box
-        flexDirection="column"
-        borderStyle="single"
-        padding={fieldPadding}
-        marginBottom={fieldMarginBottom}
-      >
-        {/* Scroll indicator */}
+  const navHint = ((): string => {
+    if (discardPending) {
+      return `Discard ${dirtyFields.size} unsaved change(s)? y: confirm • n/Esc: keep editing`;
+    }
+    const parts = ['↑/↓/Tab: Field'];
+    if (currentConfig?.type === 'select') {
+      parts.push('←/→: Option');
+    }
+    parts.push('Ctrl+A: Advanced', 'Ctrl+S: Save');
+    parts.push(dirtyFields.size > 0 ? `Esc: Cancel (${dirtyFields.size} unsaved)` : 'Esc: Cancel');
+    return parts.join(' • ');
+  })();
+
+  return (
+    <Box flexDirection="column">
+      {useTitle && (
+        <Box paddingX={1} justifyContent="space-between">
+          <Text bold color="cyan">
+            {service !== undefined ? `Edit Service — ${service.name}` : 'Add Service'}
+          </Text>
+          {dirtyFields.size > 0 && <Text color="yellow">● {dirtyFields.size} unsaved</Text>}
+        </Box>
+      )}
+
+      <Box flexDirection="column" borderStyle="single" borderColor="gray">
         {hasMoreAbove && (
           <Box justifyContent="center">
-            <Text dimColor>▲ more above</Text>
+            <Text color="gray">▲ more above</Text>
           </Box>
         )}
-
-        {visibleConfigs.map((config) => renderField(config, config.field === currentField))}
-
-        {/* Scroll indicator */}
+        {visibleEntries.map((entry) =>
+          entry.kind === 'advanced' ? renderAdvancedRow() : renderField(entry.config)
+        )}
         {hasMoreBelow && (
           <Box justifyContent="center">
-            <Text dimColor>▼ more below</Text>
-          </Box>
-        )}
-
-        {/* Advanced options toggle */}
-        {!showAdvanced && (
-          <Box marginTop={1}>
-            <Text dimColor>Press Ctrl+A to show connection pool settings</Text>
+            <Text color="gray">▼ more below</Text>
           </Box>
         )}
       </Box>
 
-      {/* Field help info - prominent display */}
-      {currentFieldHelp && (
-        <Box
-          borderStyle="round"
-          borderColor="yellow"
-          paddingX={1}
-          paddingY={0}
-          marginBottom={formMarginBottom}
-        >
+      {useHelp && (
+        <Box paddingX={1}>
           <Text>
-            <Text color="yellow">💡 </Text>
-            <Text bold color="yellow">
-              {currentFieldConfig?.label}:{' '}
+            <Text bold color="gray">
+              {helpPrefix}
             </Text>
-            <Text color="white">{currentFieldHelp}</Text>
+            <Text color="white">{currentHelp}</Text>
           </Text>
         </Box>
       )}
 
-      {/* Submission error — visible feedback when Ctrl+S is refused */}
       {submitError !== null && (
-        <Box borderStyle="single" borderColor="red" paddingX={1}>
-          <Text color="red">✗ {submitError}</Text>
+        <Box paddingX={1}>
+          <Text color="red" wrap="truncate">
+            ✗ {submitError}
+          </Text>
         </Box>
       )}
 
-      {/* Navigation help */}
-      <Box
-        borderStyle="single"
-        borderColor="gray"
-        paddingX={helpPaddingX}
-        marginTop={formMarginBottom}
-      >
-        <Text dimColor>
-          ↑/↓/Tab: Field | Enter: Next | Ctrl+A: Advanced | Ctrl+S: Save | Esc: Cancel
+      <Box paddingX={1}>
+        <Text color={discardPending ? 'yellow' : 'gray'} bold={discardPending} wrap="truncate">
+          {navHint}
         </Text>
       </Box>
     </Box>
