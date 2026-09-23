@@ -294,16 +294,29 @@ const LABEL_TEXT_WIDTH = Math.max(
   ...getFieldConfigs('http').map((config) => displayWidth(config.label))
 );
 
-/** Cells reserved for the focus marker; both states are padded to this width. */
+/** Cells reserved for the focus marker; both states are padded to this width, and
+ * in the stacked layout the value row is indented by the same amount.
+ */
 const MARKER_WIDTH = 3;
+/** Gap between the label cell and the value cell in the two-column layout. */
+const COLUMN_GAP = 2;
+/**
+ * Value width below which the two-column layout is dropped for the stacked one.
+ *
+ * The two-column form is the better default — the whole service fits on one
+ * screen and the label/value pairing is carried by alignment rather than by
+ * colour — but it spends ~24 cells on the label column, and below ~60 cells the
+ * value column starts clipping the arg/env/header examples that tell you what to
+ * type. Narrow terminals therefore stack, the same way ServiceList drops its
+ * tags and tool-count columns before letting the endpoint collapse.
+ */
+const MIN_TABLE_VALUE_WIDTH = 60;
 /** The value column never collapses below this, even on a tiny terminal. */
 const MIN_VALUE_WIDTH = 20;
-/** Gap between the label cell and the value cell. */
-const COLUMN_GAP = 2;
 
 /** Marker glyph plus its padding. `▶` renders two cells wide on some terminals,
  * so the idle form keeps three spaces — the same convention the parameter list
- * uses (see tool-param-schema.ts) — leaving every row's label at the same cell.
+ * uses (see tool-param-schema.ts) — leaving every label at the same cell.
  */
 const focusMarker = (focused: boolean): string => (focused ? '▶ ' : '   ');
 
@@ -700,16 +713,25 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
 
   // ------------------------------------------------------------------ render
 
-  // Two columns: a fixed label cell (focus marker + label + required marker +
-  // the gap) and the value cell that takes the rest. Being fixed is what keeps
-  // the labels aligned down the whole form.
+  // Two layouts, chosen by the width actually available for values:
+  //   table — `Label  value` on one row, labels aligned down the form
+  //   stacked — label on its own row, value indented beneath it (full width)
   const innerWidth = Math.max(12, terminalWidth - 2);
   const labelTextWidth = Math.max(
     8,
     Math.min(LABEL_TEXT_WIDTH, innerWidth - MIN_VALUE_WIDTH - MARKER_WIDTH - 3)
   );
   const labelCellWidth = MARKER_WIDTH + labelTextWidth + 1 + COLUMN_GAP;
-  const valueWidth = Math.max(MIN_VALUE_WIDTH, innerWidth - labelCellWidth);
+  const tableValueWidth = innerWidth - labelCellWidth;
+  const useTable = tableValueWidth >= MIN_TABLE_VALUE_WIDTH;
+  /** Rows one field takes: one per row in the table layout, two when stacked. */
+  const fieldRows = useTable ? 1 : 2;
+  /** Horizontal offset of the value (and of an inline error) cell. */
+  const valueIndent = useTable ? labelCellWidth : MARKER_WIDTH;
+  const valueWidth = Math.max(
+    MIN_VALUE_WIDTH,
+    useTable ? tableValueWidth : innerWidth - MARKER_WIDTH
+  );
   const helpPrefix = `${currentConfig?.label ?? ''} · `;
   const helpWidth = Math.max(8, innerWidth - 2 - displayWidth(helpPrefix));
 
@@ -748,7 +770,9 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
 
   const { visibleEntries, hasMoreAbove, hasMoreBelow } = useMemo(() => {
     const rows = entries.map((entry) =>
-      entry.kind === 'advanced' || shownError(entry.config.field) === undefined ? 1 : 2
+      entry.kind === 'advanced' || shownError(entry.config.field) === undefined
+        ? fieldRows
+        : fieldRows + 1
     );
     const focusIndex = Math.max(
       0,
@@ -799,7 +823,7 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
       hasMoreBelow: win.end < entries.length,
     };
     // shownError (and therefore the row heights) reads both of these.
-  }, [entries, currentField, bodyBudget, errors, touched]);
+  }, [entries, currentField, bodyBudget, errors, touched, fieldRows]);
 
   const renderValue = (config: FieldConfig, editable: boolean): React.ReactNode => {
     if (config.type === 'select') {
@@ -833,12 +857,36 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
     }
 
     const value = formData[config.field] as string;
+    // The cell supplies the width (renderValueCell), so the text only has to
+    // refuse to wrap.
     return (
-      <Box width={valueWidth}>
-        <Text wrap="truncate">{value.length > 0 ? value : <Text color="gray">(empty)</Text>}</Text>
-      </Box>
+      <Text wrap="truncate">{value.length > 0 ? value : <Text color="gray">(empty)</Text>}</Text>
     );
   };
+
+  /** The label cell: focus marker + label + required marker. */
+  const renderLabel = (config: FieldConfig | null, focused: boolean): React.ReactNode => (
+    <Text bold color={focused ? 'cyan' : 'gray'}>
+      {focusMarker(focused)}
+      {config === null ? 'Advanced' : truncateDisplay(config.label, labelTextWidth)}
+      {config?.required === true && <Text color="red">*</Text>}
+    </Text>
+  );
+
+  /**
+   * The value cell. In the stacked layout it is the second line of the entry; in
+   * the table layout it sits beside the label, which is what aligns the values.
+   */
+  const renderValueCell = (node: React.ReactNode): React.ReactNode =>
+    useTable ? (
+      <Box width={valueWidth} flexShrink={0}>
+        {node}
+      </Box>
+    ) : (
+      <Box marginLeft={valueIndent} width={valueWidth}>
+        {node}
+      </Box>
+    );
 
   const renderField = (config: FieldConfig): React.ReactNode => {
     const isCurrent = config.field === currentField;
@@ -848,20 +896,18 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
 
     return (
       <Box key={config.field} flexDirection="column">
-        <Box flexDirection="row">
-          <Box width={labelCellWidth} flexShrink={0}>
-            <Text bold color={isCurrent ? 'cyan' : 'gray'}>
-              {focusMarker(isCurrent)}
-              {truncateDisplay(config.label, labelTextWidth)}
-              {config.required && <Text color="red">*</Text>}
-            </Text>
-          </Box>
-          <Box width={valueWidth} flexShrink={0}>
-            {renderValue(config, editable)}
-          </Box>
+        <Box flexDirection={useTable ? 'row' : 'column'}>
+          {useTable ? (
+            <Box width={labelCellWidth} flexShrink={0}>
+              {renderLabel(config, isCurrent)}
+            </Box>
+          ) : (
+            <Box>{renderLabel(config, isCurrent)}</Box>
+          )}
+          {renderValueCell(renderValue(config, editable))}
         </Box>
         {error !== undefined && (
-          <Box marginLeft={labelCellWidth} width={valueWidth}>
+          <Box marginLeft={valueIndent} width={valueWidth}>
             <Text color="red" wrap="truncate">
               ✗ {error}
             </Text>
@@ -872,18 +918,19 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   };
 
   const renderAdvancedRow = (): React.ReactNode => (
-    <Box key="advanced" flexDirection="row">
-      <Box width={labelCellWidth} flexShrink={0}>
-        <Text color="gray">
-          {focusMarker(false)}
-          {'Advanced'}
-        </Text>
-      </Box>
-      <Box width={valueWidth} flexShrink={0}>
+    <Box key="advanced" flexDirection={useTable ? 'row' : 'column'}>
+      {useTable ? (
+        <Box width={labelCellWidth} flexShrink={0}>
+          {renderLabel(null, false)}
+        </Box>
+      ) : (
+        <Box>{renderLabel(null, false)}</Box>
+      )}
+      {renderValueCell(
         <Text color="gray" wrap="truncate">
           {showAdvanced ? 'Ctrl+A: hide' : `Ctrl+A: show ${advancedCount} more`}
         </Text>
-      </Box>
+      )}
     </Box>
   );
 

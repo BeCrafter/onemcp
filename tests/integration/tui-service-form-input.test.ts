@@ -345,6 +345,37 @@ describe('ServiceFormUnified input handling', () => {
     instance.unmount();
   });
 
+  it('stacks the label above the value when the terminal is too narrow to table', async () => {
+    // 80 columns leaves ~54 cells for the value beside a 24-cell label column,
+    // which would clip the arg/env/header examples — so the form stacks instead.
+    const NARROW_BUDGET = 19; // mirrors app-optimized at 24 rows
+    const { instance, term, stdin } = renderWithTerminal(
+      React.createElement(MiniForm, {
+        onSubmit: vi.fn(),
+        terminalHeight: NARROW_BUDGET,
+        bare: true,
+      }),
+      { rows: 24, cols: 80 }
+    );
+
+    await waitFor(() => term.text().includes('Service Name'));
+    await typeKeys(stdin, 'narrow-svc');
+    await waitFor(() => term.text().includes('narrow-svc'));
+
+    const body = term.lines().filter((l) => l.trimStart().startsWith('│'));
+    /** Row content without the box borders. */
+    const cell = (line: string): string => line.replace(/^│/, '').replace(/│\s*$/, '').trim();
+    const labelRow = body.findIndex((l) => /▶ Service Name\*?\s*│\s*$/.test(l));
+    expect(labelRow).toBeGreaterThanOrEqual(0);
+    expect(cell(body[labelRow + 1] ?? '')).toBe('narrow-svc');
+    // …and nothing is laid out beside a label in this mode.
+    expect(body.some((l) => /▶ Service Name\*?\s+[^│\s]/.test(l))).toBe(false);
+    expect(term.text()).not.toContain('▌');
+    expect(term.maxRowWritten).toBeLessThanOrEqual(NARROW_BUDGET);
+
+    instance.unmount();
+  });
+
   it('lays the form out as a flat two-column list', async () => {
     const { instance, term, stdin } = renderWithTerminal(
       React.createElement(MiniForm, { onSubmit: vi.fn(), terminalHeight: FORM_BUDGET, bare: true }),

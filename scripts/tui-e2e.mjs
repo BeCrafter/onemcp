@@ -43,6 +43,7 @@
  *       不再出现 registry 的原始英文报错
  *   T22 确认框按键不漏进字段：重名确认框里按 n → 字段值尾部原样、不被追加 'n'
  *   T23 Esc 丢弃前确认：n 留在表单、y 才回列表且零落库
+ *   T24 窄终端（80 列）表单切堆叠版式：标签独占一行、值在下一行、不破帧
  *
  * 用法：
  *   npm run verify:tui [-- --keep] [--verbose]
@@ -1009,7 +1010,10 @@ async function t20LongValueStaysOneRow() {
     '底部提示仍在同一行',
     screenLines(capture()).findIndex((l) => l.includes('Esc: Cancel')) === hintRowBefore
   );
-  check('每行不超过终端宽度', screenLines(capture()).every((l) => l.length <= 100));
+  check(
+    '每行不超过终端宽度',
+    screenLines(capture()).every((l) => l.length <= 100)
+  );
 
   // 版式：扁平两栏 —— 无分区竖条、无全宽横线、每个字段恰好一行、标签与值同行
   const bodyLines = screenLines(capture()).filter((l) => l.trimStart().startsWith('│'));
@@ -1119,9 +1123,42 @@ async function t23EscConfirmsDiscard() {
   check('未落库', Object.keys(readConfig(configDir).mcpServers).length === 0);
 }
 
+/** T24 — 窄终端下表单切成堆叠版式：标签一行、值一行，且不破帧。 */
+async function t24NarrowFormStacks() {
+  process.stdout.write('\n[T24] 窄终端表单堆叠版式（85 列以下）\n');
+  const configDir = makeConfigDir({});
+
+  // 100 列时表单是两栏（T20 锁），低于 86 列时值列放不下示例文案，改堆叠。
+  await startSession({ configDir, cols: 80, rows: 24, ready: /Add service/ });
+  await sendText('a');
+  await waitFor(() => FOCUS_NAME.test(capture()));
+  await sendText('narrow-svc');
+  await waitFor(() => capture().includes('narrow-svc'));
+
+  const body = screenLines(capture()).filter((l) => l.trimStart().startsWith('│'));
+  const labelIndex = body.findIndex((l) => /▶ Service Name\*?\s*│\s*$/.test(l));
+  check('窄终端下标签独占一行', labelIndex >= 0, body[labelIndex] ?? '');
+  check(
+    '值在标签的下一行',
+    (body[labelIndex + 1] ?? '').includes('narrow-svc'),
+    body[labelIndex + 1] ?? ''
+  );
+  check('窄终端下没有「标签 + 值同行」', !body.some((l) => /▶ Service Name\*?\s+[^│\s]/.test(l)));
+  check(
+    '每行不超过终端宽度',
+    screenLines(capture()).every((l) => l.length <= 80)
+  );
+  check(
+    '画面不超出终端高度（24 行内放得下）',
+    screenLines(capture()).length <= 24,
+    `${screenLines(capture()).length} 行`
+  );
+}
+
 // --------------------------------------------------------------------- main
 
-function assertFreshBuild() {  if (!fs.existsSync(CLI)) {
+function assertFreshBuild() {
+  if (!fs.existsSync(CLI)) {
     process.stderr.write('未找到 dist/cli.js —— 请先运行 npm run build\n');
     process.exit(1);
   }
@@ -1174,6 +1211,7 @@ async function main() {
     t21InvalidOptionRejectedInline,
     t22DialogKeysDoNotLeak,
     t23EscConfirmsDiscard,
+    t24NarrowFormStacks,
   ];
 
   for (const scenario of scenarios) {
