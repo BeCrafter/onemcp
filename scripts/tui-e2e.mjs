@@ -44,6 +44,7 @@
  *   T22 确认框按键不漏进字段：重名确认框里按 n → 字段值尾部原样、不被追加 'n'
  *   T23 Esc 丢弃前确认：n 留在表单、y 才回列表且零落库
  *   T24 窄终端（80 列）表单切堆叠版式：标签独占一行、值在下一行、不破帧
+ *   T25 窗口尺寸变化即时重排：tmux resize 后不按任何键，两栏 ↔ 堆叠自动切换
  *
  * 用法：
  *   npm run verify:tui [-- --keep] [--verbose]
@@ -1155,6 +1156,46 @@ async function t24NarrowFormStacks() {
   );
 }
 
+/** T25 — 窗口尺寸变化后立即重排，不需要任何按键触发。 */
+async function t25ReflowOnResize() {
+  process.stdout.write('\n[T25] 窗口尺寸变化即时重排\n');
+  const configDir = makeConfigDir({});
+
+  await startSession({ configDir, cols: 100, rows: 34, ready: /Add service/ });
+  await sendText('a');
+  await waitFor(() => FOCUS_NAME.test(capture()));
+  await sendText('reflow-svc');
+  await waitFor(() => capture().includes('reflow-svc'));
+
+  const body = () => screenLines(capture()).filter((l) => l.trimStart().startsWith('│'));
+  const isTable = () => body().some((l) => /▶ Service Name\*?\s+[^│\s]/.test(l));
+  const isStacked = () => body().some((l) => /▶ Service Name\*?\s*│\s*$/.test(l));
+  check('100 列：两栏（标签与值同行）', isTable());
+
+  // tmux 缩放窗口会给进程发 SIGWINCH，之后一个键都不按：版式必须自己跟上。
+  // 旧实现只读 stdout.columns，而 ink 在 resize 时只重排重绘、不重新执行组件，
+  // 于是要等到下一次按键（焦点变化）才换版式。
+  tmux(['resize-window', '-t', 'tui', '-x', '80', '-y', '24']);
+  check(
+    '缩到 80 列后自动切成堆叠（无按键）',
+    await waitFor(isStacked, 5000),
+    isStacked()
+      ? ''
+      : (capture()
+          .split('\n')
+          .find((l) => l.includes('Service Name')) ?? '')
+  );
+  check('重排后输入值仍在', capture().includes('reflow-svc'));
+
+  tmux(['resize-window', '-t', 'tui', '-x', '100', '-y', '34']);
+  check('放大回 100 列后自动回到两栏（无按键）', await waitFor(isTable, 5000));
+  check(
+    '回宽后仍未破帧',
+    screenLines(capture()).length <= 34,
+    `${screenLines(capture()).length} 行`
+  );
+}
+
 // --------------------------------------------------------------------- main
 
 function assertFreshBuild() {
@@ -1212,6 +1253,7 @@ async function main() {
     t22DialogKeysDoNotLeak,
     t23EscConfirmsDiscard,
     t24NarrowFormStacks,
+    t25ReflowOnResize,
   ];
 
   for (const scenario of scenarios) {

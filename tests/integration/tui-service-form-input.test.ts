@@ -376,6 +376,37 @@ describe('ServiceFormUnified input handling', () => {
     instance.unmount();
   });
 
+  it('reflows on window resize without waiting for a keystroke', async () => {
+    const { instance, term, stdin, resize } = renderWithTerminal(
+      React.createElement(MiniForm, { onSubmit: vi.fn(), terminalHeight: FORM_BUDGET, bare: true }),
+      { rows: 34, cols: 100 }
+    );
+
+    await waitFor(() => term.text().includes('Service Name'));
+    await typeKeys(stdin, 'reflow-svc');
+    await waitFor(() => term.text().includes('reflow-svc'));
+
+    const body = (): string[] => term.lines().filter((l) => l.trimStart().startsWith('│'));
+    const isTable = (): boolean => body().some((l) => /▶ Service Name\*?\s+[^│\s]/.test(l));
+    const isStacked = (): boolean => body().some((l) => /▶ Service Name\*?\s*│\s*$/.test(l));
+    expect(isTable()).toBe(true);
+
+    // Shrink the window and send NOTHING. ink repaints on `resize` but does not
+    // re-run the components, so a size read straight from `useStdout()` keeps the
+    // stale layout until the next keystroke — the reflow has to come from the
+    // resize event alone.
+    resize(34, 80);
+    await waitFor(isStacked);
+    expect(isStacked()).toBe(true);
+    expect(isTable()).toBe(false);
+
+    resize(34, 100);
+    await waitFor(isTable);
+    expect(isTable()).toBe(true);
+
+    instance.unmount();
+  });
+
   it('lays the form out as a flat two-column list', async () => {
     const { instance, term, stdin } = renderWithTerminal(
       React.createElement(MiniForm, { onSubmit: vi.fn(), terminalHeight: FORM_BUDGET, bare: true }),

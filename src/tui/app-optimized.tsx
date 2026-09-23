@@ -5,10 +5,11 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, Text, useApp, useInput, useStdout } from 'ink';
+import { Box, Text, useApp, useInput } from 'ink';
 import { FileConfigProvider } from '../config/file-provider.js';
 import { FileStorageAdapter } from '../storage/file.js';
 import { ServiceRegistry } from '../registry/service-registry.js';
+import { useTerminalSize } from './use-terminal-size.js';
 import { ServiceList } from './components/ServiceList.js';
 import { ServiceFormUnified } from './components/ServiceFormUnified.js';
 import { ServiceTools } from './components/ServiceTools.js';
@@ -55,7 +56,6 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
   config: propConfig,
   configProvider: propConfigProvider,
 }) => {
-  const { stdout } = useStdout();
   const { exit } = useApp();
   const [state, setState] = useState<AppState>('loading');
   const [view, setView] = useState<ViewState>('list');
@@ -88,7 +88,9 @@ export const TuiAppOptimized: React.FC<TuiAppProps> = ({
     new ToolDiscoveryManager({ maxConcurrent: 5, timeout: 10000, retryAttempts: 3 })
   );
 
-  const terminalHeight = stdout?.rows || 24;
+  // Re-renders on window resize: every height below is derived from it, and the
+  // children (list / form / tools) get their budgets from those numbers.
+  const { rows: terminalHeight } = useTerminalSize();
 
   /**
    * Quitting must happen in two steps: `exit()` unmounts (which puts the tty

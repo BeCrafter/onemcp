@@ -22,7 +22,8 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { Box, Text, useInput, useStdout } from 'ink';
+import { Box, Text, useInput } from 'ink';
+import { useTerminalSize } from '../use-terminal-size.js';
 import { SingleLineInput } from './SingleLineInput.js';
 import { InlineSelect } from './InlineSelect.js';
 import { fieldHelp, fieldPlaceholder } from './service-field-config.js';
@@ -531,9 +532,11 @@ export const ServiceFormUnified: React.FC<ServiceFormUnifiedProps> = ({
   terminalHeight: terminalHeightProp,
   suspended = false,
 }) => {
-  const { stdout } = useStdout();
-  const terminalHeight = terminalHeightProp ?? (stdout?.rows || 24);
-  const terminalWidth = stdout?.columns || 80;
+  // Subscribes to resize: the layout below is width-driven, and ink does not
+  // re-execute components when the window changes on its own.
+  const terminalSize = useTerminalSize();
+  const terminalHeight = terminalHeightProp ?? terminalSize.rows;
+  const terminalWidth = terminalSize.columns;
 
   const [initialData] = useState<FormData>(() => buildInitialFormData(service));
   const [formData, setFormData] = useState<FormData>(initialData);

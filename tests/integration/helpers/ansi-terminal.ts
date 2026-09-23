@@ -119,13 +119,27 @@ export interface RenderOptions {
   cols: number;
 }
 
-/** Render an element against a fake TTY of the given size. */
+/**
+ * Render an element against a fake TTY of the given size.
+ *
+ * The fake `stdout` really emits `resize` (ink itself subscribes to it, and so
+ * does `useTerminalSize`), so a test can change the window mid-scenario the way a
+ * real terminal does — that is the only way to catch "the layout only reflows
+ * when something else happens to re-render it".
+ */
 export function renderWithTerminal(
   element: React.ReactElement,
   { rows, cols }: RenderOptions
-): { instance: ReturnType<typeof render>; term: Terminal; stdin: any } {
+): {
+  instance: ReturnType<typeof render>;
+  term: Terminal;
+  stdin: any;
+  /** Resize the fake window and notify subscribers, like SIGWINCH does. */
+  resize: (nextRows: number, nextCols: number) => void;
+} {
   const term = new Terminal(rows, cols);
   const stdin = createStdin();
+  const resizeListeners = new Set<() => void>();
   const stdout: any = {
     columns: cols,
     rows,
@@ -134,16 +148,31 @@ export function renderWithTerminal(
       term.feed(s);
       return true;
     },
-    on: () => {},
-    off: () => {},
+    on: (event: string, handler: () => void) => {
+      if (event === 'resize') {
+        resizeListeners.add(handler);
+      }
+    },
+    off: (event: string, handler: () => void) => {
+      if (event === 'resize') {
+        resizeListeners.delete(handler);
+      }
+    },
     emit: () => {},
     once: () => {},
     removeListener: () => {},
     setEncoding: () => {},
-    getWindowSize: () => [cols, rows],
+    getWindowSize: () => [stdout.columns, stdout.rows],
   };
   const instance = render(element, { stdout, stdin, exitOnCtrlC: false });
-  return { instance, term, stdin };
+  const resize = (nextRows: number, nextCols: number): void => {
+    stdout.columns = nextCols;
+    stdout.rows = nextRows;
+    for (const listener of resizeListeners) {
+      listener();
+    }
+  };
+  return { instance, term, stdin, resize };
 }
 
 export const sleep = (ms: number): Promise<void> => new Promise((res) => setTimeout(res, ms));

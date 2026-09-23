@@ -11,7 +11,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput, useStdout } from 'ink';
+import { Box, Text, useInput } from 'ink';
+import { useTerminalSize } from '../use-terminal-size.js';
 import { truncateDisplay } from '../text-layout.js';
 import type { ServiceDefinition } from '../../types/service.js';
 import type { DiscoveryStatus } from '../tool-discovery-manager.js';
@@ -218,9 +219,9 @@ export const ServiceList: React.FC<ServiceListProps> = ({
   discoveryStatus,
   toolCounts,
 }) => {
-  const { stdout } = useStdout();
   const effectiveTerminalHeight = terminalHeight || 24;
-  const effectiveTerminalWidth = stdout?.columns || 80;
+  // Subscribes to resize, so the dropped-column layout follows the window.
+  const { columns: effectiveTerminalWidth } = useTerminalSize();
 
   const layout = computeColumnLayout(effectiveTerminalWidth);
 
