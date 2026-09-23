@@ -229,6 +229,33 @@ describe('FileConfigProvider', () => {
       expect(config.mcpServers['context7']?.connectionPool).toEqual(validConfig.connectionPool);
     });
 
+    it('should default an omitted enabled to true', async () => {
+      // Arrange — 条目只写 transport 与命令/URL 是最常见的写法。把「没写」
+      // 当成「停用」会让服务静默消失（它连列表里都不可见），所以缺省为启用。
+      const configWithoutEnabled = {
+        ...validConfig,
+        mcpServers: {
+          bare: {
+            transport: 'stdio',
+            command: 'npx',
+          },
+          'explicitly-off': {
+            transport: 'stdio',
+            command: 'npx',
+            enabled: false,
+          },
+        },
+      };
+      await storage.write('config.json', JSON.stringify(configWithoutEnabled));
+
+      // Act
+      const config = await provider.load();
+
+      // Assert
+      expect(config.mcpServers['bare']?.enabled).toBe(true);
+      expect(config.mcpServers['explicitly-off']?.enabled).toBe(false);
+    });
+
     it('should keep a service-level connectionPool rather than the top-level one', async () => {
       // Arrange
       const explicitPool = { maxConnections: 9, idleTimeout: 111, connectionTimeout: 222 };

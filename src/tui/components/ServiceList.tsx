@@ -8,10 +8,15 @@
  * a computed cell budget instead of wrapping. Wrapping was what pushed the frame
  * past the terminal (rows can be 2-3 lines when an endpoint is long), and a frame
  * taller than the viewport makes ink's absolute writes land on the wrong rows.
+ *
+ * The row budget the host passes in (`terminalHeight`) is consumed by
+ * LIST_CHROME_LINES + the item rows + the pager row. Counting the chrome wrong
+ * by even one row is what made a full list overflow a 24-row terminal.
  */
 
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput, useStdout } from 'ink';
+import { Box, Text, useInput } from 'ink';
+import { useTerminalSize } from '../use-terminal-size.js';
 import { truncateDisplay } from '../text-layout.js';
 import type { ServiceDefinition } from '../../types/service.js';
 import type { DiscoveryStatus } from '../tool-discovery-manager.js';
@@ -40,10 +45,47 @@ const MARKER_WIDTH = 3;
 const TRANSPORT_WIDTH = 8;
 const DEFAULT_NAME_WIDTH = 25;
 const DEFAULT_TAG_WIDTH = 28;
-const DEFAULT_TOOL_WIDTH = 12;
+/** Wide enough for the worst label the column draws: `117/120 tools`. */
+const DEFAULT_TOOL_WIDTH = 13;
 const MIN_NAME_WIDTH = 10;
 /** Below this the endpoint stops being readable, so columns get dropped instead. */
 const MIN_ENDPOINT_WIDTH = 10;
+
+/**
+ * Footer hints, most-needed first: a narrow terminal loses them from the tail
+ * instead of having the row cut mid-word by `wrap="truncate"` — at 80 columns
+ * that used to hide `q Quit` completely. Whatever is dropped stays reachable
+ * through `?`, which the header advertises.
+ */
+const FOOTER_HINTS = [
+  '↑/↓ Move',
+  'Enter Edit',
+  'Space Toggle',
+  'd Delete',
+  'v Tools',
+  'q Quit',
+  'a Add',
+  'r Refresh',
+] as const;
+
+/** Assemble as many footer hints as the terminal width leaves room for. */
+export function footerHint(terminalWidth: number): string {
+  const budget = Math.max(12, terminalWidth - 4); // borders (2) + paddingX (2)
+  const kept: string[] = [];
+  let width = 0;
+  for (const [index, hint] of FOOTER_HINTS.entries()) {
+    const next = width === 0 ? hint.length : width + 3 + hint.length;
+    // Reserve room for the "…" that marks the dropped hints, so the row is
+    // either complete or visibly truncated — never silently clipped.
+    const room = index < FOOTER_HINTS.length - 1 ? 2 : 0;
+    if (kept.length > 0 && next + room > budget) {
+      return `${kept.join(' | ')} …`;
+    }
+    kept.push(hint);
+    width = next;
+  }
+  return kept.join(' | ');
+}
 
 /**
  * Split the horizontal budget between columns, dropping the optional ones
@@ -122,7 +164,7 @@ const ServiceListItem: React.FC<{
     ? Object.entries(service.toolStates).filter(([_, enabled]) => enabled === false).length
     : 0;
 
-  const enabledTools = (toolCount ?? 0) - disabledTools;
+  const enabledTools = Math.max(0, (toolCount ?? 0) - disabledTools);
 
   const endpoint =
     service.transport === 'stdio'
@@ -136,14 +178,21 @@ const ServiceListItem: React.FC<{
       return '';
     }
     switch (discoveryStatus) {
+      // Scheduled but not started yet — without this the cell is blank, which
+      // reads as "this service has no tools" rather than "not asked yet".
+      case 'pending':
+        return '⏳ queued';
       case 'in-progress':
         return '⏳ loading';
       case 'failed':
         return '✗ failed';
       case 'completed':
-        return toolCount !== undefined && toolCount > 0
-          ? `${Math.max(0, enabledTools)}/${toolCount} tools`
-          : '';
+        if (toolCount === undefined || toolCount === 0) {
+          return '';
+        }
+        // `5/5 tools` for a service with nothing disabled is noise; the ratio
+        // only carries information once something is switched off.
+        return disabledTools > 0 ? `${enabledTools}/${toolCount} tools` : `${toolCount} tools`;
       default:
         return '';
     }
@@ -218,17 +267,19 @@ export const ServiceList: React.FC<ServiceListProps> = ({
   discoveryStatus,
   toolCounts,
 }) => {
-  const { stdout } = useStdout();
   const effectiveTerminalHeight = terminalHeight || 24;
-  const effectiveTerminalWidth = stdout?.columns || 80;
+  // Subscribes to resize, so the dropped-column layout follows the window.
+  const { columns: effectiveTerminalWidth } = useTerminalSize();
 
   const layout = computeColumnLayout(effectiveTerminalWidth);
 
-  // Chrome the list draws around its rows: header(1) + box borders(2) +
-  // footer borders(2), plus one row for the pagination hint when it shows.
+  // Rows the list draws AROUND its item rows: the box borders (2) and the footer
+  // box (3 — two borders plus its row of hints). The per-page counts line that
+  // used to sit above the box is gone: it duplicated the header's stats and cost
+  // the row that a full list needed to stay inside a 24-row terminal.
   const LIST_CHROME_LINES = 5;
   const rowsForItems = (withPager: boolean): number =>
-    Math.max(3, effectiveTerminalHeight - LIST_CHROME_LINES - (withPager ? 1 : 0));
+    Math.max(1, effectiveTerminalHeight - LIST_CHROME_LINES - (withPager ? 1 : 0));
 
   const wouldPaginate = Math.ceil(services.length / Math.min(25, rowsForItems(false))) > 1;
   const MAX_VISIBLE_SERVICES = Math.min(25, rowsForItems(wouldPaginate));
@@ -285,30 +336,8 @@ export const ServiceList: React.FC<ServiceListProps> = ({
     );
   }
 
-  const enabledCount = services.filter((s) => s.enabled).length;
-  const disabledCount = services.length - enabledCount;
-
   return (
     <Box flexDirection="column">
-      {/* Header */}
-      <Box paddingX={1} paddingY={0}>
-        <Text bold color="cyan">
-          {services.length} Services
-        </Text>
-        <Text color="gray">: </Text>
-        <Text color="green" bold>
-          {enabledCount} enabled
-        </Text>
-        {disabledCount > 0 && (
-          <>
-            <Text color="gray">, </Text>
-            <Text color="red" bold>
-              {disabledCount} disabled
-            </Text>
-          </>
-        )}
-      </Box>
-
       {/* Service list with border */}
       <Box
         width={effectiveTerminalWidth}
@@ -338,7 +367,8 @@ export const ServiceList: React.FC<ServiceListProps> = ({
             <Text bold>
               {currentPage + 1}/{totalPages}
             </Text>
-            <Text> | ↑/↓ Navigate | ←/→ Page </Text>
+            {/* Only the paging keys here — ↑/↓ is already in the footer. */}
+            <Text> | ←/→ Page </Text>
             <Text color="gray">({services.length} services)</Text>
           </Text>
         </Box>
@@ -347,7 +377,7 @@ export const ServiceList: React.FC<ServiceListProps> = ({
       {/* Footer with shortcuts */}
       <Box width={effectiveTerminalWidth} borderStyle="single" borderColor="gray" paddingX={1}>
         <Text color="gray" wrap="truncate">
-          ↑/↓ Navigate | Enter Edit | Space Toggle | a Add | d Delete | v Tools | r Refresh | q Quit
+          {footerHint(effectiveTerminalWidth)}
         </Text>
       </Box>
     </Box>

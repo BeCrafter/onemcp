@@ -7,7 +7,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Text, useInput, useStdout } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +19,7 @@ import {
   ToolCallError,
   type ToolCallOutcome,
 } from '../discovery-worker.js';
+import { useTerminalSize } from '../use-terminal-size.js';
 import {
   boxBottom,
   boxRow,
@@ -206,7 +207,6 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
   onToolsDiscovered,
   terminalHeight: terminalHeightProp,
 }) => {
-  const { stdout } = useStdout();
   const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -271,8 +271,10 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
     return tools.filter((t) => t.name.toLowerCase().includes(q));
   }, [tools, searchQuery]);
 
-  const terminalHeight = terminalHeightProp ?? (stdout?.rows || 24);
-  const terminalWidth = stdout?.columns || 80;
+  // Subscribes to resize, so both budgets and wrapped text follow the window.
+  const terminalSize = useTerminalSize();
+  const terminalHeight = terminalHeightProp ?? terminalSize.rows;
+  const terminalWidth = terminalSize.columns;
   const HEADER_LINES = 4;
   // Contextual hint footer: the two hint lines plus a heading. The heading is
   // dropped on tiny terminals, and a transient notice takes its place — the

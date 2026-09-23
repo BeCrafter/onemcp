@@ -32,6 +32,21 @@
  *   T15 区域焦点可见 + 提示按区域：标题字形恒定（无焦点箭头），焦点靠颜色 ——
  *       `-e` 抓屏断言聚焦区的**标题文字**与竖线同色、且与未聚焦区不同；
  *       提示只讲当前区域；通知不顶掉提示
+ *   T16 缺省 tags / connectionPool 的服务：按 e 能进编辑态且不崩
+ *   T17 传输类型切换：←/→ 在 stdio/sse/http 间循环（含越界回绕）→ 连接字段随之换；
+ *       切到 http 后 URL 里的 `?` 留在字段内、表单不被帮助页顶掉；保存落库为 http
+ *   T18 Enabled 切换：←/→ 切到 Off 并落库 enabled=false
+ *   T19 编辑保存保留 toolStates（曾被静默清空 → 所有被禁用的工具复活）
+ *   T20 扁平两栏版式 + 超长值不破帧：每字段恰好一行、标签与值同行、无 ▌ 与全宽横线；
+ *       300 字符粘贴后帧高与底部提示行位不变
+ *   T21 非必填字段的非法值行内拦下：Max Connections=0 → 表单报错、零落库、
+ *       不再出现 registry 的原始英文报错
+ *   T22 确认框按键不漏进字段：重名确认框里按 n → 字段值尾部原样、不被追加 'n'
+ *   T23 Esc 丢弃前确认：n 留在表单、y 才回列表且零落库
+ *   T24 窄终端（80 列）表单切堆叠版式：标签独占一行、值在下一行、不破帧
+ *   T25 窗口尺寸变化即时重排：tmux resize 后不按任何键，两栏 ↔ 堆叠自动切换
+ *   T26 短终端刚好填满不破帧：80x24（macOS 默认窗口）12 服务 —— 全部一屏可见、
+ *       名字列无游离字符、提示行自成一行且含 q Quit、底部的 Last refresh 仍在屏内
  *
  * 用法：
  *   npm run verify:tui [-- --keep] [--verbose]
@@ -393,7 +408,8 @@ async function t3DeleteConfirm() {
   await sendText('d');
   const promptAppeared = await waitFor(() => capture().includes("Delete service 'delete-me'?"));
   check('d 弹出确认框', promptAppeared);
-  check('确认前不删除（服务数不变）', capture().includes('2 Services'));
+  // 服务数取自顶部 Header 的统计（列表自己那行计数已删：与 Header 重复）。
+  check('确认前不删除（服务数不变）', capture().includes('Services: 2'));
 
   await sendText('n');
   check('n 取消并保留服务', await waitFor(() => capture().includes('Cancelled')));
@@ -817,11 +833,16 @@ async function t15FocusAndHints() {
 
   // 瞬时通知占「标题行」位置：提示两行必须原样保留（旧实现会把整行顶掉 4 秒）
   await sendKey('C-y');
-  const notice = await waitFor(() => /Copied|No clipboard utility/.test(capture()), 4000);
+  // 通知有效期只有 4s，所以「通知已顶掉标题」必须作为同一个等待条件：
+  // 分开断言会在等待与断言之间被刷掉通知，把正确行为报成失败。
+  const notice = await waitFor(
+    () => /Copied|No clipboard utility/.test(capture()) && !capture().includes('Quick Actions —'),
+    4000
+  );
   check('复制通知出现', notice);
   check(
     '通知顶掉的是标题行，区域提示仍在',
-    capture().includes('Ctrl+Y Copy result') && !capture().includes('Quick Actions —'),
+    notice && capture().includes('Ctrl+Y Copy result'),
     `footer=${capture().split('\n').slice(-3).join(' | ')}`
   );
 
@@ -870,6 +891,364 @@ async function t16EditServiceWithoutOptionalFields() {
   check('按 e 进入编辑态（表单渲染出来）', entered);
   check('表单取到该服务', capture().includes('context7'));
   check('进入编辑态后 TUI 进程仍存活', sessionAlive());
+}
+
+/** T17 — 传输类型必须能用 ←/→ 切换（帧内单选，不再是被抢键的下拉）。 */
+async function t17TransportSwitch() {
+  process.stdout.write('\n[T17] ←/→ 切换传输类型并落库\n');
+  const configDir = makeConfigDir({});
+
+  await startSession({ configDir, cols: 100, rows: 40, ready: /Add service/ });
+  await sendText('a');
+  await waitFor(() => FOCUS_NAME.test(capture()));
+  await sendText('arrow-svc');
+  await sendKey('Enter'); // → Transport Type
+  const onTransport = await waitFor(() => capture().includes('(•) stdio'), 5000);
+  check('Transport 字段渲染成单行单选', onTransport);
+
+  // 曾经：↑/↓ 被表单的字段导航吃掉，选择器随即被卸载，值永远停在 stdio
+  // （只有未文档化的数字键能改）。
+  await sendKey('Right');
+  check('→ 选中 sse', await waitFor(() => capture().includes('(•) sse')));
+  await sendKey('Right');
+  check('→ 再切到 http', await waitFor(() => capture().includes('(•) http')));
+  await sendKey('Right');
+  check('→ 越界后回到 stdio（循环）', await waitFor(() => capture().includes('(•) stdio')));
+  await sendKey('Right'); // → sse
+  await sendKey('Right'); // → http
+  await waitFor(() => capture().includes('(•) http'));
+
+  await sendKey('Enter'); // → URL（http 没有 Command）
+  const onUrl = await waitFor(() => capture().includes('▶ URL'), 5000);
+  check('切到 http 后连接字段换成 URL', onUrl);
+  check('切到 http 后 Command 字段消失', !capture().includes('Command'));
+
+  // '?' 是 URL query 的合法字符，不得被当成全局帮助快捷键（曾经会跳走并丢弃整个表单）
+  await sendText('https://example.com/mcp?token=abc');
+  await waitFor(() => capture().includes('token=abc'));
+  check('URL 里的 ? 留在字段内（未跳帮助页）', !capture().includes('Keyboard Shortcuts'));
+  check('表单仍在编辑态', capture().includes('Add Service'));
+
+  await sendKey('C-s');
+  const savedOk = await waitFor(() => capture().includes("Service 'arrow-svc' created"));
+  check('保存成功', savedOk);
+  const saved = readConfig(configDir).mcpServers['arrow-svc'];
+  check('落库为 http 服务', saved?.transport === 'http', JSON.stringify(saved));
+  check('URL 与 ? 原样写入', saved?.url === 'https://example.com/mcp?token=abc');
+  check('不残留 stdio 的 command 字段', saved?.command === undefined);
+}
+
+/** T18 — Enabled 也必须能用 ←/→ 切换并落库。 */
+async function t18EnabledSwitch() {
+  process.stdout.write('\n[T18] ←/→ 切换 Enabled 并落库\n');
+  const configDir = makeConfigDir({});
+
+  await startSession({ configDir, cols: 100, rows: 40, ready: /Add service/ });
+  await sendText('a');
+  await waitFor(() => FOCUS_NAME.test(capture()));
+  await sendText('off-svc');
+  await sendKey('Enter'); // → Transport
+  await sendKey('Enter'); // → Command
+  await waitFor(() => FOCUS_COMMAND.test(capture()));
+  await sendText(`node ${MOCK_BACKEND}`);
+  await sendKey('Enter'); // → Arguments
+  await sendKey('Enter'); // → Environment Variables
+  await sendKey('Enter'); // → Tags
+  await sendKey('Enter'); // → Enabled
+  check('Enabled 默认 On', await waitFor(() => capture().includes('(•) On'), 5000));
+
+  await sendKey('Right');
+  check('→ 选中 Off', await waitFor(() => capture().includes('(•) Off')));
+
+  await sendKey('C-s');
+  await waitFor(() => capture().includes("Service 'off-svc' created"));
+  check('落库 enabled=false', readConfig(configDir).mcpServers['off-svc']?.enabled === false);
+}
+
+/** T19 — 编辑保存不得丢掉 toolStates（表单没有该字段，但它必须原样带回）。 */
+async function t19EditKeepsToolStates() {
+  process.stdout.write('\n[T19] 编辑保存保留 toolStates\n');
+  const configDir = makeConfigDir({
+    stateful: stdioService('stateful', {
+      toolStates: { echo: false, list: true },
+    }),
+  });
+
+  await startSession({ configDir, cols: 100, rows: 40 });
+  await sendText('e');
+  await waitFor(() => capture().includes('Edit Service'));
+  await sendKey('C-s');
+  const back = await waitFor(() => capture().includes("Service 'stateful' updated"), 6000);
+  check('编辑后保存成功', back);
+
+  const saved = readConfig(configDir).mcpServers['stateful'];
+  check(
+    'toolStates 原样保留（曾被静默清空）',
+    saved?.toolStates !== undefined &&
+      saved.toolStates.echo === false &&
+      saved.toolStates.list === true,
+    JSON.stringify(saved?.toolStates)
+  );
+  check('其它字段未被改坏', saved?.command === `node ${MOCK_BACKEND}`);
+}
+
+/** T20 — 扁平两栏版式：每字段一行、无分区线，超长值窗口化不破帧。 */
+async function t20LongValueStaysOneRow() {
+  process.stdout.write('\n[T20] 扁平两栏版式 + 超长值不破帧\n');
+  const configDir = makeConfigDir({});
+
+  await startSession({ configDir, cols: 100, rows: 40, ready: /Add service/ });
+  await sendText('a');
+  await waitFor(() => FOCUS_NAME.test(capture()));
+
+  const rowsBefore = screenLines(capture()).length;
+  const hintRowBefore = screenLines(capture()).findIndex((l) => l.includes('Esc: Cancel'));
+  check('基线帧高已记录', hintRowBefore > 0, `hintRow=${hintRowBefore}`);
+
+  await sendText('x'.repeat(300));
+  await waitFor(() => capture().includes('xxxx'));
+  const rowsAfter = screenLines(capture()).length;
+
+  check('帧高不变（值被窗口化到一行）', rowsAfter === rowsBefore, `${rowsBefore} → ${rowsAfter}`);
+  check(
+    '底部提示仍在同一行',
+    screenLines(capture()).findIndex((l) => l.includes('Esc: Cancel')) === hintRowBefore
+  );
+  check(
+    '每行不超过终端宽度',
+    screenLines(capture()).every((l) => l.length <= 100)
+  );
+
+  // 版式：扁平两栏 —— 无分区竖条、无全宽横线、每个字段恰好一行、标签与值同行
+  const bodyLines = screenLines(capture()).filter((l) => l.trimStart().startsWith('│'));
+  check('没有分区竖条 ▌', !capture().includes('▌'));
+  check('body 内没有全宽横线', !bodyLines.some((l) => /^│[─\s]+│$/.test(l.trim())));
+  check(
+    '每个字段恰好占一行',
+    ['Transport', 'Command', 'Arguments', 'Environment', 'Tags', 'Enabled', 'Advanced'].every(
+      (label) => bodyLines.filter((l) => l.includes(label)).length === 1
+    )
+  );
+  check(
+    '标签与值在同一行',
+    bodyLines.some((l) => /▶ Service Name\*?\s+\S/.test(l)),
+    bodyLines.find((l) => l.includes('Service Name')) ?? ''
+  );
+
+  await sendKey('C-s');
+  await sleep(600);
+  check('超长名字被校验拦下（未落库）', Object.keys(readConfig(configDir).mcpServers).length === 0);
+}
+
+/** T21 — 非必填字段的非法值要由表单拦下，不能穿透到 registry 报原始错误。 */
+async function t21InvalidOptionRejectedInline() {
+  process.stdout.write('\n[T21] 非必填字段的非法值行内拦下\n');
+  const configDir = makeConfigDir({});
+
+  await startSession({ configDir, cols: 100, rows: 40, ready: /Add service/ });
+  await sendText('a');
+  await waitFor(() => FOCUS_NAME.test(capture()));
+  await sendText('range-svc');
+  await sendKey('Enter'); // → Transport
+  await sendKey('Enter'); // → Command
+  await waitFor(() => FOCUS_COMMAND.test(capture()));
+  await sendText(`node ${MOCK_BACKEND}`);
+  await sendKey('C-a'); // 展开高级项，焦点落到 Max Connections
+  await waitFor(() => capture().includes('Max Connections'));
+
+  await sendKey('BSpace'); // 清掉默认的 5
+  await sendText('0');
+  await sendKey('C-s');
+  await sleep(800);
+
+  check('行内给出取值范围错误', capture().includes('Must be between 1 and 100'));
+  check(
+    '不再是 registry 的原始报错',
+    !capture().includes('Service validation failed'),
+    capture().includes('Service validation failed') ? '出现原始报错' : ''
+  );
+  check('未落库', Object.keys(readConfig(configDir).mcpServers).length === 0);
+}
+
+/** T22 — 宿主确认框弹出时，y/n 不得被敲进正在编辑的字段。 */
+async function t22DialogKeysDoNotLeak() {
+  process.stdout.write('\n[T22] 确认框按键不漏进字段\n');
+  const configDir = makeConfigDir({ dup: stdioService('dup') });
+
+  await startSession({ configDir, cols: 100, rows: 40 });
+  await sendText('a');
+  await waitFor(() => FOCUS_NAME.test(capture()));
+  await sendText('dup');
+  await sendKey('Enter'); // → Transport
+  await sendKey('Enter'); // → Command
+  await waitFor(() => FOCUS_COMMAND.test(capture()));
+  await sendText(`node ${MOCK_BACKEND}`);
+  await sendKey('C-s'); // 重名 → 覆盖确认
+
+  const promptAppeared = await waitFor(() => capture().includes('already exists — overwrite it?'));
+  check('同名保存弹出覆盖确认', promptAppeared);
+
+  await sendText('n'); // 取消：既关掉确认框，也必须不出现在字段里
+  await waitFor(() => capture().includes('Cancelled'));
+  // 值列只有 ~74 格，`node <长路径>` 会被窗口化成尾部（光标在末尾）；断言
+  // 尾部原样、且没有被追加 'n' —— 配置断言另外守着「没写进文件」。
+  const commandRow = screenLines(capture()).find((l) => l.includes('▶ Command')) ?? '';
+  const commandTail = MOCK_BACKEND.slice(-24);
+  check(
+    'Command 字段未被追加 n',
+    commandRow.includes(commandTail) && !commandRow.includes(`${commandTail}n`),
+    `row=${commandRow}`
+  );
+  check('配置未变', readConfig(configDir).mcpServers['dup'].command !== `${MOCK_BACKEND}n`);
+}
+
+/** T23 — 有未保存修改时 Esc 必须先确认。 */
+async function t23EscConfirmsDiscard() {
+  process.stdout.write('\n[T23] Esc 丢弃前确认\n');
+  const configDir = makeConfigDir({});
+
+  await startSession({ configDir, cols: 100, rows: 40, ready: /Add service/ });
+  await sendText('a');
+  await waitFor(() => FOCUS_NAME.test(capture()));
+  await sendText('dirty-svc'); // 有改动 → 脏
+
+  await sendKey('Escape');
+  check('Esc 弹出丢弃确认', await waitFor(() => capture().includes('unsaved change(s)?')));
+  check('确认前仍在表单', capture().includes('Add Service'));
+
+  await sendText('n');
+  await waitFor(() => !capture().includes('unsaved change(s)?'));
+  check('n 留在表单且输入完好', capture().includes('dirty-svc'));
+
+  await sendKey('Escape');
+  await waitFor(() => capture().includes('unsaved change(s)?'));
+  await sendText('y');
+  check('y 才真正放弃并回到列表', await waitFor(() => capture().includes('Operation cancelled')));
+  check('未落库', Object.keys(readConfig(configDir).mcpServers).length === 0);
+}
+
+/** T24 — 窄终端下表单切成堆叠版式：标签一行、值一行，且不破帧。 */
+async function t24NarrowFormStacks() {
+  process.stdout.write('\n[T24] 窄终端表单堆叠版式（85 列以下）\n');
+  const configDir = makeConfigDir({});
+
+  // 100 列时表单是两栏（T20 锁），低于 86 列时值列放不下示例文案，改堆叠。
+  await startSession({ configDir, cols: 80, rows: 24, ready: /Add service/ });
+  await sendText('a');
+  await waitFor(() => FOCUS_NAME.test(capture()));
+  await sendText('narrow-svc');
+  await waitFor(() => capture().includes('narrow-svc'));
+
+  const body = screenLines(capture()).filter((l) => l.trimStart().startsWith('│'));
+  const labelIndex = body.findIndex((l) => /▶ Service Name\*?\s*│\s*$/.test(l));
+  check('窄终端下标签独占一行', labelIndex >= 0, body[labelIndex] ?? '');
+  check(
+    '值在标签的下一行',
+    (body[labelIndex + 1] ?? '').includes('narrow-svc'),
+    body[labelIndex + 1] ?? ''
+  );
+  check('窄终端下没有「标签 + 值同行」', !body.some((l) => /▶ Service Name\*?\s+[^│\s]/.test(l)));
+  check(
+    '每行不超过终端宽度',
+    screenLines(capture()).every((l) => l.length <= 80)
+  );
+  check(
+    '画面不超出终端高度（24 行内放得下）',
+    screenLines(capture()).length <= 24,
+    `${screenLines(capture()).length} 行`
+  );
+}
+
+/** T25 — 窗口尺寸变化后立即重排，不需要任何按键触发。 */
+async function t25ReflowOnResize() {
+  process.stdout.write('\n[T25] 窗口尺寸变化即时重排\n');
+  const configDir = makeConfigDir({});
+
+  await startSession({ configDir, cols: 100, rows: 34, ready: /Add service/ });
+  await sendText('a');
+  await waitFor(() => FOCUS_NAME.test(capture()));
+  await sendText('reflow-svc');
+  await waitFor(() => capture().includes('reflow-svc'));
+
+  const body = () => screenLines(capture()).filter((l) => l.trimStart().startsWith('│'));
+  const isTable = () => body().some((l) => /▶ Service Name\*?\s+[^│\s]/.test(l));
+  const isStacked = () => body().some((l) => /▶ Service Name\*?\s*│\s*$/.test(l));
+  check('100 列：两栏（标签与值同行）', isTable());
+
+  // tmux 缩放窗口会给进程发 SIGWINCH，之后一个键都不按：版式必须自己跟上。
+  // 旧实现只读 stdout.columns，而 ink 在 resize 时只重排重绘、不重新执行组件，
+  // 于是要等到下一次按键（焦点变化）才换版式。
+  tmux(['resize-window', '-t', 'tui', '-x', '80', '-y', '24']);
+  check(
+    '缩到 80 列后自动切成堆叠（无按键）',
+    await waitFor(isStacked, 5000),
+    isStacked()
+      ? ''
+      : (capture()
+          .split('\n')
+          .find((l) => l.includes('Service Name')) ?? '')
+  );
+  check('重排后输入值仍在', capture().includes('reflow-svc'));
+
+  tmux(['resize-window', '-t', 'tui', '-x', '100', '-y', '34']);
+  check('放大回 100 列后自动回到两栏（无按键）', await waitFor(isTable, 5000));
+  check(
+    '回宽后仍未破帧',
+    screenLines(capture()).length <= 34,
+    `${screenLines(capture()).length} 行`
+  );
+}
+
+/**
+ * T26 — 短终端不破帧：80x24（macOS 默认窗口）下列表刚好填满预算。
+ *
+ * 回归的是帧预算少算一行：底部提示盒高 3 行（上下边框 + 提示行），早期 chrome
+ * 只按 2 行计入，于是列表填满时整帧比终端高 1 行 —— 终端中途滚屏，之后 ink 的
+ * 绝对写入全部错位：服务名后面挂着游离字符、提示行并进边框、底部的行被顶出屏幕。
+ * 34/50 行的 T1/T2 看不见它，因为帧没顶到屏幕底。
+ */
+async function t26ShortTerminalFits() {
+  process.stdout.write('\n[T26] 短终端 80x24 刚好填满不破帧\n');
+  const services = Object.fromEntries(
+    Array.from({ length: 12 }, (_, i) => [`svc-${i}`, httpService(i)])
+  );
+  const configDir = makeConfigDir(services);
+  const names = Object.keys(services);
+
+  await startSession({ configDir, cols: 80, rows: 24 });
+  const lines = screenLines(capture());
+  const cells = lines.map((l) => nameInRow(l));
+
+  check(
+    '12 个服务全部在同一屏（帧没被撑出去）',
+    names.every((n) => cells.includes(n)),
+    `实际名字列：${cells.filter(Boolean).join(',')}`
+  );
+  check(
+    '每个服务恰好一行',
+    names.every((n) => cells.filter((c) => c === n).length === 1)
+  );
+  check(
+    '没有游离字符（名字列出现的都属于配置里的服务）',
+    cells.filter(Boolean).every((c) => names.includes(c)),
+    `多余：${cells.filter((c) => c && !names.includes(c)).join(',')}`
+  );
+
+  const footerRow = (lines.find((l) => l.includes('Enter Edit')) ?? '').trimEnd();
+  check('提示行自成一行（没有被并进边框）', /^│ .*│$/.test(footerRow), footerRow);
+  check('80 列下提示完整：q Quit 不再被截掉', capture().includes('q Quit'));
+  check(
+    '列表 + 提示的竖线行数完整',
+    lines.filter((l) => l.trimStart().startsWith('│')).length >= 13,
+    `${lines.filter((l) => l.trimStart().startsWith('│')).length} 行`
+  );
+  check('每行不超过终端宽度', lines.every((l) => l.length <= 80));
+  check('画面不超出终端高度', lines.length <= 24, `${lines.length} 行`);
+  check(
+    '底部的行没被顶出屏幕（最后一行仍是 Last refresh）',
+    /Last refresh:/.test(lines[lines.length - 1] ?? ''),
+    lines[lines.length - 1] ?? ''
+  );
 }
 
 // --------------------------------------------------------------------- main
@@ -921,6 +1300,16 @@ async function main() {
     t14DescriptionScroll,
     t15FocusAndHints,
     t16EditServiceWithoutOptionalFields,
+    t17TransportSwitch,
+    t18EnabledSwitch,
+    t19EditKeepsToolStates,
+    t20LongValueStaysOneRow,
+    t21InvalidOptionRejectedInline,
+    t22DialogKeysDoNotLeak,
+    t23EscConfirmsDiscard,
+    t24NarrowFormStacks,
+    t25ReflowOnResize,
+    t26ShortTerminalFits,
   ];
 
   for (const scenario of scenarios) {
