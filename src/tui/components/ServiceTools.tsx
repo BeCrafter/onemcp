@@ -1210,12 +1210,25 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
   })();
 
   /**
-   * Keep the expanded parameter visible while navigating it.
+   * Keep the focused parameter's EDITOR row on screen while navigating it.
    *
-   * Collapsing makes `flowRows.length` focus-dependent, so the previous
-   * absolute-index math would scroll BACKWARDS when the block height changed.
-   * Instead: recompute against this render's rows and only move when the
-   * parameter's whole block is not currently on screen.
+   * The editor row is not just "the part you want to see": the panel renders
+   * `flowRows.slice(scroll, scroll + FLOW_VISIBLE)`, so a row outside the window
+   * is not mounted at all. With the editor off-window there is no
+   * `SingleLineInput` to receive them and the keystrokes are silently dropped —
+   * the parameter cannot be filled, never mind seen.
+   *
+   * Two things the previous version got wrong:
+   *  - the end of a block was taken to be the NEXT parameter's head, so the LAST
+   *    parameter's block was one row tall; a head row sitting inside the window
+   *    counted as "the whole block is visible" and nothing scrolled;
+   *  - "the head is visible" is the wrong target anyway — a description long
+   *    enough to overflow the window pushes the editor below the head.
+   *
+   * So: target the editor row, prefer starting the window at the block's head
+   * (name + description first) and bottom-align the editor when the block is
+   * taller than the window. A view that already shows the editor is left alone,
+   * so manual paging (PageUp/PageDown are ungated) is never yanked back.
    */
   useEffect(() => {
     if (focus !== 'params' || runStatus !== 'editing') {
@@ -1225,20 +1238,21 @@ export const ServiceTools: React.FC<ServiceToolsProps> = ({
     if (name === undefined) {
       return;
     }
-    const anchor = flowRows.findIndex((r) => r.type === 'text' && r.anchor === name);
-    if (anchor < 0) {
+    const editorIndex = flowRows.findIndex(
+      (row) => (row.type === 'input' || row.type === 'select') && row.param.name === name
+    );
+    if (editorIndex < 0) {
       return;
     }
-    const nextName = params[fieldIndex + 1]?.name;
-    const nextAnchor =
-      nextName === undefined
-        ? -1
-        : flowRows.findIndex((r) => r.type === 'text' && r.anchor === nextName);
-    const blockEnd = nextAnchor > anchor ? nextAnchor : anchor + 1;
+    const headIndex = flowRows.findIndex((r) => r.type === 'text' && r.anchor === name);
+    const head = headIndex >= 0 ? headIndex : editorIndex;
     setPanelScroll((prev) => {
       const clamped = Math.min(prev, maxPanelScroll);
-      const fullyVisible = anchor >= clamped && blockEnd <= clamped + FLOW_VISIBLE;
-      return fullyVisible ? clamped : Math.min(maxPanelScroll, anchor);
+      const editorVisible = editorIndex >= clamped && editorIndex < clamped + FLOW_VISIBLE;
+      if (editorVisible) {
+        return clamped;
+      }
+      return Math.max(0, Math.min(maxPanelScroll, Math.max(head, editorIndex - FLOW_VISIBLE + 1)));
     });
   }, [focus, fieldIndex, params, flowRows, maxPanelScroll, FLOW_VISIBLE, runStatus]);
 
