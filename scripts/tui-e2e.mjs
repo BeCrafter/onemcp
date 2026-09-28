@@ -522,14 +522,14 @@ async function t8ToolsView() {
   await sendText('v');
   const listed = await waitFor(() => capture().includes('echo') && capture().includes('fail'));
   const text = capture();
-  check('工具清单渲染出全部 4 个工具', listed);
-  check('显示发现到的工具总数（精确表头）', text.includes('4✓/0✗ of 4'), '未出现 4✓/0✗ of 4');
+  check('工具清单渲染出全部 5 个工具', listed);
+  check('显示发现到的工具总数（精确表头）', text.includes('5✓/0✗ of 5'), '未出现 5✓/0✗ of 5');
 
   await sendText('/');
   await waitFor(() => capture().includes('Search:'));
   await sendText('big'); // 整块写入 = 粘贴
   const filtered = await waitFor(
-    () => capture().includes('Search: big') && capture().includes('1/4')
+    () => capture().includes('Search: big') && capture().includes('1/5')
   );
   check('搜索框接受粘贴并过滤', filtered);
 }
@@ -1251,6 +1251,65 @@ async function t26ShortTerminalFits() {
   );
 }
 
+/**
+ * T27 — 短终端下焦点参数的编辑器必须留在屏内：看得见，也真的录得进去。
+ *
+ * 对应反馈：「终端高度不够时参数处录不出来，输入的内容也看不到」。根因是参数区
+ * 展开块的滚动揭示只保证「块的起始行可见」，而且最后一条参数的块尾被算成
+ * `anchor + 1` —— 名称行落在窗口内、编辑器行落在窗口外时，面板判定"整块可见"
+ * 一动不动。编辑器行不在 `flowRows.slice(...)` 里就根本没挂载，`SingleLineInput`
+ * 不存在，敲进去的字符没有任何组件接收（不是"看不见"，是"录不进去"）。
+ *
+ * fixture 的 `search` 工具形状取自 playwright 的 `browser_find`：两条参数，最后
+ * 一条描述很长。30 行终端下它正好落进上述区间（名称行可见、编辑器行不可见），
+ * 34 行的默认尺寸看不见这个问题。
+ */
+async function t27ParamEditorStaysVisible() {
+  process.stdout.write('\n[T27] 短终端下焦点参数的编辑器可见且可输入\n');
+  const configDir = makeConfigDir({ mock: stdioService('mock') });
+
+  await startSession({ configDir, cols: 100, rows: 30 });
+  await sendText('v');
+  await waitFor(() => capture().includes('PARAMETERS'));
+
+  // 选中 search：它的第二条参数（regex）描述最长
+  for (let i = 0; i < 10 && !/▶\s+✓\s+search/.test(capture()); i += 1) {
+    await sendKey('Down');
+  }
+  await waitFor(() => /▶\s+✓\s+search/.test(capture()));
+
+  await tabToFirstParam();
+  await sendKey('Down'); // → regex（最后一条参数）
+  await waitFor(() => /▶ 2\s+regex/.test(capture()));
+
+  check(
+    '焦点参数的名称行在屏内',
+    /▶ 2\s+regex/.test(capture()),
+    `当前画面：${screenLines(capture()).join(' | ')}`
+  );
+  check(
+    '焦点参数的编辑器行也在屏内（占位符可见）',
+    capture().includes('▸ value'),
+    '编辑器行被顶出面板窗口（旧实现只保证块的起始行可见）'
+  );
+
+  await sendText('a.*b');
+  check(
+    '输入的内容立刻可见（不是"看不见"而是"录不进去"）',
+    await waitFor(() => capture().includes('▸ a.*b'), 4000),
+    `当前画面：${screenLines(capture()).join(' | ')}`
+  );
+
+  // 最硬的判据：值真的进了表单 —— 运行结果里带着它
+  await sendKey('C-r');
+  check(
+    'Ctrl+R 用上了输入的值（值确实落到了表单）',
+    await waitFor(() => capture().includes('search: {"regex":"a.*b"}'), 10_000),
+    `当前画面：${screenLines(capture()).join(' | ')}`
+  );
+  check('画面不超出终端高度', screenLines(capture()).length <= 30);
+}
+
 // --------------------------------------------------------------------- main
 
 function assertFreshBuild() {
@@ -1310,6 +1369,7 @@ async function main() {
     t24NarrowFormStacks,
     t25ReflowOnResize,
     t26ShortTerminalFits,
+    t27ParamEditorStaysVisible,
   ];
 
   for (const scenario of scenarios) {

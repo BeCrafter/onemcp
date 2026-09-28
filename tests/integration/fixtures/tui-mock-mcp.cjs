@@ -54,6 +54,35 @@ const TOOLS = [
     description: 'Always returns an error result.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
+  {
+    // Appended LAST on purpose: scenarios navigate the list by position
+    // (`big_output` + ↓ must stay `fail`), so a new tool goes to the end.
+    //
+    // Shape lifted from playwright's `browser_find`: TWO parameters where the
+    // LAST one carries a multi-line description. That combination is what pushes
+    // the focused parameter's editor row below the panel window in a short
+    // terminal (scenario T27) — with a single parameter, or a one-line
+    // description, the block fits and the bug stays invisible.
+    name: 'search',
+    description: 'Search the accessibility snapshot of the current page.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: 'Plain text to search for in the page snapshot (case-insensitive).',
+        },
+        regex: {
+          type: 'string',
+          description:
+            'Regular expression to search for in the page snapshot. Matching is case-sensitive ' +
+            'by default; wrap the pattern in slashes to add flags, e.g. "/error/i" for ' +
+            'case-insensitive. Provide either text or regex, not both.',
+        },
+      },
+      required: [],
+    },
+  },
 ];
 
 const text = (content) => ({ content: [{ type: 'text', text: content }] });
@@ -105,6 +134,14 @@ rl.on('line', (line) => {
           lines.push(`[${String(i).padStart(3, '0')}] line ${i} — the quick brown fox jumps over the lazy dog`);
         }
         send({ jsonrpc: '2.0', id: request.id, result: text(lines.join('\n')) });
+        return;
+      }
+      if (name === 'search') {
+        send({
+          jsonrpc: '2.0',
+          id: request.id,
+          result: text('search: ' + JSON.stringify(args)),
+        });
         return;
       }
       if (name === 'fail') {
