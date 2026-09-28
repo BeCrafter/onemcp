@@ -13,22 +13,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
-        uses: ./.github/actions/setup
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
-
-      - name: Configure npm registry
-        run: npm config set registry https://registry.npmjs.org
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Fetch main and dev branches
         run: |
           git fetch origin main --depth=1
           git fetch origin dev --depth=1
 
-      - name: Validate tag and compute publish metadata
+      - name: Validate tag and compute sync branch
         id: meta
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
@@ -37,27 +40,12 @@ jobs:
           DEV_HEAD=$(git rev-parse origin/dev)
 
           if [[ "$VERSION" == *"-dev."* ]]; then
-            NPM_TAG="dev"
             EXPECTED="dev"
             SYNC_BRANCH="dev"
-          elif [[ "$VERSION" == *"-alpha."* ]]; then
-            NPM_TAG="alpha"
-            EXPECTED="any"
-            SYNC_BRANCH=""
-          elif [[ "$VERSION" == *"-beta."* ]]; then
-            NPM_TAG="beta"
-            EXPECTED="any"
-            SYNC_BRANCH=""
-          elif [[ "$VERSION" == *"-rc."* ]]; then
-            NPM_TAG="rc"
-            EXPECTED="any"
-            SYNC_BRANCH=""
-          elif [[ "$VERSION" == *"-"* ]]; then
-            NPM_TAG="next"
+          elif [[ "$VERSION" == *"-alpha."* || "$VERSION" == *"-beta."* || "$VERSION" == *"-rc."* || "$VERSION" == *"-"* ]]; then
             EXPECTED="any"
             SYNC_BRANCH=""
           else
-            NPM_TAG="latest"
             EXPECTED="main"
             SYNC_BRANCH="main"
           fi
@@ -90,31 +78,21 @@ jobs:
               ;;
           esac
 
-          echo "version=$VERSION"          >> "$GITHUB_OUTPUT"
-          echo "npm_tag=$NPM_TAG"          >> "$GITHUB_OUTPUT"
-          echo "sync_branch=$SYNC_BRANCH"  >> "$GITHUB_OUTPUT"
+          echo "sync_branch=$SYNC_BRANCH" >> "$GITHUB_OUTPUT"
 
-      - name: Sync package version with tag
-        run: npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version
-
-      - name: Build
-        run: npm run build
-
-      - name: Publish
-        run: npm publish --access public --tag "${{ steps.meta.outputs.npm_tag }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish to npm (preflight + publish)
+        run: ./scripts/release.sh
 
       - name: Checkout sync branch for version bump
         if: steps.meta.outputs.sync_branch != ''
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.meta.outputs.sync_branch }}
           fetch-depth: 0
 
       - name: Sync version on ${{ steps.meta.outputs.sync_branch }} branch
         if: steps.meta.outputs.sync_branch != ''
-        run: npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
 
       - name: Commit and push version bump
         if: steps.meta.outputs.sync_branch != ''
@@ -126,5 +104,5 @@ jobs:
             echo "No version changes to commit"
             exit 0
           fi
-          git commit -m "chore: sync version with tag ${{ github.ref_name }}"
+          git commit -m "chore: sync version with tag ${GITHUB_REF_NAME}"
           git push origin HEAD:${{ steps.meta.outputs.sync_branch }}
